@@ -1,0 +1,26 @@
+node_modules/
+dist/
+dist-ssr/
+.env
+.DS_Store
+*.local
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Keystore files
+*.jks
+*.keystore
+Keystorepath
+
+# Android build output
+**/android/app/release/
+
+# Firebase config
+**/google-services.json

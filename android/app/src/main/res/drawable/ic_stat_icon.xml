@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification small icon: plate with steam (Pidoo Partner) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Plate outer circle -->
+    <path
+        android:pathData="M24,26m-13,0a13,13 0,1 1,26 0a13,13 0,1 1,-26 0"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"/>
+    <!-- Plate inner circle -->
+    <path
+        android:pathData="M24,26m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.5"/>
+    <!-- Steam left -->
+    <path
+        android:pathData="M18,13c0,-3 2,-4 2,-6"
+        android:strokeWidth="1.8"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.7"
+        android:strokeLineCap="round"/>
+    <!-- Steam center -->
+    <path
+        android:pathData="M24,11c0,-3 2,-4 2,-6"
+        android:strokeWidth="1.8"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.7"
+        android:strokeLineCap="round"/>
+    <!-- Steam right -->
+    <path
+        android:pathData="M30,13c0,-3 2,-4 2,-6"
+        android:strokeWidth="1.8"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.7"
+        android:strokeLineCap="round"/>
+</vector>
