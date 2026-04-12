@@ -200,7 +200,7 @@ export function imprimirPedidoWeb(pedido, items, restaurante, tipo = 'ambos') {
     if (esCocina) {
       html += `<h1 style="text-align:center;font-size:20px;margin:0;">** COCINA **</h1>`
       html += `<h2 style="text-align:center;font-size:24px;margin:8px 0;">${pedido.codigo || '---'}</h2>`
-      html += `<p style="text-align:center;">${pedido.canal === 'pidogo' ? 'PIDOGO' : 'PIDO'} | Prep: ${pedido.minutos_preparacion || '?'} min</p>`
+      html += `<p style="text-align:center;">PIDO | Prep: ${pedido.minutos_preparacion || '?'} min</p>`
       const cl = pedido.usuarios
       if (cl) {
         const nom = [cl.nombre, cl.apellido].filter(Boolean).join(' ')

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Users, Settings, BarChart3, Tag, MessageCircle, ToggleLeft, Printer, Globe } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, BarChart3, Tag, MessageCircle, ToggleLeft, Printer, Globe } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -12,7 +12,6 @@ import CompletarRegistro from './pages/CompletarRegistro'
 import PedidosEnVivo from './pages/PedidosEnVivo'
 import Historial from './pages/Historial'
 import Carta from './pages/Carta'
-import Socios from './pages/Socios'
 import Metricas from './pages/Metricas'
 import Ajustes from './pages/Ajustes'
 import Promociones from './pages/Promociones'
@@ -23,7 +22,7 @@ import Activacion from './pages/Activacion'
 
 const isNative = Capacitor.isNativePlatform()
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, socios: Users, ajustes: Settings }
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, disponibilidad: ToggleLeft, impresora: Printer }
 
 function AppContent() {
@@ -90,7 +89,6 @@ function AppContent() {
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
-        { id: 'socios', label: 'Socios' },
         { id: 'ajustes', label: 'Ajustes' },
       ]
 
@@ -215,7 +213,6 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'historial' && <Historial />}
         {seccion === 'carta' && <Carta />}
         {seccion === 'promos' && <Promociones />}
-        {seccion === 'socios' && <Socios />}
         {seccion === 'soporte' && <Soporte />}
         {seccion === 'metricas' && <Metricas />}
         {seccion === 'ajustes' && <Ajustes />}

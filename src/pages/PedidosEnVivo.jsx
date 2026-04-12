@@ -13,8 +13,8 @@ function PagoBadge({ pago }) {
   const t = pago === 'tarjeta'
   return <span style={{ background: t ? '#DBEAFE' : '#DCFCE7', color: t ? '#1E40AF' : '#166534', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{t ? '💳 Tarjeta' : '💵 Efectivo'}</span>
 }
-function CanalBadge({ canal }) {
-  return <span style={{ background: canal === 'pidogo' ? '#F3E8FF' : '#FFF7ED', color: canal === 'pidogo' ? '#6B21A8' : '#C2410C', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{canal === 'pidogo' ? '🛵 PIDOGO' : '📱 PIDO'}</span>
+function CanalBadge() {
+  return <span style={{ background: '#FFF7ED', color: '#C2410C', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>📱 PIDO</span>
 }
 function EstadoBadge({ estado }) {
   const map = {
@@ -167,44 +167,32 @@ export default function PedidosEnVivo() {
   }
 
   // ── Acciones ───────────────────────────────────────────────────────────────
-  async function buscarYAsignarRider(pedidoId, establecimientoId, ridersRechazados = []) {
-    const { data: relaciones } = await supabase.from('socio_establecimiento').select('socio_id').eq('establecimiento_id', establecimientoId).eq('estado', 'aceptado')
-    if (!relaciones?.length) return null
-    let socioIds = relaciones.map(r => r.socio_id).filter(id => !ridersRechazados.includes(id))
-    if (!socioIds.length) return null
-    const { data: est } = await supabase.from('establecimientos').select('latitud, longitud').eq('id', establecimientoId).single()
-    const { data: sociosActivos } = await supabase.from('socios').select('id, latitud_actual, longitud_actual').in('id', socioIds).eq('activo', true).eq('en_servicio', true)
-    if (!sociosActivos?.length) return null
-    const { data: pedidosActivos } = await supabase.from('pedidos').select('socio_id').in('socio_id', sociosActivos.map(s => s.id)).in('estado', ['preparando', 'listo', 'recogido', 'en_camino']).eq('rider_estado', 'aceptado')
-    const ocupados = new Set((pedidosActivos || []).map(p => p.socio_id))
-    const libres = sociosActivos.filter(s => !ocupados.has(s.id))
-    if (!libres.length) return null
-    if (est?.latitud && est?.longitud) {
-      const conDist = libres.filter(s => s.latitud_actual && s.longitud_actual).map(s => {
-        const dLat = (s.latitud_actual - est.latitud) * 111.32
-        const dLng = (s.longitud_actual - est.longitud) * 111.32 * Math.cos(est.latitud * Math.PI / 180)
-        return { ...s, distancia: Math.sqrt(dLat * dLat + dLng * dLng) }
-      }).sort((a, b) => a.distancia - b.distancia)
-      return conDist.length > 0 ? conDist[0].id : libres[0].id
-    }
-    return libres[0].id
-  }
-
   async function aceptarPedido(pedido, minutos) {
     const now = new Date().toISOString()
-    const socioAsignado = await buscarYAsignarRider(pedido.id, restaurante.id)
     await supabase.from('pedidos').update({
       estado: 'preparando', minutos_preparacion: minutos, aceptado_at: now,
-      rider_buscando_desde: now, socio_id: socioAsignado,
-      rider_estado: socioAsignado ? 'pendiente' : 'sin_rider',
-      rider_asignado_at: socioAsignado ? now : null, riders_rechazados: [],
     }).eq('id', pedido.id)
     setEntrantes(prev => { const r = prev.filter(p => p.id !== pedido.id); if (!r.length) stopAlarm(); return r })
-    setActivos(prev => [{ ...pedido, estado: 'preparando', minutos_preparacion: minutos, socio_id: socioAsignado, rider_estado: socioAsignado ? 'pendiente' : 'sin_rider' }, ...prev])
+    setActivos(prev => [{ ...pedido, estado: 'preparando', minutos_preparacion: minutos }, ...prev])
     setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
-    if (socioAsignado) sendPush({ targetType: 'socio', targetId: socioAsignado, title: 'Nuevo pedido', body: `Pedido ${pedido.codigo} - ${pedido.total?.toFixed(2)} € · Tienes 2 min para aceptar` })
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
+    // Fire-and-forget: enviar pedido a Shipday para asignación de rider
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        await fetch('https://rmrbxrabngdmpgpfmjbo.supabase.co/functions/v1/create-shipday-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ pedido_id: pedido.id }),
+        })
+      } catch (err) {
+        console.error('[Shipday] Error al crear order:', err)
+      }
+    })()
   }
 
   async function rechazarPedido(id, motivo) {
@@ -230,25 +218,9 @@ export default function PedidosEnVivo() {
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
   }
 
-  async function reintentarBuscarRider(pedido) {
-    const socioAsignado = await buscarYAsignarRider(pedido.id, restaurante.id, pedido.riders_rechazados || [])
-    await supabase.from('pedidos').update({ socio_id: socioAsignado, rider_estado: socioAsignado ? 'pendiente' : 'buscando', rider_buscando_desde: new Date().toISOString(), rider_asignado_at: socioAsignado ? new Date().toISOString() : null, riders_rechazados: pedido.riders_rechazados || [] }).eq('id', pedido.id)
-    setActivos(prev => prev.map(p => p.id === pedido.id ? { ...p, socio_id: socioAsignado, rider_estado: socioAsignado ? 'pendiente' : 'buscando' } : p))
-    if (socioAsignado) sendPush({ targetType: 'socio', targetId: socioAsignado, title: 'Nuevo pedido', body: `Pedido ${pedido.codigo} - ${pedido.total?.toFixed(2)} € · Tienes 2 min para aceptar` })
-    if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Buscando repartidor', body: `Estamos buscando un repartidor para tu pedido ${pedido.codigo}` })
-  }
-
-  async function cambiarARecogida(pedido) {
-    await supabase.from('pedidos').update({ modo_entrega: 'recogida', socio_id: null, rider_estado: null, coste_envio: 0 }).eq('id', pedido.id)
-    setActivos(prev => prev.map(p => p.id === pedido.id ? { ...p, modo_entrega: 'recogida', rider_estado: null, socio_id: null } : p))
-    if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido para recoger', body: `Tu pedido ${pedido.codigo} está listo para recoger en el restaurante` })
-  }
-
   async function marcarListo(id) {
     await supabase.from('pedidos').update({ estado: 'listo' }).eq('id', id)
-    const pedido = activos.find(p => p.id === id)
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'listo' } : p))
-    if (pedido?.socio_id) sendPush({ targetType: 'socio', targetId: pedido.socio_id, title: 'Pedido listo', body: `Pedido ${pedido.codigo} listo para recoger en el restaurante` })
   }
 
   async function marcarRecogido(id) {
@@ -300,8 +272,6 @@ export default function PedidosEnVivo() {
         onMarcarRecogido={marcarRecogido}
         onMarcarEntregado={marcarEntregado}
         onCancelar={cancelarPedidoActivo}
-        onReintentar={reintentarBuscarRider}
-        onRecogida={cambiarARecogida}
         onReimprimir={reimprimir}
       />
     )
@@ -429,7 +399,7 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
 }
 
 // ─── Pantalla de detalle ───────────────────────────────────────────────────
-function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, onAceptar, onRechazar, onMarcarListo, onMarcarRecogido, onMarcarEntregado, onCancelar, onReintentar, onRecogida, onReimprimir }) {
+function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, onAceptar, onRechazar, onMarcarListo, onMarcarRecogido, onMarcarEntregado, onCancelar, onReimprimir }) {
   const [rechazando, setRechazando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [aceptando, setAceptando] = useState(false)
@@ -437,8 +407,6 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
   const nombre = pedido.usuarios?.nombre
     ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
     : 'Cliente'
-
-  const sinRider = pedido.rider_estado === 'sin_rider' || (pedido.rider_estado === 'buscando' && !pedido.socio_id)
 
   return (
     <div style={{ animation: 'fadeIn 0.2s ease' }}>
@@ -517,39 +485,6 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
         </div>
       </div>
 
-      {/* Repartidor (si hay) */}
-      {pedido.socio_id && !sinRider && (
-        <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 16, marginBottom: 12, border: '1px solid var(--c-border)' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Repartidor</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 20 }}>🛵</span>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>Asignado</div>
-              <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>
-                {pedido.rider_estado === 'aceptado' ? '✅ Ha aceptado el pedido' : pedido.rider_estado === 'pendiente' ? '⏳ Esperando respuesta' : pedido.rider_estado}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sin rider */}
-      {sinRider && (
-        <div style={{ background: 'rgba(251,191,36,0.08)', borderRadius: 14, padding: 16, marginBottom: 12, border: '1px solid rgba(251,191,36,0.2)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <span style={{ fontSize: 20 }}>⚠️</span>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#FBBF24' }}>Sin repartidor disponible</div>
-              <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>Ningún repartidor aceptó el pedido</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => onReintentar(pedido)} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--c-primary)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Reintentar rider</button>
-            <button onClick={() => onRecogida(pedido)} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)', color: '#FBBF24', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Solo recogida</button>
-          </div>
-        </div>
-      )}
-
       {/* ── Acciones según estado ── */}
 
       {/* NUEVO: aceptar + rechazar */}
@@ -601,7 +536,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
       {/* LISTO: delivery */}
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
         <div style={{ padding: '13px 16px', borderRadius: 12, background: '#DCFCE7', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#166534', marginBottom: 12 }}>
-          {pedido.rider_estado === 'aceptado' ? '🛵 Repartidor en camino al restaurante' : pedido.rider_estado === 'pendiente' ? '⏳ Esperando que el repartidor acepte' : '🔍 Buscando repartidor...'}
+          🛵 Esperando repartidor (Shipday)
         </div>
       )}
 

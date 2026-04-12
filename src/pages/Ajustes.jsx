@@ -41,65 +41,14 @@ export default function Ajustes() {
   const [manualIp, setManualIp] = useState('')
   const [ticketCount, setTicketCount] = useState(2) // 1 = solo comanda, 2 = comanda + cliente
 
-  // Visibilidad: público (18%/13%) vs exclusivo (20%/15%)
-  // Se deriva de comision_reparto: 20 = exclusivo, cualquier otro valor = público
-  const esExclusivo = restaurante?.comision_reparto === 20
-  const [captadorNombre, setCaptadorNombre] = useState(null)
-  const [visibilityModal, setVisibilityModal] = useState(null) // null | 'publico' | 'exclusivo'
-  const [cambiandoVisibilidad, setCambiandoVisibilidad] = useState(false)
-
   useEffect(() => {
     if (restaurante) {
       loadCategorias()
-      loadCaptador()
       const h = restaurante.horario || null
       setHorario(h)
       setHorarioOriginal(h ? JSON.stringify(h) : null)
     }
   }, [restaurante?.id])
-
-  async function loadCaptador() {
-    const { data } = await supabase
-      .from('socio_establecimiento')
-      .select('socios(nombre_comercial, nombre)')
-      .eq('establecimiento_id', restaurante.id)
-      .eq('es_captador', true)
-      .single()
-    if (data?.socios) {
-      setCaptadorNombre(data.socios.nombre_comercial || data.socios.nombre)
-    }
-  }
-
-  async function cambiarVisibilidad(hacerExclusivo) {
-    setCambiandoVisibilidad(true)
-    try {
-      // Actualizar comisiones del establecimiento
-      await updateRestaurante({
-        comision_reparto: hacerExclusivo ? 20 : 18,
-        comision_recogida: hacerExclusivo ? 15 : 13,
-      })
-      // Actualizar campo exclusivo en las relaciones:
-      // exclusivo=true solo para el captador si hacerExclusivo, else false para todos
-      if (hacerExclusivo) {
-        await supabase.from('socio_establecimiento')
-          .update({ exclusivo: true })
-          .eq('establecimiento_id', restaurante.id)
-          .eq('es_captador', true)
-        await supabase.from('socio_establecimiento')
-          .update({ exclusivo: false })
-          .eq('establecimiento_id', restaurante.id)
-          .eq('es_captador', false)
-      } else {
-        await supabase.from('socio_establecimiento')
-          .update({ exclusivo: false })
-          .eq('establecimiento_id', restaurante.id)
-      }
-    } catch (err) {
-      toast('Error al cambiar la visibilidad. Intenta de nuevo.', 'error')
-    }
-    setCambiandoVisibilidad(false)
-    setVisibilityModal(null)
-  }
 
   // Load printer config from localStorage
   useEffect(() => {
@@ -338,45 +287,6 @@ export default function Ajustes() {
         <button onClick={toggleActivo} style={{ width: 52, height: 28, borderRadius: 14, border: 'none', background: activo ? '#16A34A' : 'rgba(255,255,255,0.2)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0 }}>
           <span style={{ position: 'absolute', top: 3, left: activo ? 27 : 3, width: 22, height: 22, borderRadius: 11, background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
         </button>
-      </div>
-
-      {/* Visibilidad pública / exclusivo */}
-      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: '16px 18px', marginBottom: 16, border: '1px solid var(--c-border)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Visibilidad pública</div>
-            <div style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3, lineHeight: 1.4 }}>
-              {esExclusivo
-                ? `Solo ${captadorNombre || 'tu socio'} puede repartir. Comisión: 20% reparto / 15% recogida`
-                : 'Otros socios pueden solicitar trabajar contigo. Comisión: 18% reparto / 13% recogida'
-              }
-            </div>
-          </div>
-          <button
-            onClick={() => setVisibilityModal(esExclusivo ? 'publico' : 'exclusivo')}
-            disabled={cambiandoVisibilidad}
-            style={{
-              width: 52, height: 28, borderRadius: 14, border: 'none',
-              background: esExclusivo ? 'rgba(255,255,255,0.2)' : '#16A34A',
-              cursor: cambiandoVisibilidad ? 'default' : 'pointer',
-              position: 'relative', transition: 'background 0.2s',
-              minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0, marginLeft: 12,
-            }}
-          >
-            <span style={{
-              position: 'absolute', top: 3,
-              left: esExclusivo ? 3 : 27,
-              width: 22, height: 22, borderRadius: 11, background: '#fff',
-              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            }} />
-          </button>
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--c-muted)', borderTop: '1px solid var(--c-border)', paddingTop: 10, marginTop: 6 }}>
-          {esExclusivo
-            ? '🔒 Exclusivo — solo tu socio captador puede distribuir tus pedidos'
-            : '🌐 Público — cualquier socio puede solicitarte y amplías tu cobertura'
-          }
-        </div>
       </div>
 
       {/* Logo */}
@@ -940,57 +850,6 @@ export default function Ajustes() {
         </div>
       )}
 
-      {/* Modal confirmación cambio de visibilidad */}
-      {visibilityModal && (
-        <div onClick={() => !cambiandoVisibilidad && setVisibilityModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: '#1A1A1A', borderRadius: '20px 20px 0 0', padding: '24px 20px',
-            width: '100%', maxWidth: 500, border: '1px solid rgba(255,255,255,0.1)',
-            borderBottom: 'none', animation: 'slideUp 0.3s ease',
-          }}>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>{visibilityModal === 'exclusivo' ? '🔒' : '🌐'}</div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: '#F5F5F5' }}>
-                {visibilityModal === 'exclusivo' ? 'Cambiar a Exclusivo' : 'Cambiar a Público'}
-              </div>
-            </div>
-
-            {visibilityModal === 'exclusivo' ? (
-              <div style={{ background: 'rgba(139,92,246,0.08)', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid rgba(139,92,246,0.2)', fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
-                <strong style={{ color: '#F5F5F5', display: 'block', marginBottom: 8 }}>Modo Exclusivo</strong>
-                Solo <strong style={{ color: '#F5F5F5' }}>{captadorNombre || 'tu socio captador'}</strong> podrá repartir tus pedidos. El resto de socios perderán acceso a tu carta.
-                <br /><br />
-                La comisión cambiará a <strong style={{ color: '#F5F5F5' }}>20% en reparto y 15% en recogida</strong>.
-              </div>
-            ) : (
-              <div style={{ background: 'rgba(34,197,94,0.08)', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid rgba(34,197,94,0.2)', fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
-                <strong style={{ color: '#F5F5F5', display: 'block', marginBottom: 8 }}>Modo Público</strong>
-                Cualquier socio podrá solicitar trabajar contigo y tu negocio tendrá mayor visibilidad y cobertura.
-                <br /><br />
-                La comisión cambiará a <strong style={{ color: '#F5F5F5' }}>18% en reparto y 13% en recogida</strong>.
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setVisibilityModal(null)} style={{
-                flex: 1, padding: '14px 0', borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.12)', background: 'transparent',
-                color: 'rgba(255,255,255,0.6)', fontSize: 14, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}>Cancelar</button>
-              <button onClick={() => cambiarVisibilidad(visibilityModal === 'exclusivo')} disabled={cambiandoVisibilidad} style={{
-                flex: 1, padding: '14px 0', borderRadius: 12, border: 'none',
-                background: cambiandoVisibilidad ? 'rgba(185,28,28,0.4)' : 'var(--c-primary)',
-                color: '#fff', fontSize: 14, fontWeight: 700,
-                cursor: cambiandoVisibilidad ? 'default' : 'pointer',
-                fontFamily: 'inherit', transition: 'background 0.2s',
-              }}>
-                {cambiandoVisibilidad ? 'Cambiando...' : 'Confirmar cambio'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -38,13 +38,13 @@ export default function Activacion() {
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: 42, marginBottom: 12 }}>🎉</div>
           <h1 style={{ fontSize: 24, fontWeight: 900, color: '#F5F5F5', margin: '0 0 8px' }}>
-            ¡Bienvenido a PIDOGO!
+            ¡Bienvenido a Pidoo!
           </h1>
           <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', margin: 0, lineHeight: 1.5 }}>
             <strong style={{ color: '#F5F5F5' }}>{restaurante?.nombre}</strong> ya está en la plataforma.
           </p>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 8, lineHeight: 1.5 }}>
-            Tu socio ha configurado lo básico. Revisa y completa tu perfil para empezar a recibir pedidos.
+            Revisa y completa tu perfil para empezar a recibir pedidos.
           </p>
         </div>
 
@@ -104,16 +104,6 @@ export default function Activacion() {
               placeholder="Cuéntale a tus clientes quién eres y qué ofreces..."
             />
           </div>
-        </div>
-
-        {/* Info comisión estándar */}
-        <div style={{
-          background: 'rgba(185,28,28,0.08)', borderRadius: 12,
-          padding: '12px 16px', marginBottom: 24,
-          border: '1px solid rgba(185,28,28,0.2)',
-          fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6,
-        }}>
-          ℹ️ Tu negocio se activará como <strong style={{ color: '#F5F5F5' }}>público</strong> — otros socios podrán solicitar repartir tus pedidos. Comisión: <strong style={{ color: '#F5F5F5' }}>18% reparto / 13% recogida</strong>. Puedes cambiarlo en Ajustes.
         </div>
 
         {/* Botón principal */}

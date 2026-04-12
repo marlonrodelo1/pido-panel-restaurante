@@ -55,7 +55,7 @@ export default function Historial() {
 
     try {
       let query = supabase.from('pedidos')
-        .select('*, socios(nombre)')
+        .select('*')
       query = buildQuery(query).range(offset, offset + LIMIT - 1)
 
       const { data, error: queryError } = await query
@@ -81,23 +81,22 @@ export default function Historial() {
     setExportando(true)
     try {
       let query = supabase.from('pedidos')
-        .select('codigo, estado, canal, metodo_pago, subtotal, coste_envio, total, created_at, socios(nombre)')
+        .select('codigo, estado, canal, metodo_pago, subtotal, coste_envio, total, created_at')
       query = buildQuery(query)
 
       const { data, error: err } = await query
       if (err) throw err
       if (!data?.length) { setExportando(false); return }
 
-      const headers = ['Codigo', 'Estado', 'Canal', 'Metodo Pago', 'Subtotal', 'Envio', 'Total', 'Repartidor', 'Fecha']
+      const headers = ['Codigo', 'Estado', 'Canal', 'Metodo Pago', 'Subtotal', 'Envio', 'Total', 'Fecha']
       const rows = data.map(p => [
         p.codigo,
         p.estado,
-        p.canal || '',
+        'PIDO',
         p.metodo_pago || '',
         (p.subtotal || 0).toFixed(2),
         (p.coste_envio || 0).toFixed(2),
         (p.total || 0).toFixed(2),
-        p.socios?.nombre || '',
         new Date(p.created_at).toLocaleString('es-ES'),
       ])
 
@@ -194,11 +193,11 @@ export default function Historial() {
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{p.codigo}</span>
                 <span style={{ background: col.bg, color: col.c, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, textTransform: 'capitalize' }}>{p.estado}</span>
                 <span style={{ background: p.metodo_pago === 'tarjeta' ? '#DBEAFE' : '#DCFCE7', color: p.metodo_pago === 'tarjeta' ? '#1E40AF' : '#166534', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{p.metodo_pago === 'tarjeta' ? '💳' : '💵'}</span>
-                <span style={{ background: p.canal === 'pidogo' ? '#F3E8FF' : '#FFF7ED', color: p.canal === 'pidogo' ? '#6B21A8' : '#C2410C', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{p.canal === 'pidogo' ? 'PIDOGO' : 'PIDO'}</span>
+                <span style={{ background: '#FFF7ED', color: '#C2410C', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>PIDO</span>
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--c-muted)' }}>
-              <span>{p.socios?.nombre || 'Sin repartidor'}</span>
+              <span>Shipday</span>
               <span style={{ fontWeight: 700, color: 'var(--c-text)' }}>{(p.total || 0).toFixed(2)} €</span>
             </div>
             <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>{new Date(p.created_at).toLocaleString('es')}</div>

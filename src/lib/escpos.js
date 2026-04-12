@@ -102,7 +102,7 @@ export function generarComandaCocina(pedido, items, restaurante) {
 
     // Canal
     ...boldOn(),
-    ...line(pedido.canal === 'pidogo' ? 'PIDOGO (Delivery)' : 'PIDO (App)'),
+    ...line('PIDO'),
     ...boldOff(),
 
     // Time
@@ -228,7 +228,7 @@ export function generarTicketCliente(pedido, items, restaurante) {
   bytes.push(
     ...twoColumns('Pedido:', pedido.codigo || '---'),
     ...twoColumns('Fecha:', formatDate(pedido.created_at)),
-    ...twoColumns('Canal:', pedido.canal === 'pidogo' ? 'PIDOGO' : 'PIDO'),
+    ...twoColumns('Canal:', 'PIDO'),
     ...twoColumns('Pago:', pedido.metodo_pago === 'efectivo' ? 'Efectivo' : 'Tarjeta'),
     ...separator('-'),
   )
