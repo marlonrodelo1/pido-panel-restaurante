@@ -181,7 +181,11 @@ export default function PedidosEnVivo() {
     ;(async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        await fetch('https://rmrbxrabngdmpgpfmjbo.supabase.co/functions/v1/create-shipday-order', {
+        if (!session?.access_token) {
+          console.error('[Shipday] Sin sesión activa, no se puede crear order')
+          return
+        }
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-shipday-order`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -189,6 +193,12 @@ export default function PedidosEnVivo() {
           },
           body: JSON.stringify({ pedido_id: pedido.id }),
         })
+        if (!res.ok) {
+          const body = await res.text()
+          console.error(`[Shipday] Error ${res.status}:`, body)
+        } else {
+          console.log('[Shipday] Order creada para pedido', pedido.id)
+        }
       } catch (err) {
         console.error('[Shipday] Error al crear order:', err)
       }
