@@ -199,24 +199,55 @@ export default function PedidosEnVivo() {
   async function rechazarPedido(id, motivo) {
     const pedido = entrantes.find(p => p.id === id)
     const motivoTexto = MOTIVOS_RECHAZO.find(m => m.id === motivo)?.label || motivo || 'El restaurante no pudo aceptar tu pedido'
-    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', id)
+    await supabase.from('pedidos').update({
+      estado: 'cancelado',
+      motivo_cancelacion: motivoTexto,
+      cancelado_at: new Date().toISOString(),
+    }).eq('id', id)
+    // Limpiar UI completamente
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
-    if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
+    setTimers(prev => { const n = { ...prev }; delete n[id]; return n })
+    setPedidoDetalleId(prev => prev === id ? null : prev)
+    // Notificar al cliente
+    if (pedido?.usuario_id) {
+      sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: '❌ Pedido rechazado', body: `Tu pedido ${pedido.codigo} fue rechazado: ${motivoTexto}. Disculpa las molestias.` })
+    }
+    // Reembolso automático si pagó con tarjeta
+    if (pedido?.metodo_pago === 'tarjeta') {
+      supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: id } }).catch(err => console.error('[Reembolso] Error:', err))
+    }
   }
 
   async function autoCancelarPedido(id) {
-    const { data: pedido } = await supabase.from('pedidos').select('id, codigo, usuario_id, estado').eq('id', id).single()
+    const { data: pedido } = await supabase.from('pedidos').select('id, codigo, usuario_id, estado, metodo_pago').eq('id', id).single()
     if (!pedido || pedido.estado !== 'nuevo') return
-    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: 'El restaurante no respondió a tiempo', cancelado_at: new Date().toISOString() }).eq('id', id)
+    await supabase.from('pedidos').update({
+      estado: 'cancelado',
+      motivo_cancelacion: 'El restaurante no respondió a tiempo',
+      cancelado_at: new Date().toISOString(),
+    }).eq('id', id)
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
-    if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado porque el restaurante no respondió a tiempo` })
+    setTimers(prev => { const n = { ...prev }; delete n[id]; return n })
+    setPedidoDetalleId(prev => prev === id ? null : prev)
+    if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: '❌ Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado porque el restaurante no respondió a tiempo` })
+    if (pedido?.metodo_pago === 'tarjeta') {
+      supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: id } }).catch(err => console.error('[Reembolso] Error:', err))
+    }
   }
 
   async function cancelarPedidoActivo(pedido, motivoId) {
     const motivoTexto = MOTIVOS_CANCELACION.find(m => m.id === motivoId)?.label || 'Cancelado por el restaurante'
-    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', pedido.id)
+    await supabase.from('pedidos').update({
+      estado: 'cancelado',
+      motivo_cancelacion: motivoTexto,
+      cancelado_at: new Date().toISOString(),
+    }).eq('id', pedido.id)
     setActivos(prev => prev.filter(p => p.id !== pedido.id))
-    if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
+    setPedidoDetalleId(prev => prev === pedido.id ? null : prev)
+    if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: '❌ Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
+    if (pedido.metodo_pago === 'tarjeta') {
+      supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: pedido.id } }).catch(err => console.error('[Reembolso] Error:', err))
+    }
   }
 
   async function marcarListo(id) {
