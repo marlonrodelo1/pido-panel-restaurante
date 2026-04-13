@@ -122,14 +122,14 @@ function AppInner({ seccion, setSeccion, nav }) {
       <style>{css}</style>
 
       {/* Header */}
-      <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface)' }}>
+      <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#131313', borderBottom: '1px solid #1e1e1e' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 12, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, overflow: 'hidden' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, overflow: 'hidden', flexShrink: 0 }}>
             {restaurante.logo_url ? <img src={restaurante.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🍽️'}
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--c-text)' }}>{restaurante.nombre}</div>
-            <div style={{ fontSize: 10, color: restaurante.activo ? '#16A34A' : '#991B1B', fontWeight: 600 }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: '#E5E2E1', letterSpacing: '0.03em', textTransform: 'uppercase' }}>{restaurante.nombre}</div>
+            <div style={{ fontSize: 10, color: restaurante.activo ? '#4ade80' : '#ab8985', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
               {restaurante.activo ? '● Abierto' : '● Cerrado'}
             </div>
           </div>
@@ -219,7 +219,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', background: 'rgba(13,13,13,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-around', padding: '8px 0 12px', zIndex: 50 }}>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', background: 'rgba(19,19,19,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-around', padding: '8px 0 12px', zIndex: 50 }}>
         {nav.map(n => (
           <button key={n.id} onClick={() => setSeccion(n.id)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
@@ -249,8 +249,10 @@ function AppInner({ seccion, setSeccion, nav }) {
 
 const shell = {
   '--c-primary': '#B91C1C', '--c-primary-light': 'rgba(185,28,28,0.15)', '--c-primary-soft': 'rgba(185,28,28,0.25)',
-  '--c-bg': '#0D0D0D', '--c-surface': 'rgba(255,255,255,0.08)', '--c-surface2': 'rgba(255,255,255,0.05)',
-  '--c-border': 'rgba(255,255,255,0.1)', '--c-text': '#F5F5F5', '--c-muted': 'rgba(255,255,255,0.45)',
+  '--c-bg': '#0D0D0D', '--c-surface': '#1A1A1A', '--c-surface2': '#242424',
+  '--c-surface3': '#2a2a2a', '--c-border': '#353535',
+  '--c-text': '#E5E2E1', '--c-muted': '#ab8985', '--c-accent': '#ffb4ab',
+  '--c-btn-gradient': 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)',
   fontFamily: "'DM Sans', sans-serif", width: '100%',
   background: 'var(--c-bg)', color: 'var(--c-text)',
 }

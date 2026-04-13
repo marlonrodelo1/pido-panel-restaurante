@@ -11,22 +11,22 @@ import { toast } from '../App'
 // ─── Badges ────────────────────────────────────────────────────────────────
 function PagoBadge({ pago }) {
   const t = pago === 'tarjeta'
-  return <span style={{ background: t ? '#DBEAFE' : '#DCFCE7', color: t ? '#1E40AF' : '#166534', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{t ? '💳 Tarjeta' : '💵 Efectivo'}</span>
+  return <span style={{ background: t ? 'rgba(96,165,250,0.15)' : 'rgba(74,222,128,0.12)', color: t ? '#93c5fd' : '#86efac', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>{t ? '💳 Tarjeta' : '💵 Efectivo'}</span>
 }
 function CanalBadge() {
-  return <span style={{ background: '#FFF7ED', color: '#C2410C', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>📱 PIDO</span>
+  return <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fdba74', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>📱 PIDO</span>
 }
 function EstadoBadge({ estado }) {
   const map = {
-    preparando: { bg: '#FEF3C7', c: '#92400E', label: 'Preparando' },
-    aceptado:   { bg: '#FEF3C7', c: '#92400E', label: 'Preparando' },
-    listo:      { bg: '#DCFCE7', c: '#166534', label: 'Listo' },
-    recogido:   { bg: '#DBEAFE', c: '#1E40AF', label: 'Recogido' },
-    en_camino:  { bg: '#F3E8FF', c: '#6B21A8', label: 'En camino' },
-    nuevo:      { bg: '#FEE2E2', c: '#991B1B', label: 'Nuevo' },
+    preparando: { bg: 'rgba(251,191,36,0.12)', c: '#fcd34d', label: 'Preparando' },
+    aceptado:   { bg: 'rgba(251,191,36,0.12)', c: '#fcd34d', label: 'Preparando' },
+    listo:      { bg: 'rgba(74,222,128,0.12)', c: '#86efac', label: 'Listo' },
+    recogido:   { bg: 'rgba(96,165,250,0.12)', c: '#93c5fd', label: 'Recogido' },
+    en_camino:  { bg: 'rgba(167,139,250,0.12)', c: '#c4b5fd', label: 'En camino' },
+    nuevo:      { bg: 'rgba(185,28,28,0.2)', c: '#fca5a5', label: 'Nuevo' },
   }
-  const s = map[estado] || { bg: '#F3F4F6', c: '#6B7280', label: estado }
-  return <span style={{ background: s.bg, color: s.c, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{s.label}</span>
+  const s = map[estado] || { bg: '#242424', c: '#ab8985', label: estado }
+  return <span style={{ background: s.bg, color: s.c, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em', textTransform: 'uppercase' }}>{s.label}</span>
 }
 
 // ─── Constantes ────────────────────────────────────────────────────────────
@@ -285,23 +285,26 @@ export default function PedidosEnVivo() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Pedidos en vivo</h2>
-        <button onClick={() => { unlockAudio(); startAlarm(); setTimeout(stopAlarm, 2000) }} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--c-muted)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: '#E5E2E1', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Pedidos en Vivo</h2>
+        </div>
+        <button onClick={() => { unlockAudio(); startAlarm(); setTimeout(stopAlarm, 2000) }} style={{ padding: '7px 12px', borderRadius: 6, border: '1px solid #353535', background: '#1A1A1A', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#ab8985' }}>
           🔔 Probar alarma
         </button>
       </div>
 
       {!hayAlgo && (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--c-muted)' }}>
+        <div style={{ textAlign: 'center', padding: '60px 0', color: '#ab8985' }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🍽️</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Esperando nuevos pedidos...</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Esperando nuevos pedidos...</div>
+          <div style={{ fontSize: 11, color: '#353535', marginTop: 4 }}>Los pedidos aparecerán aquí en tiempo real</div>
         </div>
       )}
 
       {/* 🔴 Nuevos */}
       {entrantes.length > 0 && (
-        <SeccionPedidos titulo="Nuevos" color="#B91C1C" bg="rgba(185,28,28,0.08)" border="rgba(185,28,28,0.2)">
+        <SeccionPedidos titulo="Nuevos" count={entrantes.length} color="#fca5a5" bg="rgba(185,28,28,0.08)" accentColor="#B91C1C">
           {entrantes.map(p => (
             <LineaPedido key={p.id} pedido={p} timer={timers[p.id]} isNuevo onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -310,7 +313,7 @@ export default function PedidosEnVivo() {
 
       {/* 🟡 En preparación */}
       {preparando.length > 0 && (
-        <SeccionPedidos titulo="En preparación" color="#92400E" bg="rgba(251,191,36,0.08)" border="rgba(251,191,36,0.2)">
+        <SeccionPedidos titulo="En Preparación" count={preparando.length} color="#fcd34d" bg="rgba(251,191,36,0.06)" accentColor="#d97706">
           {preparando.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -319,7 +322,7 @@ export default function PedidosEnVivo() {
 
       {/* 🟢 Listos */}
       {listos.length > 0 && (
-        <SeccionPedidos titulo="Listos para recoger" color="#166534" bg="rgba(34,197,94,0.08)" border="rgba(34,197,94,0.2)">
+        <SeccionPedidos titulo="Listos" count={listos.length} color="#86efac" bg="rgba(34,197,94,0.06)" accentColor="#16a34a">
           {listos.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -328,7 +331,7 @@ export default function PedidosEnVivo() {
 
       {/* 🔵 En camino */}
       {enCamino.length > 0 && (
-        <SeccionPedidos titulo="En camino" color="#1E40AF" bg="rgba(59,130,246,0.08)" border="rgba(59,130,246,0.2)">
+        <SeccionPedidos titulo="En Camino" count={enCamino.length} color="#93c5fd" bg="rgba(59,130,246,0.06)" accentColor="#2563eb">
           {enCamino.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -339,14 +342,15 @@ export default function PedidosEnVivo() {
 }
 
 // ─── Sección ───────────────────────────────────────────────────────────────
-function SeccionPedidos({ titulo, color, bg, border, children }) {
+function SeccionPedidos({ titulo, count, color, bg, accentColor, children }) {
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <div style={{ width: 10, height: 10, borderRadius: 5, background: color }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5 }}>{titulo}</span>
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '0 2px' }}>
+        <div style={{ width: 8, height: 8, borderRadius: 4, background: accentColor, boxShadow: `0 0 6px ${accentColor}` }} />
+        <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{titulo}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: accentColor, background: `${bg}`, border: `1px solid ${accentColor}33`, padding: '1px 6px', borderRadius: 10 }}>{count}</span>
       </div>
-      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ background: '#131313', borderRadius: 12, overflow: 'hidden', borderLeft: `2px solid ${accentColor}` }}>
         {children}
       </div>
     </div>
@@ -363,46 +367,49 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
     <button onClick={onTap} style={{
       width: '100%', display: 'flex', alignItems: 'center', gap: 12,
       padding: '14px 16px', background: 'none', border: 'none',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      borderBottom: '1px solid #1e1e1e',
       cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+      transition: 'background 0.15s',
     }}>
-      {/* Código */}
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--c-text)' }}>{pedido.codigo}</span>
-          <EstadoBadge estado={pedido.estado} />
+      {/* Info pedido */}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: '#E5E2E1', letterSpacing: '0.03em' }}>{pedido.codigo}</span>
+          {pedido.metodo_pago && <PagoBadge pago={pedido.metodo_pago} />}
         </div>
-        <span style={{ fontSize: 12, color: 'var(--c-muted)', fontWeight: 500 }}>{nombre}</span>
+        <span style={{ fontSize: 12, color: '#ab8985', fontWeight: 500 }}>{nombre}</span>
       </div>
-
-      <div style={{ flex: 1 }} />
 
       {/* Timer (solo nuevos) */}
       {isNuevo && timer != null && timer > 0 && (
         <span style={{
-          fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-          color: timer < 60 ? '#EF4444' : '#FBBF24',
+          fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+          color: timer < 60 ? '#fca5a5' : '#fcd34d',
           animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
-          flexShrink: 0,
+          flexShrink: 0, background: timer < 60 ? 'rgba(185,28,28,0.15)' : 'rgba(217,119,6,0.15)',
+          padding: '3px 8px', borderRadius: 6,
         }}>{formatTimer(timer)}</span>
       )}
 
       {/* Total */}
-      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--c-text)', flexShrink: 0 }}>
-        {(pedido.total || 0).toFixed(2)} €
+      <span style={{ fontSize: 14, fontWeight: 800, color: '#ffb4ab', flexShrink: 0 }}>
+        {(pedido.total || 0).toFixed(2)}€
       </span>
 
       {/* Chevron */}
-      <ChevronLeft size={16} style={{ transform: 'rotate(180deg)', color: 'var(--c-muted)', flexShrink: 0 }} />
+      <ChevronLeft size={14} style={{ transform: 'rotate(180deg)', color: '#353535', flexShrink: 0 }} />
     </button>
   )
 }
 
 // ─── Pantalla de detalle ───────────────────────────────────────────────────
+const seccionLabel = { fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }
+const seccionCard = { background: '#1A1A1A', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }
+
 function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, onAceptar, onRechazar, onMarcarListo, onMarcarRecogido, onMarcarEntregado, onCancelar, onReimprimir }) {
   const [rechazando, setRechazando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
-  const [aceptando, setAceptando] = useState(false)
+  const [minutosSel, setMinutosSel] = useState(20)
 
   const nombre = pedido.usuarios?.nombre
     ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
@@ -410,109 +417,160 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
 
   return (
     <div style={{ animation: 'fadeIn 0.2s ease' }}>
-      {/* Header detalle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <button onClick={onVolver} style={{
-          display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px',
-          borderRadius: 10, border: '1px solid var(--c-border)', background: 'var(--c-surface)',
-          color: 'var(--c-muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+          display: 'flex', alignItems: 'center', padding: '8px 10px',
+          borderRadius: 8, border: '1px solid #353535', background: '#1A1A1A',
+          color: '#ab8985', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
         }}>
-          <ChevronLeft size={16} /> Volver
+          <ChevronLeft size={16} />
         </button>
         <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 16, fontWeight: 800 }}>{pedido.codigo}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#E5E2E1', letterSpacing: '0.03em' }}>{pedido.codigo}</span>
             <EstadoBadge estado={pedido.estado} />
           </div>
+          <div style={{ fontSize: 11, color: '#ab8985', marginTop: 2 }}>{restaurante?.nombre}</div>
         </div>
         {isNuevo && timer != null && timer > 0 && (
           <div style={{
-            background: timer < 60 ? 'rgba(239,68,68,0.15)' : 'rgba(251,191,36,0.15)',
-            borderRadius: 10, padding: '6px 12px',
-            color: timer < 60 ? '#EF4444' : '#FBBF24',
-            fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+            background: timer < 60 ? 'rgba(185,28,28,0.2)' : 'rgba(217,119,6,0.15)',
+            borderRadius: 8, padding: '6px 12px',
+            color: timer < 60 ? '#fca5a5' : '#fcd34d',
+            fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
             animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
           }}>{formatTimer(timer)}</div>
         )}
       </div>
 
-      {/* Info cliente */}
-      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 16, marginBottom: 12, border: '1px solid var(--c-border)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Cliente</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: pedido.usuarios?.telefono ? 6 : 0 }}>
-          <span style={{ fontSize: 16 }}>👤</span>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>{nombre}</span>
+      {/* Tiempo estimado (solo si está en preparación) */}
+      {(pedido.estado === 'preparando' || pedido.estado === 'aceptado') && pedido.minutos_preparacion && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: '#1A1A1A', borderRadius: 8 }}>
+          <span style={{ fontSize: 14 }}>⏱️</span>
+          <span style={{ fontSize: 12, color: '#ab8985' }}>Tiempo estimado: <strong style={{ color: '#fcd34d' }}>{pedido.minutos_preparacion} min</strong></span>
         </div>
+      )}
+
+      {/* CLIENTE */}
+      <div style={seccionCard}>
+        <div style={seccionLabel}><span>👤</span> Cliente</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#E5E2E1', marginBottom: 4 }}>{nombre}</div>
         {pedido.usuarios?.telefono && (
-          <div style={{ fontSize: 12, color: 'var(--c-muted)', paddingLeft: 24 }}>📞 {pedido.usuarios.telefono}</div>
+          <div style={{ fontSize: 12, color: '#ab8985', marginBottom: pedido.direccion_entrega ? 8 : 0 }}>📞 {pedido.usuarios.telefono}</div>
         )}
         {pedido.direccion_entrega && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingLeft: 0 }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>📍</span>
-            <span style={{ fontSize: 12, color: 'var(--c-muted)', lineHeight: 1.5 }}>{pedido.direccion_entrega}</span>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '1px solid #242424' }}>
+            <span style={{ fontSize: 14, flexShrink: 0 }}>📍</span>
+            <span style={{ fontSize: 12, color: '#E5E2E1', lineHeight: 1.5 }}>{pedido.direccion_entrega}</span>
           </div>
         )}
       </div>
 
-      {/* Badges */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        <CanalBadge canal={pedido.canal} />
-        <PagoBadge pago={pedido.metodo_pago} />
-        {pedido.metodo_pago === 'efectivo' && <span style={{ fontSize: 10, fontWeight: 600, color: '#FBBF24', background: 'rgba(251,191,36,0.1)', padding: '3px 8px', borderRadius: 6 }}>⚠️ Cobrar en efectivo</span>}
+      {/* ORIGEN & PAGO */}
+      <div style={seccionCard}>
+        <div style={seccionLabel}><span>💳</span> Origen & Pago</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Método de Pago</div>
+            <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>{pedido.metodo_pago === 'tarjeta' ? '💳 Tarjeta (Online)' : '💵 Efectivo'}</div>
+            {pedido.metodo_pago === 'efectivo' && <div style={{ fontSize: 10, color: '#fcd34d', marginTop: 2 }}>⚠️ Cobrar en mano</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Canal de Venta</div>
+            <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>📱 App Móvil PIDO</div>
+          </div>
+        </div>
       </div>
 
-      {/* Productos */}
-      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 16, marginBottom: 12, border: '1px solid var(--c-border)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Productos</div>
+      {/* PRODUCTOS */}
+      <div style={seccionCard}>
+        <div style={{ ...seccionLabel, justifyContent: 'space-between' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>🛒</span> Detalle de Productos</span>
+          <span style={{ fontSize: 10, color: '#ab8985' }}>{items.length} artículo{items.length !== 1 ? 's' : ''}</span>
+        </div>
         {items.map((item, i) => (
-          <div key={i} style={{ marginBottom: i < items.length - 1 ? 10 : 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>{item.cantidad}x {item.nombre_producto}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginLeft: 8 }}>{(item.precio_unitario * item.cantidad).toFixed(2)} €</span>
+          <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: i < items.length - 1 ? 10 : 0, marginBottom: i < items.length - 1 ? 10 : 0, borderBottom: i < items.length - 1 ? '1px solid #242424' : 'none' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#ab8985', minWidth: 20, flexShrink: 0 }}>{item.cantidad}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#E5E2E1', marginBottom: 2 }}>{item.nombre_producto}</div>
+              {item.tamano && <div style={{ fontSize: 11, color: '#ab8985' }}>Tamaño: {item.tamano}</div>}
+              {item.extras_texto && <div style={{ fontSize: 11, color: '#ab8985' }}>Extras: {item.extras_texto}</div>}
             </div>
-            {item.extras_texto && <div style={{ fontSize: 11, color: 'var(--c-muted)', paddingLeft: 12, marginTop: 2 }}>+ {item.extras_texto}</div>}
-            {item.tamano && <div style={{ fontSize: 11, color: 'var(--c-muted)', paddingLeft: 12, marginTop: 2 }}>{item.tamano}</div>}
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#ffb4ab', flexShrink: 0 }}>{(item.precio_unitario * item.cantidad).toFixed(2)}€</div>
           </div>
         ))}
         {pedido.notas && (
-          <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--c-surface2)', borderRadius: 8, fontSize: 12, color: 'var(--c-muted)', fontStyle: 'italic' }}>
-            📝 {pedido.notas}
+          <div style={{ marginTop: 12, padding: '10px 12px', background: '#242424', borderRadius: 8, display: 'flex', gap: 8 }}>
+            <span style={{ flexShrink: 0, fontSize: 14 }}>📝</span>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Notas del Cliente</div>
+              <div style={{ fontSize: 12, fontStyle: 'italic', color: '#E5E2E1' }}>"{pedido.notas}"</div>
+            </div>
           </div>
         )}
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--c-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Total</span>
-          <span style={{ fontSize: 18, fontWeight: 800 }}>{(pedido.total || 0).toFixed(2)} €</span>
+      </div>
+
+      {/* RESUMEN */}
+      <div style={{ background: '#1A1A1A', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#ab8985', marginBottom: 6 }}>
+          <span>Subtotal</span><span>{((pedido.subtotal) || 0).toFixed(2)}€</span>
+        </div>
+        {pedido.coste_envio > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#ab8985', marginBottom: 6 }}>
+            <span>Coste de Envío</span><span>{(pedido.coste_envio || 0).toFixed(2)}€</span>
+          </div>
+        )}
+        {pedido.descuento > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4ade80', marginBottom: 6 }}>
+            <span>Descuento</span><span>-{(pedido.descuento || 0).toFixed(2)}€</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, color: '#ffb4ab', paddingTop: 8, borderTop: '1px solid #242424', marginTop: 4 }}>
+          <span>Total Pedido</span><span>{(pedido.total || 0).toFixed(2)}€</span>
         </div>
       </div>
 
       {/* ── Acciones según estado ── */}
 
-      {/* NUEVO: aceptar + rechazar */}
+      {/* NUEVO: selector tiempo + aceptar/rechazar */}
       {isNuevo && (
         <div style={{ marginBottom: 12 }}>
           {rechazando ? (
-            <div style={{ background: 'rgba(239,68,68,0.08)', borderRadius: 14, padding: '14px 16px', border: '1px solid rgba(239,68,68,0.2)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#EF4444', marginBottom: 10 }}>Motivo del rechazo:</div>
+            <div style={{ background: 'rgba(185,28,28,0.1)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.25)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo del rechazo</div>
               {MOTIVOS_RECHAZO.map(m => (
-                <button key={m.id} onClick={() => { onRechazar(pedido.id, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)', color: 'var(--c-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>{m.icon} {m.label}</button>
+                <button key={m.id} onClick={() => { onRechazar(pedido.id, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(185,28,28,0.08)', color: '#E5E2E1', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>{m.icon} {m.label}</button>
               ))}
-              <button onClick={() => setRechazando(false)} style={{ width: '100%', padding: '8px 0', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--c-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
-            </div>
-          ) : aceptando ? (
-            <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: '14px 16px', border: '1px solid var(--c-border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-muted)', marginBottom: 10 }}>Tiempo de preparación:</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {[15, 20, 30, 45].map(min => (
-                  <button key={min} onClick={() => { onAceptar(pedido, min); onVolver() }} style={{ flex: 1, padding: '14px 0', borderRadius: 10, border: 'none', background: 'var(--c-primary)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{min}<br /><span style={{ fontSize: 10, fontWeight: 600 }}>min</span></button>
-                ))}
-              </div>
-              <button onClick={() => setAceptando(false)} style={{ width: '100%', marginTop: 8, padding: '8px 0', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--c-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+              <button onClick={() => setRechazando(false)} style={{ width: '100%', padding: '8px 0', border: 'none', background: 'transparent', color: '#ab8985', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: '2px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#EF4444', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Rechazar</button>
-              <button onClick={() => setAceptando(true)} style={{ flex: 2, padding: '14px 0', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg, #16A34A, #22C55E)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>✅ Aceptar pedido</button>
-            </div>
+            <>
+              {/* Selector tiempo */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Seleccionar tiempo de preparación</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                  {[15, 20, 30, 45].map(min => (
+                    <button key={min} onClick={() => setMinutosSel(min)} style={{
+                      padding: '11px 0', borderRadius: 8,
+                      border: `1px solid ${minutosSel === min ? '#B91C1C' : '#353535'}`,
+                      background: minutosSel === min ? 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)' : '#1A1A1A',
+                      color: minutosSel === min ? '#fff' : '#ab8985',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      transition: 'all 0.15s',
+                    }}>{min} min</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 8, border: '1px solid #353535', background: 'transparent', color: '#E5E2E1', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  ✕ Rechazar
+                </button>
+                <button onClick={() => { onAceptar(pedido, minutosSel); onVolver() }} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  ✓ Aceptar pedido
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -520,52 +578,52 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
       {/* PREPARANDO: listo + reimprimir */}
       {(pedido.estado === 'preparando' || pedido.estado === 'aceptado') && !isNuevo && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={() => onReimprimir(pedido)} style={{ padding: '13px 16px', borderRadius: 12, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>🖨️ Reimprimir</button>
-          <button onClick={() => { onMarcarListo(pedido.id); onVolver() }} style={{ flex: 1, padding: '13px 0', borderRadius: 12, border: 'none', background: '#16A34A', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✅ Pedido listo para recoger</button>
+          <button onClick={() => onReimprimir(pedido)} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid #353535', background: '#1A1A1A', color: '#ab8985', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>🖨️</button>
+          <button onClick={() => { onMarcarListo(pedido.id); onVolver() }} style={{ flex: 1, padding: '13px 0', borderRadius: 8, border: 'none', background: 'rgba(74,222,128,0.15)', color: '#86efac', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: '1px solid rgba(74,222,128,0.3)' }}>✓ Pedido listo para recoger</button>
         </div>
       )}
 
       {/* LISTO: recogida en local */}
       {pedido.estado === 'listo' && pedido.modo_entrega === 'recogida' && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <div style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: '#DCFCE7', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#166534' }}>🏪 Esperando al cliente</div>
-          <button onClick={() => { onMarcarEntregado(pedido.id); onVolver() }} style={{ padding: '13px 18px', borderRadius: 12, border: 'none', background: '#16A34A', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Entregado</button>
+          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'rgba(74,222,128,0.1)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#86efac', border: '1px solid rgba(74,222,128,0.2)' }}>🏪 Esperando al cliente</div>
+          <button onClick={() => { onMarcarEntregado(pedido.id); onVolver() }} style={{ padding: '13px 18px', borderRadius: 8, border: 'none', background: 'rgba(74,222,128,0.2)', color: '#86efac', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: '1px solid rgba(74,222,128,0.3)' }}>Entregado</button>
         </div>
       )}
 
       {/* LISTO: delivery */}
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
-        <div style={{ padding: '13px 16px', borderRadius: 12, background: '#DCFCE7', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#166534', marginBottom: 12 }}>
+        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(74,222,128,0.08)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#86efac', marginBottom: 12, border: '1px solid rgba(74,222,128,0.2)' }}>
           🛵 Esperando repartidor (Shipday)
         </div>
       )}
 
       {/* RECOGIDO */}
       {pedido.estado === 'recogido' && (
-        <div style={{ padding: '13px 16px', borderRadius: 12, background: '#DBEAFE', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#1E40AF', marginBottom: 12 }}>
+        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(96,165,250,0.08)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#93c5fd', marginBottom: 12, border: '1px solid rgba(96,165,250,0.2)' }}>
           🛵 Repartidor recogió el pedido — en camino al cliente
         </div>
       )}
 
       {/* EN CAMINO */}
       {pedido.estado === 'en_camino' && (
-        <div style={{ padding: '13px 16px', borderRadius: 12, background: '#F3E8FF', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#6B21A8', marginBottom: 12 }}>
+        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(167,139,250,0.08)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#c4b5fd', marginBottom: 12, border: '1px solid rgba(167,139,250,0.2)' }}>
           📍 Repartidor en camino al cliente
         </div>
       )}
 
-      {/* Cancelar (todos los activos) */}
+      {/* Cancelar (activos) */}
       {!isNuevo && (
         cancelando ? (
-          <div style={{ background: 'rgba(239,68,68,0.08)', borderRadius: 14, padding: '14px 16px', border: '1px solid rgba(239,68,68,0.2)' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#EF4444', marginBottom: 10 }}>Motivo de cancelación:</div>
+          <div style={{ background: 'rgba(185,28,28,0.08)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.2)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo de cancelación</div>
             {MOTIVOS_CANCELACION.map(m => (
-              <button key={m.id} onClick={() => { onCancelar(pedido, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)', color: 'var(--c-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>{m.icon} {m.label}</button>
+              <button key={m.id} onClick={() => { onCancelar(pedido, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(185,28,28,0.06)', color: '#E5E2E1', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>{m.icon} {m.label}</button>
             ))}
-            <button onClick={() => setCancelando(false)} style={{ width: '100%', padding: '8px 0', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--c-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Volver</button>
+            <button onClick={() => setCancelando(false)} style={{ width: '100%', padding: '8px 0', border: 'none', background: 'transparent', color: '#ab8985', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Volver</button>
           </div>
         ) : (
-          <button onClick={() => setCancelando(true)} style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.06)', color: '#EF4444', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar pedido</button>
+          <button onClick={() => setCancelando(true)} style={{ width: '100%', padding: '13px 0', borderRadius: 8, border: '1px solid rgba(185,28,28,0.25)', background: 'rgba(185,28,28,0.06)', color: '#fca5a5', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar pedido</button>
         )
       )}
     </div>
