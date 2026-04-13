@@ -118,7 +118,11 @@ export default function Historial() {
     setExportando(false)
   }
 
-  const colors = { entregado: { bg: '#DCFCE7', c: '#166534' }, cancelado: { bg: '#FEE2E2', c: '#991B1B' }, fallido: { bg: '#FEF3C7', c: '#92400E' } }
+  const colors = {
+    entregado: { bg: 'rgba(74,222,128,0.12)', c: '#86efac' },
+    cancelado: { bg: 'rgba(185,28,28,0.18)', c: '#fca5a5' },
+    fallido:   { bg: 'rgba(251,191,36,0.12)', c: '#fcd34d' },
+  }
 
   const inp = { padding: '10px 14px', borderRadius: 10, border: '1px solid var(--c-border)', fontSize: 13, fontFamily: 'inherit', background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }
   const lbl = { fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4, display: 'block' }
@@ -187,13 +191,13 @@ export default function Historial() {
       {pedidos.map(p => {
         const col = colors[p.estado] || colors.entregado
         return (
-          <div key={p.id} style={{ background: 'var(--c-surface)', borderRadius: 12, padding: '14px 16px', border: '1px solid var(--c-border)', marginBottom: 10 }}>
+          <div key={p.id} style={{ background: 'var(--c-surface)', borderRadius: 12, padding: '14px 16px', marginBottom: 8, borderLeft: `2px solid ${(colors[p.estado] || colors.entregado).c}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{p.codigo}</span>
                 <span style={{ background: col.bg, color: col.c, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, textTransform: 'capitalize' }}>{p.estado}</span>
-                <span style={{ background: p.metodo_pago === 'tarjeta' ? '#DBEAFE' : '#DCFCE7', color: p.metodo_pago === 'tarjeta' ? '#1E40AF' : '#166534', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{p.metodo_pago === 'tarjeta' ? '💳' : '💵'}</span>
-                <span style={{ background: '#FFF7ED', color: '#C2410C', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>PIDO</span>
+                <span style={{ background: p.metodo_pago === 'tarjeta' ? 'rgba(96,165,250,0.15)' : 'rgba(74,222,128,0.12)', color: p.metodo_pago === 'tarjeta' ? '#93c5fd' : '#86efac', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>{p.metodo_pago === 'tarjeta' ? '💳 Tarjeta' : '💵 Efectivo'}</span>
+                <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fdba74', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>📱 PIDO</span>
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--c-muted)' }}>

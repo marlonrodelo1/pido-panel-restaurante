@@ -142,9 +142,10 @@ export default function PedidosEnVivo() {
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchPedidos() {
     try {
+      const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const [{ data: nuevos }, { data: prep }] = await Promise.all([
-        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono)').eq('establecimiento_id', restaurante.id).eq('estado', 'nuevo').order('created_at', { ascending: false }),
-        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono)').eq('establecimiento_id', restaurante.id).in('estado', ['aceptado', 'preparando', 'listo', 'recogido', 'en_camino']).order('created_at', { ascending: false }),
+        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono)').eq('establecimiento_id', restaurante.id).eq('estado', 'nuevo').gte('created_at', hace24h).order('created_at', { ascending: false }),
+        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono)').eq('establecimiento_id', restaurante.id).in('estado', ['aceptado', 'preparando', 'listo', 'recogido', 'en_camino']).gte('created_at', hace24h).order('created_at', { ascending: false }),
       ])
       setEntrantes(nuevos || [])
       setActivos(prep || [])
