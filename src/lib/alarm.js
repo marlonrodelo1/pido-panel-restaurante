@@ -100,11 +100,21 @@ export async function startAlarm() {
       })
     }
     return
-  } catch {}
+  } catch {
+    // Si falla HTML5 Audio, intentar Web Audio API
+  }
 
   // Método 2: Web Audio API
   startWebAudioAlarm()
 }
+
+// Reintentar alarma periódicamente si isPlaying pero no hay audio activo
+setInterval(() => {
+  if (isPlaying && audioElement && audioElement.paused && !alarmInterval) {
+    isPlaying = false
+    startAlarm()
+  }
+}, 3000)
 
 function startWebAudioAlarm() {
   try {

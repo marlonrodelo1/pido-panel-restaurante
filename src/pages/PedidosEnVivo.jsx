@@ -169,49 +169,40 @@ export default function PedidosEnVivo() {
   // ── Acciones ───────────────────────────────────────────────────────────────
   async function aceptarPedido(pedido, minutos) {
     const now = new Date().toISOString()
-    await supabase.from('pedidos').update({
-      estado: 'preparando', minutos_preparacion: minutos, aceptado_at: now,
-    }).eq('id', pedido.id)
+    try {
+      const { error } = await supabase.from('pedidos').update({
+        estado: 'preparando', minutos_preparacion: minutos, aceptado_at: now,
+      }).eq('id', pedido.id).select().single()
+      if (error) throw error
+    } catch (err) {
+      console.error('[aceptarPedido] Error actualizando BD:', err)
+      toast('Error al aceptar el pedido. Intenta de nuevo.', 'error')
+      return
+    }
     setEntrantes(prev => { const r = prev.filter(p => p.id !== pedido.id); if (!r.length) stopAlarm(); return r })
     setActivos(prev => [{ ...pedido, estado: 'preparando', minutos_preparacion: minutos }, ...prev])
     setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
+    setPedidoDetalleId(null)
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
-    // Enviar pedido a Shipday con retry logic (3 intentos total: 1 original + 2 reintentos)
+    // Enviar pedido a Shipday via supabase.functions.invoke (evita problemas de CORS en apps nativas)
     ;(async () => {
       const MAX_RETRIES = 2
-      const RETRY_DELAY = 2000 // 2 segundos
+      const RETRY_DELAY = 2000
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { data: { session } } = await supabase.auth.getSession()
-          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-shipday-order`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ pedido_id: pedido.id }),
+          const { error } = await supabase.functions.invoke('create-shipday-order', {
+            body: { pedido_id: pedido.id },
           })
-
-          if (response.ok) {
-            return // Éxito — salir del loop
-          }
-
-          // Si no es 2xx y es el último intento, lanzar error
-          if (attempt === MAX_RETRIES) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-          }
+          if (!error) return
+          throw error
         } catch (err) {
           console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
-
-          // Si es el último intento, mostrar toast de error al restaurante
           if (attempt === MAX_RETRIES) {
-            toast.error('No se pudo asignar repartidor automáticamente. Contáctate con soporte.')
+            toast('No se pudo asignar repartidor. Contacta con soporte.', 'error')
             return
           }
-
-          // Esperar antes de reintentar
           await new Promise(r => setTimeout(r, RETRY_DELAY))
         }
       }
