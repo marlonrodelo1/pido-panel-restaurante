@@ -13,6 +13,9 @@ if (Capacitor.isNativePlatform()) {
   ThermalPrinter = registerPlugin('ThermalPrinter')
 }
 
+// Escape HTML to prevent XSS when interpolating user data into ticket HTML
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
 // localStorage keys
 const PRINTER_CONFIG_KEY = 'pido_printer_config'
 
@@ -199,51 +202,51 @@ export function imprimirPedidoWeb(pedido, items, restaurante, tipo = 'ambos') {
 
     if (esCocina) {
       html += `<h1 style="text-align:center;font-size:20px;margin:0;">** COCINA **</h1>`
-      html += `<h2 style="text-align:center;font-size:24px;margin:8px 0;">${pedido.codigo || '---'}</h2>`
-      html += `<p style="text-align:center;">PIDO | Prep: ${pedido.minutos_preparacion || '?'} min</p>`
+      html += `<h2 style="text-align:center;font-size:24px;margin:8px 0;">${esc(pedido.codigo) || '---'}</h2>`
+      html += `<p style="text-align:center;">PIDO | Prep: ${esc(pedido.minutos_preparacion) || '?'} min</p>`
       const cl = pedido.usuarios
       if (cl) {
-        const nom = [cl.nombre, cl.apellido].filter(Boolean).join(' ')
+        const nom = [cl.nombre, cl.apellido].filter(Boolean).map(esc).join(' ')
         if (nom) html += `<p style="font-weight:bold;">Cliente: ${nom}</p>`
-        if (cl.telefono) html += `<p>Tel: ${cl.telefono}</p>`
+        if (cl.telefono) html += `<p>Tel: ${esc(cl.telefono)}</p>`
       }
-      if (pedido.direccion_entrega) html += `<p>Dir: ${pedido.direccion_entrega}</p>`
+      if (pedido.direccion_entrega) html += `<p>Dir: ${esc(pedido.direccion_entrega)}</p>`
       html += `<hr style="border:2px dashed #000;">`
       for (const item of items || []) {
-        html += `<p style="font-size:16px;font-weight:bold;margin:4px 0;">${item.cantidad}x ${item.nombre_producto}</p>`
+        html += `<p style="font-size:16px;font-weight:bold;margin:4px 0;">${esc(item.cantidad)}x ${esc(item.nombre_producto)}</p>`
       }
       if (pedido.notas) {
-        html += `<hr style="border:1px solid #000;"><p style="font-weight:bold;">NOTAS: ${pedido.notas}</p><hr style="border:1px solid #000;">`
+        html += `<hr style="border:1px solid #000;"><p style="font-weight:bold;">NOTAS: ${esc(pedido.notas)}</p><hr style="border:1px solid #000;">`
       }
       html += `<p style="text-align:center;font-weight:bold;">Pago: ${pedido.metodo_pago === 'efectivo' ? 'EFECTIVO' : 'TARJETA'}</p>`
     } else {
-      html += `<h1 style="text-align:center;font-size:18px;margin:0;">${restaurante?.nombre || 'PIDO'}</h1>`
-      if (restaurante?.direccion) html += `<p style="text-align:center;margin:2px 0;">${restaurante.direccion}</p>`
-      if (restaurante?.telefono) html += `<p style="text-align:center;margin:2px 0;">Tel: ${restaurante.telefono}</p>`
+      html += `<h1 style="text-align:center;font-size:18px;margin:0;">${esc(restaurante?.nombre) || 'PIDO'}</h1>`
+      if (restaurante?.direccion) html += `<p style="text-align:center;margin:2px 0;">${esc(restaurante.direccion)}</p>`
+      if (restaurante?.telefono) html += `<p style="text-align:center;margin:2px 0;">Tel: ${esc(restaurante.telefono)}</p>`
       html += `<hr style="border:2px solid #000;">`
       html += `<h3 style="text-align:center;">TICKET DE PEDIDO</h3>`
       html += `<hr>`
-      html += `<p>Pedido: ${pedido.codigo}</p>`
-      html += `<p>Fecha: ${new Date(pedido.created_at).toLocaleString('es-ES')}</p>`
+      html += `<p>Pedido: ${esc(pedido.codigo)}</p>`
+      html += `<p>Fecha: ${esc(new Date(pedido.created_at).toLocaleString('es-ES'))}</p>`
       html += `<p>Pago: ${pedido.metodo_pago === 'efectivo' ? 'Efectivo' : 'Tarjeta'}</p>`
       html += `<hr>`
       const cl2 = pedido.usuarios
       if (cl2) {
-        const nom2 = [cl2.nombre, cl2.apellido].filter(Boolean).join(' ')
+        const nom2 = [cl2.nombre, cl2.apellido].filter(Boolean).map(esc).join(' ')
         if (nom2) html += `<p><strong>Cliente:</strong> ${nom2}</p>`
-        if (cl2.telefono) html += `<p><strong>Tel:</strong> ${cl2.telefono}</p>`
+        if (cl2.telefono) html += `<p><strong>Tel:</strong> ${esc(cl2.telefono)}</p>`
       }
-      if (pedido.direccion_entrega) html += `<p><strong>Entrega:</strong> ${pedido.direccion_entrega}</p>`
+      if (pedido.direccion_entrega) html += `<p><strong>Entrega:</strong> ${esc(pedido.direccion_entrega)}</p>`
       html += `<hr>`
       for (const item of items || []) {
         const imp = (item.precio_unitario * item.cantidad).toFixed(2)
-        html += `<p style="margin:2px 0;">${item.cantidad}x ${item.nombre_producto}<span style="float:right;">${imp} EUR</span></p>`
+        html += `<p style="margin:2px 0;">${esc(item.cantidad)}x ${esc(item.nombre_producto)}<span style="float:right;">${esc(imp)} EUR</span></p>`
       }
       html += `<hr style="border:2px solid #000;">`
-      html += `<p style="font-size:16px;font-weight:bold;text-align:center;">TOTAL: ${(pedido.total || 0).toFixed(2)} EUR</p>`
+      html += `<p style="font-size:16px;font-weight:bold;text-align:center;">TOTAL: ${esc((pedido.total || 0).toFixed(2))} EUR</p>`
       html += `<hr style="border:2px solid #000;">`
-      if (pedido.notas) html += `<p>Nota: ${pedido.notas}</p>`
-      html += `<p style="text-align:center;">Tiempo: ~${pedido.minutos_preparacion || '?'} min</p>`
+      if (pedido.notas) html += `<p>Nota: ${esc(pedido.notas)}</p>`
+      html += `<p style="text-align:center;">Tiempo: ~${esc(pedido.minutos_preparacion) || '?'} min</p>`
       html += `<p style="text-align:center;font-weight:bold;">Gracias por tu pedido!</p>`
       html += `<p style="text-align:center;">pidoo.es</p>`
     }

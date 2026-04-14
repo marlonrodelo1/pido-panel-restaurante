@@ -15,14 +15,15 @@ try {
   console.warn('[SW] Firebase scripts failed to load:', e)
 }
 
+
 if (typeof firebase !== 'undefined') {
 firebase.initializeApp({
-  apiKey: "AIzaSyC6z4uvYd1TVHzTN7zuE36R3nkiJBHx6rw",
-  authDomain: "pidoo-push.firebaseapp.com",
-  projectId: "pidoo-push",
-  storageBucket: "pidoo-push.firebasestorage.app",
-  messagingSenderId: "797553895667",
-  appId: "1:797553895667:web:a2797733db94b6116daf86",
+  apiKey: "__FIREBASE_API_KEY__",
+  authDomain: "__FIREBASE_AUTH_DOMAIN__",
+  projectId: "__FIREBASE_PROJECT_ID__",
+  storageBucket: "__FIREBASE_STORAGE_BUCKET__",
+  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+  appId: "__FIREBASE_APP_ID__",
 })
 
 const messaging = firebase.messaging()

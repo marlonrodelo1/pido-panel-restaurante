@@ -38,7 +38,6 @@ export async function registerPushNotifications(userType, ids = {}, onNotificati
 
   // Notificación recibida en primer plano
   PushNotifications.addListener('pushNotificationReceived', (notification) => {
-    console.log('Push recibida:', notification)
     if (onNotification) onNotification(notification)
   })
 

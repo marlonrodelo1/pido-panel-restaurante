@@ -77,6 +77,8 @@ export default function PedidosEnVivo() {
         event: 'INSERT', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, async payload => {
+        // Filtrar por canal = 'pido' para evitar actualizar con pedidos de otros canales
+        if (payload.new.canal !== 'pido') return
         let pedidoConCliente = payload.new
         if (payload.new.usuario_id) {
           const { data: usr } = await supabase.from('usuarios').select('nombre, apellido, telefono').eq('id', payload.new.usuario_id).single()
@@ -92,6 +94,8 @@ export default function PedidosEnVivo() {
         event: 'UPDATE', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, payload => {
+        // Filtrar por canal = 'pido' para evitar cambios de otros canales
+        if (payload.new.canal !== 'pido') return
         const p = payload.new
         if (['entregado', 'cancelado'].includes(p.estado)) {
           setActivos(prev => prev.filter(x => x.id !== p.id))
@@ -117,27 +121,22 @@ export default function PedidosEnVivo() {
         const n = { ...prev }
         Object.keys(n).forEach(id => {
           if (n[id] > 0) { n[id] -= 1 }
-          else if (n[id] === 0) { n[id] = -1; autoCancelarPedido(id) }
+          else if (n[id] === 0) {
+            n[id] = -1
+            // Llamada async con error handling
+            autoCancelarPedido(id).catch(err => {
+              console.error(`[AutoCancel] Error cancelando pedido ${id}:`, err)
+              // Marcar el pedido como en error para que el restaurante lo vea
+              setEntrantes(prev => prev.map(p => p.id === id ? { ...p, cancelError: true } : p))
+              // No reintentar automáticamente — el usuario debe actuar manualmente
+            })
+          }
         })
         return n
       })
     }, 1000)
     return () => clearInterval(i)
-  }, [entrantes.length])
-
-  // ── Polling rider timeout ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (activos.length === 0) return
-    const check = () => {
-      fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rider_timeout`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: '{}',
-      }).then(() => fetchPedidos()).catch(() => {})
-    }
-    const interval = setInterval(check, 30000)
-    check()
-    return () => clearInterval(interval)
-  }, [activos.length])
+  }, [entrantes.length, restaurante?.id])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchPedidos() {
@@ -178,20 +177,43 @@ export default function PedidosEnVivo() {
     setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
-    // Fire-and-forget: enviar pedido a Shipday para asignación de rider
+    // Enviar pedido a Shipday con retry logic (3 intentos total: 1 original + 2 reintentos)
     ;(async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        await fetch('https://rmrbxrabngdmpgpfmjbo.supabase.co/functions/v1/create-shipday-order', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ pedido_id: pedido.id }),
-        })
-      } catch (err) {
-        console.error('[Shipday] Error al crear order:', err)
+      const MAX_RETRIES = 2
+      const RETRY_DELAY = 2000 // 2 segundos
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-shipday-order`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ pedido_id: pedido.id }),
+          })
+
+          if (response.ok) {
+            return // Éxito — salir del loop
+          }
+
+          // Si no es 2xx y es el último intento, lanzar error
+          if (attempt === MAX_RETRIES) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+        } catch (err) {
+          console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
+
+          // Si es el último intento, mostrar toast de error al restaurante
+          if (attempt === MAX_RETRIES) {
+            toast.error('No se pudo asignar repartidor automáticamente. Contáctate con soporte.')
+            return
+          }
+
+          // Esperar antes de reintentar
+          await new Promise(r => setTimeout(r, RETRY_DELAY))
+        }
       }
     })()
   }
@@ -264,7 +286,8 @@ export default function PedidosEnVivo() {
     const pedido = activos.find(p => p.id === id)
     await supabase.from('pedidos').update({ estado: 'entregado', entregado_at: new Date().toISOString() }).eq('id', id)
     setActivos(prev => prev.filter(p => p.id !== id))
-    supabase.functions.invoke('calcular_comisiones', { body: { pedido_id: id } }).catch(() => {})
+    // TODO: implementar Edge Function calcular_comisiones
+    // supabase.functions.invoke('calcular_comisiones', { body: { pedido_id: id } }).catch(() => {})
     if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido entregado', body: `Tu pedido ${pedido.codigo} ha sido entregado. ¡Gracias!` })
   }
 
