@@ -181,13 +181,14 @@ export default function PedidosEnVivo() {
     setActivos(prev => [{ ...pedido, estado: 'preparando', minutos_preparacion: minutos }, ...prev])
     setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
     setPedidoDetalleId(null)
+    toast('Pedido aceptado correctamente', 'success')
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
     // Enviar pedido a Shipday solo si es delivery (recogida no necesita repartidor)
-    if (pedido.modo_entrega !== 'recogida') {
+    if (pedido.modo_entrega === 'delivery') {
       ;(async () => {
-        const MAX_RETRIES = 2
-        const RETRY_DELAY = 2000
+        const MAX_RETRIES = 1
+        const RETRY_DELAY = 3000
 
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
@@ -202,7 +203,7 @@ export default function PedidosEnVivo() {
           } catch (err) {
             console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
             if (attempt === MAX_RETRIES) {
-              toast('No se pudo asignar repartidor. Contacta con soporte.', 'error')
+              toast('Pedido aceptado. Repartidor no asignado automáticamente — revisa Shipday.', 'error')
               return
             }
             await new Promise(r => setTimeout(r, RETRY_DELAY))
