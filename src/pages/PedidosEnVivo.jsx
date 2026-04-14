@@ -183,28 +183,33 @@ export default function PedidosEnVivo() {
     setPedidoDetalleId(null)
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
-    // Enviar pedido a Shipday via supabase.functions.invoke (evita problemas de CORS en apps nativas)
-    ;(async () => {
-      const MAX_RETRIES = 2
-      const RETRY_DELAY = 2000
+    // Enviar pedido a Shipday solo si es delivery (recogida no necesita repartidor)
+    if (pedido.modo_entrega !== 'recogida') {
+      ;(async () => {
+        const MAX_RETRIES = 2
+        const RETRY_DELAY = 2000
 
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          const { error } = await supabase.functions.invoke('create-shipday-order', {
-            body: { pedido_id: pedido.id },
-          })
-          if (!error) return
-          throw error
-        } catch (err) {
-          console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
-          if (attempt === MAX_RETRIES) {
-            toast('No se pudo asignar repartidor. Contacta con soporte.', 'error')
-            return
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            const { data, error } = await supabase.functions.invoke('create-shipday-order', {
+              body: { pedido_id: pedido.id },
+            })
+            if (!error) {
+              console.log(`[Shipday] Pedido ${pedido.codigo} enviado correctamente`, data)
+              return
+            }
+            throw error
+          } catch (err) {
+            console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
+            if (attempt === MAX_RETRIES) {
+              toast('No se pudo asignar repartidor. Contacta con soporte.', 'error')
+              return
+            }
+            await new Promise(r => setTimeout(r, RETRY_DELAY))
           }
-          await new Promise(r => setTimeout(r, RETRY_DELAY))
         }
-      }
-    })()
+      })()
+    }
   }
 
   async function rechazarPedido(id, motivo) {
