@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, BarChart3, Tag, MessageCircle, ToggleLeft, Printer, Globe } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, BarChart3, Tag, MessageCircle, ToggleLeft, Printer, Globe, Users } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -19,10 +19,11 @@ import Soporte from './pages/Soporte'
 import DisponibilidadProductos from './pages/DisponibilidadProductos'
 import ConfigImpresora from './pages/ConfigImpresora'
 import Activacion from './pages/Activacion'
+import Socios from './pages/Socios'
 
 const isNative = Capacitor.isNativePlatform()
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings }
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, socios: Users, ajustes: Settings }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, disponibilidad: ToggleLeft, impresora: Printer }
 
 function AppContent() {
@@ -89,6 +90,7 @@ function AppContent() {
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
+        { id: 'socios', label: 'Socios' },
         { id: 'ajustes', label: 'Ajustes' },
       ]
 
@@ -106,6 +108,30 @@ function AppContent() {
 function AppInner({ seccion, setSeccion, nav }) {
   const { restaurante } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
+  const [sociosPendientes, setSociosPendientes] = useState(0)
+
+  useEffect(() => {
+    if (!restaurante) return
+    async function fetchPendientes() {
+      const { count } = await supabase
+        .from('socio_establecimiento')
+        .select('id', { count: 'exact', head: true })
+        .eq('establecimiento_id', restaurante.id)
+        .eq('estado', 'pendiente')
+      setSociosPendientes(count || 0)
+    }
+    fetchPendientes()
+
+    const ch = supabase
+      .channel(`pending-badge-${restaurante.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'socio_establecimiento',
+        filter: `establecimiento_id=eq.${restaurante.id}`,
+      }, fetchPendientes)
+      .subscribe()
+
+    return () => { supabase.removeChannel(ch) }
+  }, [restaurante?.id])
 
   async function abrirPanelWeb() {
     try {
@@ -213,6 +239,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'historial' && <Historial />}
         {seccion === 'carta' && <Carta />}
         {seccion === 'promos' && <Promociones />}
+        {seccion === 'socios' && <Socios />}
         {seccion === 'soporte' && <Soporte />}
         {seccion === 'metricas' && <Metricas />}
         {seccion === 'ajustes' && <Ajustes />}
@@ -239,6 +266,15 @@ function AppInner({ seccion, setSeccion, nav }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 animation: 'pulse 1s infinite',
               }}>{pedidosNuevos.length}</span>
+            )}
+            {!isNative && n.id === 'socios' && sociosPendientes > 0 && (
+              <span style={{
+                position: 'absolute', top: -2, right: 0,
+                width: 16, height: 16, borderRadius: 8,
+                background: '#EF4444', color: '#fff',
+                fontSize: 9, fontWeight: 800,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>{sociosPendientes}</span>
             )}
           </button>
         ))}
