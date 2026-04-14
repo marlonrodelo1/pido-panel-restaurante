@@ -169,13 +169,11 @@ export default function PedidosEnVivo() {
   // ── Acciones ───────────────────────────────────────────────────────────────
   async function aceptarPedido(pedido, minutos) {
     const now = new Date().toISOString()
-    try {
-      const { error } = await supabase.from('pedidos').update({
-        estado: 'preparando', minutos_preparacion: minutos, aceptado_at: now,
-      }).eq('id', pedido.id).select().single()
-      if (error) throw error
-    } catch (err) {
-      console.error('[aceptarPedido] Error actualizando BD:', err)
+    const { error: updateError } = await supabase.from('pedidos').update({
+      estado: 'preparando', minutos_preparacion: minutos, aceptado_at: now,
+    }).eq('id', pedido.id)
+    if (updateError) {
+      console.error('[aceptarPedido] Error actualizando BD:', updateError)
       toast('Error al aceptar el pedido. Intenta de nuevo.', 'error')
       return
     }
