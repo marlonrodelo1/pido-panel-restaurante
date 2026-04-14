@@ -28,10 +28,10 @@ const NAV_ICONS_NATIVE = { pedidos: ClipboardList, disponibilidad: ToggleLeft, i
 
 function AppContent() {
   const { user, restaurante, loading } = useRest()
-  const [seccion, setSeccion] = useState(isNative ? 'pedidos' : 'historial')
+  const [seccion, setSeccion] = useState('pedidos')
 
   const handleNuevoPedido = useCallback(() => {
-    if (isNative) setSeccion('pedidos')
+    setSeccion('pedidos')
   }, [])
 
   useEffect(() => {
@@ -87,6 +87,7 @@ function AppContent() {
         { id: 'impresora', label: 'Config' },
       ]
     : [
+        { id: 'pedidos', label: 'Pedidos' },
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
@@ -94,15 +95,11 @@ function AppContent() {
         { id: 'ajustes', label: 'Ajustes' },
       ]
 
-  if (isNative) {
-    return (
-      <PedidoAlertProvider onNuevoPedido={handleNuevoPedido}>
-        <AppInner seccion={seccion} setSeccion={setSeccion} nav={nav} />
-      </PedidoAlertProvider>
-    )
-  }
-
-  return <AppInner seccion={seccion} setSeccion={setSeccion} nav={nav} />
+  return (
+    <PedidoAlertProvider onNuevoPedido={handleNuevoPedido}>
+      <AppInner seccion={seccion} setSeccion={setSeccion} nav={nav} />
+    </PedidoAlertProvider>
+  )
 }
 
 function AppInner({ seccion, setSeccion, nav }) {
@@ -161,7 +158,7 @@ function AppInner({ seccion, setSeccion, nav }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isNative && pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
+          {pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
             <button onClick={() => setSeccion('pedidos')} style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px',
               borderRadius: 10, border: 'none', background: '#FEF2F2',
@@ -202,8 +199,8 @@ function AppInner({ seccion, setSeccion, nav }) {
         </div>
       </div>
 
-      {/* Banner flotante cuando hay pedidos nuevos y NO estamos en Pedidos (solo APP nativa) */}
-      {isNative && pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
+      {/* Banner flotante cuando hay pedidos nuevos y NO estamos en Pedidos */}
+      {pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
         <button onClick={() => setSeccion('pedidos')} style={{
           position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
           width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100,
@@ -257,7 +254,7 @@ function AppInner({ seccion, setSeccion, nav }) {
           }}>
             {(() => { const Icon = navIcons[n.id]; return Icon ? <Icon size={20} strokeWidth={seccion === n.id ? 2.5 : 1.8} /> : null })()}
             {n.label}
-            {isNative && n.id === 'pedidos' && pedidosNuevos.length > 0 && (
+            {n.id === 'pedidos' && pedidosNuevos.length > 0 && (
               <span style={{
                 position: 'absolute', top: -2, right: 0,
                 width: 16, height: 16, borderRadius: 8,
