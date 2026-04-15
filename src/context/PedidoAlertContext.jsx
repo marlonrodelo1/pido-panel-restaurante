@@ -29,11 +29,13 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
     requestNotificationPermission()
     fetchNuevos()
 
-    const channel = supabase.channel('pedidos-rest-global')
+    const channel = supabase.channel('pedidos-rest-' + restaurante.id)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, payload => {
+        // Filtrar por canal = 'pido' para evitar alertas de otros canales
+        if (payload.new.canal !== 'pido') return
         setPedidosNuevos(prev => [payload.new, ...prev])
         startAlarm()
         notificarNuevoPedido(payload.new.codigo)
@@ -43,6 +45,8 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         event: 'UPDATE', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, payload => {
+        // Filtrar por canal = 'pido' para evitar cambios de otros canales
+        if (payload.new.canal !== 'pido') return
         const p = payload.new
         if (p.estado !== 'nuevo') {
           // Pedido ya no es nuevo (aceptado, cancelado, etc.) — quitar de la lista

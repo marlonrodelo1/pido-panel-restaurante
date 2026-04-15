@@ -3,15 +3,15 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging'
 import { supabase } from './supabase'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC6z4uvYd1TVHzTN7zuE36R3nkiJBHx6rw",
-  authDomain: "pidoo-push.firebaseapp.com",
-  projectId: "pidoo-push",
-  storageBucket: "pidoo-push.firebasestorage.app",
-  messagingSenderId: "797553895667",
-  appId: "1:797553895667:web:a2797733db94b6116daf86",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-const VAPID_KEY = 'BCi6cNn5m6sQtE5c00relAV4Gy91ZaceufC-aqC4DjF0cU6WvX8qlOm1NjOrIEhk_x-y8sf67Z453XJopHlE7WY'
+const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY
 
 let messaging = null
 
