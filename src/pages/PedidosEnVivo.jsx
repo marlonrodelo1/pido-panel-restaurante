@@ -6,6 +6,7 @@ import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
 import { toast } from '../App'
+import { Truck } from 'lucide-react'
 
 // ─── Badges ────────────────────────────────────────────────────────────────
 function PagoBadge({ pago }) {
@@ -82,6 +83,10 @@ export default function PedidosEnVivo() {
           const { data: usr } = await supabase.from('usuarios').select('nombre, apellido, telefono').eq('id', payload.new.usuario_id).single()
           if (usr) pedidoConCliente = { ...payload.new, usuarios: usr }
         }
+        if (payload.new.rider_account_id) {
+          const { data: rider } = await supabase.from('rider_accounts').select('id, nombre, telefono').eq('id', payload.new.rider_account_id).single()
+          if (rider) pedidoConCliente = { ...pedidoConCliente, rider_accounts: rider }
+        }
         setEntrantes(prev => [pedidoConCliente, ...prev])
         setTimers(prev => ({ ...prev, [payload.new.id]: 180 }))
         const { data: newItems } = await supabase.from('pedido_items').select('*').eq('pedido_id', payload.new.id)
@@ -91,7 +96,7 @@ export default function PedidosEnVivo() {
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
-      }, payload => {
+      }, async payload => {
         if (payload.new.canal !== 'pido') return
         const p = payload.new
         if (['entregado', 'cancelado'].includes(p.estado)) {
@@ -102,7 +107,18 @@ export default function PedidosEnVivo() {
             return remaining
           })
         } else if (['aceptado', 'preparando', 'listo', 'recogido', 'en_camino'].includes(p.estado)) {
-          setActivos(prev => prev.map(x => x.id === p.id ? { ...x, ...p } : x))
+          let rider_accounts = null
+          if (p.rider_account_id && p.rider_account_id !== payload.old?.rider_account_id) {
+            const { data } = await supabase.from('rider_accounts').select('id, nombre, telefono').eq('id', p.rider_account_id).single()
+            rider_accounts = data || null
+          }
+          setActivos(prev => prev.map(x => {
+            if (x.id !== p.id) return x
+            const merged = { ...x, ...p }
+            if (rider_accounts) merged.rider_accounts = rider_accounts
+            else if (!p.rider_account_id) merged.rider_accounts = null
+            return merged
+          }))
         }
       })
       .subscribe()
@@ -137,8 +153,8 @@ export default function PedidosEnVivo() {
     try {
       const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const [{ data: nuevos }, { data: prep }] = await Promise.all([
-        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono)').eq('establecimiento_id', restaurante.id).eq('estado', 'nuevo').gte('created_at', hace24h).order('created_at', { ascending: false }),
-        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono)').eq('establecimiento_id', restaurante.id).in('estado', ['aceptado', 'preparando', 'listo', 'recogido', 'en_camino']).gte('created_at', hace24h).order('created_at', { ascending: false }),
+        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono), rider_accounts(id, nombre, telefono)').eq('establecimiento_id', restaurante.id).eq('estado', 'nuevo').gte('created_at', hace24h).order('created_at', { ascending: false }),
+        supabase.from('pedidos').select('*, usuarios(nombre, apellido, telefono), rider_accounts(id, nombre, telefono)').eq('establecimiento_id', restaurante.id).in('estado', ['aceptado', 'preparando', 'listo', 'recogido', 'en_camino']).gte('created_at', hace24h).order('created_at', { ascending: false }),
       ])
       setEntrantes(nuevos || [])
       setActivos(prep || [])
@@ -407,7 +423,10 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
       <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{pedido.codigo}</div>
 
       {/* Nombre cliente */}
-      <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: 14 }}>{nombre}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: pedido.modo_entrega === 'delivery' ? 8 : 14 }}>{nombre}</div>
+
+      {/* Rider info (solo delivery) */}
+      {pedido.modo_entrega === 'delivery' && <RiderInfo pedido={pedido} />}
 
       {/* Precio + botón acción */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -428,6 +447,72 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
   )
 }
 
+// ─── Rider info (para delivery) ────────────────────────────────────────────
+function RiderInfo({ pedido }) {
+  const rider = pedido.rider_accounts
+  const sinRiders = pedido.shipday_status === 'no_rider'
+  const intento = pedido.intento_asignacion || 0
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+      {rider ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#E5E2E1' }}>
+          <Truck size={13} color="#ab8985" />
+          <span>Rider: <strong>{rider.nombre}</strong>{rider.telefono ? ` · ${rider.telefono}` : ''}</span>
+        </div>
+      ) : sinRiders ? (
+        <span style={{ background: 'rgba(185,28,28,0.2)', color: '#fca5a5', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Sin riders disponibles</span>
+      ) : (
+        <span style={{ background: 'rgba(251,191,36,0.15)', color: '#fcd34d', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Sin asignar</span>
+      )}
+      {intento > 1 && (
+        <span style={{ background: 'rgba(251,146,60,0.15)', color: '#fdba74', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Reintento {intento}/3</span>
+      )}
+    </div>
+  )
+}
+
+// ─── Modal Reasignar rider ─────────────────────────────────────────────────
+function ModalReasignar({ pedido, onClose }) {
+  const [motivo, setMotivo] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function confirmar() {
+    setLoading(true)
+    try {
+      const { error } = await supabase.functions.invoke('reassign-pedido', { body: { pedido_id: pedido.id, motivo } })
+      if (error) throw error
+      toast('Pedido reasignado al siguiente rider disponible', 'success')
+      onClose()
+    } catch (err) {
+      console.error('[Reasignar]', err)
+      toast(err?.message || 'Error al reasignar el pedido', 'error')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#1A1A1A', borderRadius: 12, padding: 20, width: '100%', maxWidth: 420, border: '1px solid #353535' }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#E5E2E1', marginBottom: 6 }}>Reasignar pedido</div>
+        <div style={{ fontSize: 12, color: '#ab8985', marginBottom: 14 }}>Se buscará el siguiente rider disponible más cercano.</div>
+        <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Motivo (opcional)</label>
+        <textarea
+          value={motivo}
+          onChange={e => setMotivo(e.target.value)}
+          placeholder="Ej: el rider no contesta"
+          rows={3}
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #353535', background: '#242424', color: '#E5E2E1', fontSize: 12, fontFamily: 'inherit', resize: 'vertical', marginBottom: 14, boxSizing: 'border-box' }}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onClose} disabled={loading} style={{ flex: 1, padding: '11px 0', borderRadius: 8, border: '1px solid #353535', background: 'transparent', color: '#E5E2E1', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+          <button onClick={confirmar} disabled={loading} style={{ flex: 1, padding: '11px 0', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: loading ? 0.6 : 1 }}>{loading ? 'Reasignando...' : 'Confirmar'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Pantalla de detalle ───────────────────────────────────────────────────
 const seccionLabel = { fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'block' }
 const seccionCard = { background: '#1A1A1A', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }
@@ -436,6 +521,12 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
   const [rechazando, setRechazando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [minutosSel, setMinutosSel] = useState(20)
+  const [reasignando, setReasignando] = useState(false)
+
+  const puedeReasignar = pedido.modo_entrega === 'delivery'
+    && ['preparando', 'listo', 'nuevo', 'aceptado'].includes(pedido.estado) // 'aceptado' equivale a 'preparando' en este panel
+    && !!pedido.rider_accounts
+    && pedido.shipday_status !== 'no_rider'
 
   const nombre = pedido.usuarios?.nombre
     ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
@@ -475,6 +566,21 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
           <span style={{ fontSize: 12, color: '#ab8985' }}>Tiempo estimado: <strong style={{ color: '#fcd34d' }}>{pedido.minutos_preparacion} min</strong></span>
         </div>
       )}
+
+      {/* RIDER (solo delivery) */}
+      {pedido.modo_entrega === 'delivery' && (
+        <div style={seccionCard}>
+          <span style={seccionLabel}>Repartidor</span>
+          <RiderInfo pedido={pedido} />
+          {puedeReasignar && (
+            <button onClick={() => setReasignando(true)} style={{ marginTop: 4, padding: '8px 14px', borderRadius: 8, border: '1px solid #353535', background: '#242424', color: '#E5E2E1', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Reasignar
+            </button>
+          )}
+        </div>
+      )}
+
+      {reasignando && <ModalReasignar pedido={pedido} onClose={() => setReasignando(false)} />}
 
       {/* CLIENTE */}
       <div style={seccionCard}>
@@ -530,6 +636,9 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
           </div>
         )}
       </div>
+
+      {/* HISTORIAL ASIGNACIÓN (solo delivery) */}
+      {pedido.modo_entrega === 'delivery' && <HistorialAsignacion pedidoId={pedido.id} />}
 
       {/* RESUMEN */}
       <div style={{ background: '#1A1A1A', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
@@ -643,6 +752,60 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
           <button onClick={() => setCancelando(true)} style={{ width: '100%', padding: '13px 0', borderRadius: 8, border: '1px solid rgba(185,28,28,0.25)', background: 'rgba(185,28,28,0.06)', color: '#fca5a5', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar pedido</button>
         )
       )}
+    </div>
+  )
+}
+
+// ─── Historial de asignaciones (delivery) ──────────────────────────────────
+function HistorialAsignacion({ pedidoId }) {
+  const [historial, setHistorial] = useState(null)
+
+  useEffect(() => {
+    let cancel = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('pedido_asignaciones')
+        .select('id, rider_account_id, intento, estado, created_at, resolved_at, motivo_rechazo, rider_accounts(nombre)')
+        .eq('pedido_id', pedidoId)
+        .order('intento', { ascending: true })
+      if (cancel) return
+      if (error) { setHistorial([]); return }
+      setHistorial(data || [])
+    })()
+    return () => { cancel = true }
+  }, [pedidoId])
+
+  if (!historial || historial.length === 0) return null
+
+  const fmt = iso => iso ? new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''
+
+  const iconoEstado = (estado) => {
+    if (estado === 'aceptado') return { icon: '✅', label: 'Aceptado', color: '#86efac' }
+    if (estado === 'rechazado') return { icon: '❌', label: 'Rechazado', color: '#fca5a5' }
+    if (estado === 'timeout') return { icon: '⏱', label: 'Timeout', color: '#fdba74' }
+    if (estado === 'cancelado') return { icon: '⊘', label: 'Cancelado', color: '#ab8985' }
+    return { icon: '⏳', label: 'Esperando aceptación', color: '#fcd34d' }
+  }
+
+  return (
+    <div style={seccionCard}>
+      <span style={seccionLabel}>Historial de asignación</span>
+      {historial.map((h, i) => {
+        const est = iconoEstado(h.estado)
+        const riderNombre = h.rider_accounts?.nombre || 'Rider'
+        return (
+          <div key={h.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingBottom: i < historial.length - 1 ? 8 : 0, marginBottom: i < historial.length - 1 ? 8 : 0, borderBottom: i < historial.length - 1 ? '1px solid #242424' : 'none' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#ab8985', minWidth: 52, flexShrink: 0 }}>#{h.intento || i + 1}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>{riderNombre} · <span style={{ color: '#ab8985', fontWeight: 500 }}>{fmt(h.created_at)}</span></div>
+              <div style={{ fontSize: 11, color: est.color, marginTop: 2 }}>
+                {est.icon} {est.label}{h.resolved_at ? ` ${fmt(h.resolved_at)}` : ''}
+                {h.motivo_rechazo ? ` · ${h.motivo_rechazo}` : ''}
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
