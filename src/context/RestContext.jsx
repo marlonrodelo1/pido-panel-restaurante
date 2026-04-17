@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { registerWebPush } from '../lib/webPush'
-import { registerPushNotifications } from '../lib/pushNotifications'
+import { registerWebPush, unregisterWebPush } from '../lib/webPush'
+import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications'
 
 const RestContext = createContext({})
 
@@ -130,7 +130,13 @@ export function RestProvider({ children }) {
     return data
   }
 
-  async function logout() { await supabase.auth.signOut() }
+  async function logout() {
+    if (restaurante?.id) {
+      try { await unregisterWebPush('restaurante', { establecimiento_id: restaurante.id }) } catch {}
+      try { await unregisterPushNotifications() } catch {}
+    }
+    await supabase.auth.signOut()
+  }
 
   return (
     <RestContext.Provider value={{ user, restaurante, loading, authError, setAuthError, login, registro, logout, updateRestaurante, refetch: () => fetchRestaurante(user?.id) }}>

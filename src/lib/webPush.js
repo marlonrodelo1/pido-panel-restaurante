@@ -109,6 +109,23 @@ export async function registerWebPush(userType, ids = {}) {
 }
 
 /**
+ * Borra los tokens push de este usuario al cerrar sesión.
+ */
+export async function unregisterWebPush(userType, ids = {}) {
+  try {
+    const idField = ids.socio_id ? 'socio_id' : ids.establecimiento_id ? 'establecimiento_id' : ids.user_id ? 'user_id' : null
+    const idValue = ids.socio_id || ids.establecimiento_id || ids.user_id
+    if (!idField || !idValue) return
+    await supabase.from('push_subscriptions')
+      .delete()
+      .eq(idField, idValue)
+      .eq('user_type', userType)
+  } catch (err) {
+    console.warn('[unregisterWebPush] error:', err)
+  }
+}
+
+/**
  * Envía una notificación push vía Edge Function.
  */
 export async function sendPush({ targetType, targetId, title, body, data }) {
