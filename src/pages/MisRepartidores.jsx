@@ -1,0 +1,323 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { useRest } from '../context/RestContext'
+import { toast } from '../App'
+
+const ESTADOS = {
+  pendiente: { label: 'Pendiente de aprobación', bg: 'rgba(245,158,11,0.15)', color: '#FBBF24' },
+  activa: { label: 'Activo', bg: 'rgba(34,197,94,0.15)', color: '#4ade80' },
+  rechazada: { label: 'Rechazado', bg: 'rgba(239,68,68,0.15)', color: '#F87171' },
+}
+
+export default function MisRepartidores() {
+  const { restaurante } = useRest()
+  const [vinc, setVinc] = useState([])
+  const [status, setStatus] = useState({})
+  const [showAdd, setShowAdd] = useState(false)
+
+  useEffect(() => {
+    if (!restaurante?.id) return
+    load()
+    const channel = supabase.channel(`mis-riders-${restaurante.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_status' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurante_riders', filter: `establecimiento_id=eq.${restaurante.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_accounts' }, load)
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [restaurante?.id])
+
+  async function load() {
+    const { data } = await supabase.from('restaurante_riders')
+      .select('prioridad, rider_accounts(id, nombre, telefono, email, activa, estado, motivo_rechazo, shipday_api_key)')
+      .eq('establecimiento_id', restaurante.id)
+      .order('prioridad', { ascending: true })
+    setVinc(data || [])
+    const ids = (data || []).map(v => v.rider_accounts?.id).filter(Boolean)
+    if (ids.length > 0) {
+      const { data: st } = await supabase.from('rider_status').select('*').in('rider_account_id', ids)
+      const map = {}
+      ;(st || []).forEach(s => { map[s.rider_account_id] = s })
+      setStatus(map)
+    } else {
+      setStatus({})
+    }
+  }
+
+  async function desvincular(rider) {
+    if (!confirm(`¿Desvincular "${rider.nombre}" de tu restaurante?`)) return
+    const { error } = await supabase.from('restaurante_riders')
+      .delete()
+      .eq('establecimiento_id', restaurante.id)
+      .eq('rider_account_id', rider.id)
+    if (error) return toast('Error: ' + error.message, 'error')
+    toast('Rider desvinculado')
+    load()
+  }
+
+  const pendientes = vinc.filter(v => v.rider_accounts?.estado === 'pendiente').length
+  const activos = vinc.filter(v => v.rider_accounts?.estado === 'activa' && v.rider_accounts?.activa).length
+  const online = vinc.filter(v => v.rider_accounts?.estado === 'activa' && status[v.rider_accounts?.id]?.is_online).length
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#E5E2E1', margin: 0 }}>Mis repartidores</h1>
+          <div style={{ fontSize: 12, color: '#ab8985', marginTop: 4 }}>
+            Los riders que registras aquí reciben tus pedidos de delivery. Requieren aprobación de Pidoo.
+          </div>
+        </div>
+        <button onClick={() => setShowAdd(true)} style={btnPrimary}>+ Añadir repartidor</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
+        <Stat label="Activos" value={activos} color="#4ade80" />
+        <Stat label="En línea ahora" value={online} color="#4ade80" />
+        <Stat label="Pendientes" value={pendientes} color="#FBBF24" />
+      </div>
+
+      {vinc.length === 0 ? (
+        <div style={{ padding: 30, textAlign: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: 12, color: '#ab8985', fontSize: 13 }}>
+          Aún no tienes repartidores registrados. Pulsa "Añadir repartidor" para empezar.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {vinc.map(v => {
+            const r = v.rider_accounts
+            if (!r) return null
+            const st = status[r.id]
+            const online = st?.is_online
+            const estadoInfo = ESTADOS[r.estado] || ESTADOS.pendiente
+            return (
+              <div key={r.id} style={{
+                padding: '14px 16px', borderRadius: 12,
+                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex', alignItems: 'center', gap: 14,
+              }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 10, background: 'rgba(185,28,28,0.18)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F87171',
+                  fontSize: 15, fontWeight: 800,
+                }}>{r.nombre?.[0]?.toUpperCase() || '?'}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#E5E2E1' }}>{r.nombre}</div>
+                  <div style={{ fontSize: 11, color: '#ab8985', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {r.telefono && <span>📞 {r.telefono}</span>}
+                    {r.email && <span>✉ {r.email}</span>}
+                  </div>
+                  {r.estado === 'rechazada' && r.motivo_rechazo && (
+                    <div style={{ fontSize: 11, color: '#F87171', marginTop: 4 }}>Motivo: {r.motivo_rechazo}</div>
+                  )}
+                </div>
+                <span style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                  background: estadoInfo.bg, color: estadoInfo.color,
+                }}>{estadoInfo.label}</span>
+                {r.estado === 'activa' && (
+                  online ? (
+                    <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>● Online</span>
+                  ) : (
+                    <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(148,163,184,0.15)', color: '#94A3B8' }}>○ Offline</span>
+                  )
+                )}
+                <button onClick={() => desvincular(r)} style={btnGhost}>Desvincular</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {showAdd && (
+        <AddRiderModal
+          restauranteId={restaurante.id}
+          vinculadosIds={vinc.map(v => v.rider_accounts?.id).filter(Boolean)}
+          onClose={() => setShowAdd(false)}
+          onSaved={() => { setShowAdd(false); load() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function Stat({ label, value, color }) {
+  return (
+    <div style={{ padding: 14, borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ fontSize: 10, color: '#ab8985', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
+    </div>
+  )
+}
+
+function AddRiderModal({ restauranteId, vinculadosIds, onClose, onSaved }) {
+  const [nombre, setNombre] = useState('')
+  const [telefono, setTelefono] = useState('')
+  const [email, setEmail] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [verifying, setVerifying] = useState(false)
+  const [verifyOk, setVerifyOk] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  async function verificar() {
+    const key = apiKey.trim()
+    if (!key) return toast('Pega la API key del rider primero', 'error')
+    setVerifying(true); setVerifyOk(null)
+    try {
+      const resp = await fetch('https://api.shipday.com/carriers', {
+        method: 'GET', headers: { 'Authorization': `Basic ${key}` },
+      })
+      if (!resp.ok) { setVerifyOk(false); toast(`Key inválida (${resp.status})`, 'error') }
+      else {
+        const data = await resp.json()
+        const list = Array.isArray(data) ? data : (data.carriers || data.data || [])
+        setVerifyOk(true)
+        toast(`Key válida — ${list.length} carrier${list.length === 1 ? '' : 's'} en Shipday`)
+      }
+    } catch {
+      setVerifyOk(false); toast('Error de red', 'error')
+    }
+    setVerifying(false)
+  }
+
+  async function guardar() {
+    if (!nombre.trim() || !apiKey.trim()) return toast('Nombre y API key obligatorios', 'error')
+    if (verifyOk !== true) return toast('Verifica la API key antes de guardar', 'error')
+    setSaving(true)
+
+    const key = apiKey.trim()
+
+    // ¿Existe ya un rider con esta API key?
+    const { data: existente } = await supabase.from('rider_accounts')
+      .select('id, estado, activa').eq('shipday_api_key', key).maybeSingle()
+
+    let riderId
+    if (existente) {
+      // Reutilizar: si ya está vinculado a este restaurante, no hacemos nada
+      if (vinculadosIds.includes(existente.id)) {
+        toast('Ese rider ya está vinculado a tu restaurante', 'error')
+        setSaving(false); return
+      }
+      riderId = existente.id
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: nuevo, error: e1 } = await supabase.from('rider_accounts')
+        .insert({
+          nombre: nombre.trim(),
+          telefono: telefono.trim() || null,
+          email: email.trim() || null,
+          shipday_api_key: key,
+          activa: true,
+          estado: 'pendiente',
+          creado_por: user?.id,
+          establecimiento_origen_id: restauranteId,
+        })
+        .select('id').single()
+      if (e1) { toast('Error guardando: ' + e1.message, 'error'); setSaving(false); return }
+      riderId = nuevo.id
+    }
+
+    const { error: e2 } = await supabase.from('restaurante_riders').insert({
+      establecimiento_id: restauranteId,
+      rider_account_id: riderId,
+      prioridad: 100,
+    })
+    if (e2) { toast('Error vinculando: ' + e2.message, 'error'); setSaving(false); return }
+
+    toast(existente
+      ? (existente.estado === 'activa' ? 'Rider ya aprobado — vinculado correctamente' : 'Rider vinculado (aún pendiente de aprobación)')
+      : 'Rider registrado — pendiente de aprobación por Pidoo')
+    onSaved()
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#1A1A1A', borderRadius: 16, width: '100%', maxWidth: 480,
+        maxHeight: '90vh', overflowY: 'auto', padding: 24, border: '1px solid rgba(255,255,255,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: '#E5E2E1', margin: 0 }}>Añadir repartidor</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#ab8985', fontSize: 22, cursor: 'pointer' }}>×</button>
+        </div>
+
+        <div style={{
+          padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)',
+          border: '1px solid rgba(245,158,11,0.3)', marginBottom: 16,
+          fontSize: 11, color: '#FBBF24', lineHeight: 1.5,
+        }}>
+          ⓘ El repartidor debe crear su propia cuenta en <strong>Shipday</strong> y darte su API Key personal
+          (Settings → API). Al guardarlo, quedará pendiente hasta que Pidoo lo apruebe.
+        </div>
+
+        <div style={{ display: 'grid', gap: 12 }}>
+          <Field label="Nombre del repartidor" value={nombre} onChange={setNombre} placeholder="Ej: Pedro Martín" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Teléfono" value={telefono} onChange={setTelefono} placeholder="600 123 456" />
+            <Field label="Email" value={email} onChange={setEmail} placeholder="rider@email.com" />
+          </div>
+          <Field
+            label="API Key Shipday del rider"
+            value={apiKey}
+            onChange={(v) => { setApiKey(v); setVerifyOk(null) }}
+            placeholder="xxxxx.xxxxxxxxxx"
+            mono
+          />
+
+          {verifyOk === true && (
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.1)', color: '#4ade80', fontSize: 12, fontWeight: 600 }}>
+              ✓ Key válida
+            </div>
+          )}
+          {verifyOk === false && (
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#F87171', fontSize: 12, fontWeight: 600 }}>
+              ✗ Key inválida o error de red
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={verificar} disabled={verifying || !apiKey.trim()} style={{ ...btnGhost, flex: 1, opacity: verifying || !apiKey.trim() ? 0.5 : 1 }}>
+              {verifying ? 'Verificando...' : 'Verificar API key'}
+            </button>
+            <button onClick={guardar} disabled={saving || verifyOk !== true} style={{ ...btnPrimary, flex: 1, opacity: saving || verifyOk !== true ? 0.5 : 1 }}>
+              {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, value, onChange, placeholder, mono }) {
+  return (
+    <div>
+      <label style={{ fontSize: 11, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>{label}</label>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: '100%', padding: '10px 12px', borderRadius: 10,
+          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+          color: '#E5E2E1', fontSize: 13, fontFamily: mono ? 'monospace' : 'inherit',
+          outline: 'none', boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  )
+}
+
+const btnPrimary = {
+  padding: '10px 16px', borderRadius: 10, border: 'none',
+  background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)',
+  color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  fontFamily: "'DM Sans', sans-serif",
+}
+
+const btnGhost = {
+  padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)',
+  background: 'transparent', color: '#ab8985', fontSize: 11, fontWeight: 700,
+  cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+}

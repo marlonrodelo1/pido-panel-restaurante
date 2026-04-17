@@ -19,6 +19,7 @@ import Soporte from './pages/Soporte'
 import DisponibilidadProductos from './pages/DisponibilidadProductos'
 import ConfigImpresora from './pages/ConfigImpresora'
 import Activacion from './pages/Activacion'
+import MisRepartidores from './pages/MisRepartidores'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -153,6 +154,12 @@ function AppInner({ seccion, setSeccion, nav }) {
             </button>
           ) : (
             <>
+              <button onClick={() => setSeccion('repartidores')} style={{
+                padding: '7px 10px', borderRadius: 10, border: 'none',
+                background: seccion === 'repartidores' ? 'var(--c-primary)' : 'var(--c-surface2)',
+                fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                color: seccion === 'repartidores' ? '#fff' : 'var(--c-muted)',
+              }}>Repartidores</button>
               <button onClick={() => setSeccion('soporte')} style={{
                 padding: '7px 10px', borderRadius: 10, border: 'none',
                 background: seccion === 'soporte' ? 'var(--c-primary)' : 'var(--c-surface2)',
@@ -208,6 +215,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'promos' && <Promociones />}
         {seccion === 'soporte' && <Soporte />}
         {seccion === 'metricas' && <Metricas />}
+        {seccion === 'repartidores' && <MisRepartidores />}
         {seccion === 'ajustes' && <Ajustes />}
       </div>
 
