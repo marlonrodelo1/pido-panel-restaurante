@@ -72,8 +72,7 @@ function ResetPassword({ email, setEmail, onBack }) {
   if (sent) {
     return (
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>📧</div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: 8 }}>Email enviado</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: 8 }}>Email enviado</div>
         <p style={{ fontSize: 12, color: '#ab8985', lineHeight: 1.5, marginBottom: 20 }}>
           Hemos enviado un enlace a <strong style={{ color: '#E5E2E1' }}>{email}</strong> para restablecer tu contraseña.
         </p>
@@ -329,8 +328,8 @@ export default function Login() {
                       <button onClick={() => setShowPassword(!showPassword)} style={{
                         position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
                         background: 'none', border: 'none', color: '#ab8985', cursor: 'pointer',
-                        fontSize: 12, padding: 4,
-                      }}>{showPassword ? '🙈' : '👁️'}</button>
+                        fontSize: 10, fontWeight: 700, padding: 4, fontFamily: 'inherit', letterSpacing: '0.04em',
+                      }}>{showPassword ? 'OCULTAR' : 'VER'}</button>
                     </div>
 
                     {/* Requisitos de seguridad */}
@@ -424,12 +423,8 @@ export default function Login() {
 
           {/* Footer seguridad */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#ab8985' }}>
-              <span>🔒</span> Encriptación AES-256
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#ab8985' }}>
-              <span>🌐</span> Soporte 24/7
-            </div>
+            <div style={{ fontSize: 11, color: '#ab8985' }}>Encriptación AES-256</div>
+            <div style={{ fontSize: 11, color: '#ab8985' }}>Soporte 24/7</div>
           </div>
         </div>
       </div>

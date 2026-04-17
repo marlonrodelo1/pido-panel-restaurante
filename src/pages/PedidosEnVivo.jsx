@@ -5,16 +5,15 @@ import { startAlarm, stopAlarm, unlockAudio } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
-import { ChevronLeft } from 'lucide-react'
 import { toast } from '../App'
 
 // ─── Badges ────────────────────────────────────────────────────────────────
 function PagoBadge({ pago }) {
   const t = pago === 'tarjeta'
-  return <span style={{ background: t ? 'rgba(96,165,250,0.15)' : 'rgba(74,222,128,0.12)', color: t ? '#93c5fd' : '#86efac', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>{t ? '💳 Tarjeta' : '💵 Efectivo'}</span>
+  return <span style={{ background: t ? 'rgba(96,165,250,0.15)' : 'rgba(74,222,128,0.12)', color: t ? '#93c5fd' : '#86efac', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>{t ? 'Tarjeta' : 'Efectivo'}</span>
 }
 function CanalBadge() {
-  return <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fdba74', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>📱 PIDO</span>
+  return <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fdba74', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>PIDO</span>
 }
 function EstadoBadge({ estado }) {
   const map = {
@@ -31,16 +30,16 @@ function EstadoBadge({ estado }) {
 
 // ─── Constantes ────────────────────────────────────────────────────────────
 const MOTIVOS_RECHAZO = [
-  { id: 'sin_personal', label: 'No tenemos personal', icon: '👤' },
-  { id: 'sin_productos', label: 'No hay productos disponibles', icon: '📦' },
-  { id: 'mucha_demanda', label: 'Mucha demanda ahora mismo', icon: '🔥' },
+  { id: 'sin_personal', label: 'No tenemos personal' },
+  { id: 'sin_productos', label: 'No hay productos disponibles' },
+  { id: 'mucha_demanda', label: 'Mucha demanda ahora mismo' },
 ]
 const MOTIVOS_CANCELACION = [
-  { id: 'sin_rider', label: 'Sin repartidor disponible', icon: '🛵' },
-  { id: 'sin_stock', label: 'Producto agotado', icon: '📦' },
-  { id: 'problema_cocina', label: 'Problema en cocina', icon: '🍳' },
-  { id: 'cliente_no_contesta', label: 'Cliente no contesta', icon: '📵' },
-  { id: 'otro', label: 'Otro motivo', icon: '❌' },
+  { id: 'sin_rider', label: 'Sin repartidor disponible' },
+  { id: 'sin_stock', label: 'Producto agotado' },
+  { id: 'problema_cocina', label: 'Problema en cocina' },
+  { id: 'cliente_no_contesta', label: 'Cliente no contesta' },
+  { id: 'otro', label: 'Otro motivo' },
 ]
 
 const formatTimer = s => {
@@ -77,7 +76,6 @@ export default function PedidosEnVivo() {
         event: 'INSERT', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, async payload => {
-        // Filtrar por canal = 'pido' para evitar actualizar con pedidos de otros canales
         if (payload.new.canal !== 'pido') return
         let pedidoConCliente = payload.new
         if (payload.new.usuario_id) {
@@ -94,7 +92,6 @@ export default function PedidosEnVivo() {
         event: 'UPDATE', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, payload => {
-        // Filtrar por canal = 'pido' para evitar cambios de otros canales
         if (payload.new.canal !== 'pido') return
         const p = payload.new
         if (['entregado', 'cancelado'].includes(p.estado)) {
@@ -123,12 +120,9 @@ export default function PedidosEnVivo() {
           if (n[id] > 0) { n[id] -= 1 }
           else if (n[id] === 0) {
             n[id] = -1
-            // Llamada async con error handling
             autoCancelarPedido(id).catch(err => {
               console.error(`[AutoCancel] Error cancelando pedido ${id}:`, err)
-              // Marcar el pedido como en error para que el restaurante lo vea
               setEntrantes(prev => prev.map(p => p.id === id ? { ...p, cancelError: true } : p))
-              // No reintentar automáticamente — el usuario debe actuar manualmente
             })
           }
         })
@@ -184,28 +178,18 @@ export default function PedidosEnVivo() {
     toast('Pedido aceptado correctamente', 'success')
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
-    // Enviar pedido a Shipday solo si es delivery (recogida no necesita repartidor)
     if (pedido.modo_entrega === 'delivery') {
       ;(async () => {
         const MAX_RETRIES = 1
         const RETRY_DELAY = 3000
-
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
-            const { data, error } = await supabase.functions.invoke('create-shipday-order', {
-              body: { pedido_id: pedido.id },
-            })
-            if (!error) {
-              console.log(`[Shipday] Pedido ${pedido.codigo} enviado correctamente`, data)
-              return
-            }
+            const { data, error } = await supabase.functions.invoke('create-shipday-order', { body: { pedido_id: pedido.id } })
+            if (!error) { console.log(`[Shipday] Pedido ${pedido.codigo} enviado correctamente`, data); return }
             throw error
           } catch (err) {
             console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
-            if (attempt === MAX_RETRIES) {
-              toast('Pedido aceptado. Repartidor no asignado automáticamente — revisa Shipday.', 'error')
-              return
-            }
+            if (attempt === MAX_RETRIES) { toast('Pedido aceptado. Repartidor no asignado automáticamente — revisa Shipday.', 'error'); return }
             await new Promise(r => setTimeout(r, RETRY_DELAY))
           }
         }
@@ -216,20 +200,13 @@ export default function PedidosEnVivo() {
   async function rechazarPedido(id, motivo) {
     const pedido = entrantes.find(p => p.id === id)
     const motivoTexto = MOTIVOS_RECHAZO.find(m => m.id === motivo)?.label || motivo || 'El restaurante no pudo aceptar tu pedido'
-    await supabase.from('pedidos').update({
-      estado: 'cancelado',
-      motivo_cancelacion: motivoTexto,
-      cancelado_at: new Date().toISOString(),
-    }).eq('id', id)
-    // Limpiar UI completamente
+    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', id)
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
     setTimers(prev => { const n = { ...prev }; delete n[id]; return n })
     setPedidoDetalleId(prev => prev === id ? null : prev)
-    // Notificar al cliente
     if (pedido?.usuario_id) {
-      sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: '❌ Pedido rechazado', body: `Tu pedido ${pedido.codigo} fue rechazado: ${motivoTexto}. Disculpa las molestias.` })
+      sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido rechazado', body: `Tu pedido ${pedido.codigo} fue rechazado: ${motivoTexto}. Disculpa las molestias.` })
     }
-    // Reembolso automático si pagó con tarjeta
     if (pedido?.metodo_pago === 'tarjeta') {
       supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: id } }).catch(err => console.error('[Reembolso] Error:', err))
     }
@@ -238,15 +215,11 @@ export default function PedidosEnVivo() {
   async function autoCancelarPedido(id) {
     const { data: pedido } = await supabase.from('pedidos').select('id, codigo, usuario_id, estado, metodo_pago').eq('id', id).single()
     if (!pedido || pedido.estado !== 'nuevo') return
-    await supabase.from('pedidos').update({
-      estado: 'cancelado',
-      motivo_cancelacion: 'El restaurante no respondió a tiempo',
-      cancelado_at: new Date().toISOString(),
-    }).eq('id', id)
+    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: 'El restaurante no respondió a tiempo', cancelado_at: new Date().toISOString() }).eq('id', id)
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
     setTimers(prev => { const n = { ...prev }; delete n[id]; return n })
     setPedidoDetalleId(prev => prev === id ? null : prev)
-    if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: '❌ Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado porque el restaurante no respondió a tiempo` })
+    if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado porque el restaurante no respondió a tiempo` })
     if (pedido?.metodo_pago === 'tarjeta') {
       supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: id } }).catch(err => console.error('[Reembolso] Error:', err))
     }
@@ -254,14 +227,10 @@ export default function PedidosEnVivo() {
 
   async function cancelarPedidoActivo(pedido, motivoId) {
     const motivoTexto = MOTIVOS_CANCELACION.find(m => m.id === motivoId)?.label || 'Cancelado por el restaurante'
-    await supabase.from('pedidos').update({
-      estado: 'cancelado',
-      motivo_cancelacion: motivoTexto,
-      cancelado_at: new Date().toISOString(),
-    }).eq('id', pedido.id)
+    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', pedido.id)
     setActivos(prev => prev.filter(p => p.id !== pedido.id))
     setPedidoDetalleId(prev => prev === pedido.id ? null : prev)
-    if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: '❌ Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
+    if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
     if (pedido.metodo_pago === 'tarjeta') {
       supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: pedido.id } }).catch(err => console.error('[Reembolso] Error:', err))
     }
@@ -281,8 +250,6 @@ export default function PedidosEnVivo() {
     const pedido = activos.find(p => p.id === id)
     await supabase.from('pedidos').update({ estado: 'entregado', entregado_at: new Date().toISOString() }).eq('id', id)
     setActivos(prev => prev.filter(p => p.id !== id))
-    // TODO: implementar Edge Function calcular_comisiones
-    // supabase.functions.invoke('calcular_comisiones', { body: { pedido_id: id } }).catch(() => {})
     if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido entregado', body: `Tu pedido ${pedido.codigo} ha sido entregado. ¡Gracias!` })
   }
 
@@ -299,13 +266,11 @@ export default function PedidosEnVivo() {
   if (loadingInicial) {
     return (
       <div style={{ textAlign: 'center', padding: '50px 0', color: 'var(--c-muted)' }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Cargando pedidos...</div>
       </div>
     )
   }
 
-  // Pantalla de detalle
   const pedidoDetalle = pedidoDetalleId ? [...entrantes, ...activos].find(p => p.id === pedidoDetalleId) : null
   if (pedidoDetalleId && pedidoDetalle) {
     return (
@@ -327,7 +292,6 @@ export default function PedidosEnVivo() {
     )
   }
 
-  // Secciones de la lista
   const preparando = activos.filter(p => ['aceptado', 'preparando'].includes(p.estado))
   const listos = activos.filter(p => p.estado === 'listo')
   const enCamino = activos.filter(p => ['recogido', 'en_camino'].includes(p.estado))
@@ -336,52 +300,45 @@ export default function PedidosEnVivo() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: '#E5E2E1', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Pedidos en Vivo</h2>
-        </div>
+        <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: '#E5E2E1', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Pedidos en Vivo</h2>
         <button onClick={() => { unlockAudio(); startAlarm(); setTimeout(stopAlarm, 2000) }} style={{ padding: '7px 12px', borderRadius: 6, border: '1px solid #353535', background: '#1A1A1A', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#ab8985' }}>
-          🔔 Probar alarma
+          Probar alarma
         </button>
       </div>
 
       {!hayAlgo && (
         <div style={{ textAlign: 'center', padding: '60px 0', color: '#ab8985' }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>🍽️</div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Esperando nuevos pedidos...</div>
           <div style={{ fontSize: 11, color: '#353535', marginTop: 4 }}>Los pedidos aparecerán aquí en tiempo real</div>
         </div>
       )}
 
-      {/* 🔴 Nuevos */}
       {entrantes.length > 0 && (
-        <SeccionPedidos titulo="Nuevos" count={entrantes.length} color="#fca5a5" bg="rgba(185,28,28,0.08)" accentColor="#B91C1C">
+        <SeccionPedidos titulo="Nuevos" count={entrantes.length} color="#fca5a5" accentColor="#B91C1C">
           {entrantes.map(p => (
             <LineaPedido key={p.id} pedido={p} timer={timers[p.id]} isNuevo onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionPedidos>
       )}
 
-      {/* 🟡 En preparación */}
       {preparando.length > 0 && (
-        <SeccionPedidos titulo="En Preparación" count={preparando.length} color="#fcd34d" bg="rgba(251,191,36,0.06)" accentColor="#d97706">
+        <SeccionPedidos titulo="En Preparación" count={preparando.length} color="#fcd34d" accentColor="#d97706">
           {preparando.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionPedidos>
       )}
 
-      {/* 🟢 Listos */}
       {listos.length > 0 && (
-        <SeccionPedidos titulo="Listos" count={listos.length} color="#86efac" bg="rgba(34,197,94,0.06)" accentColor="#16a34a">
+        <SeccionPedidos titulo="Listos" count={listos.length} color="#86efac" accentColor="#16a34a">
           {listos.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionPedidos>
       )}
 
-      {/* 🔵 En camino */}
       {enCamino.length > 0 && (
-        <SeccionPedidos titulo="En Camino" count={enCamino.length} color="#93c5fd" bg="rgba(59,130,246,0.06)" accentColor="#2563eb">
+        <SeccionPedidos titulo="En Camino" count={enCamino.length} color="#93c5fd" accentColor="#2563eb">
           {enCamino.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -392,68 +349,87 @@ export default function PedidosEnVivo() {
 }
 
 // ─── Sección ───────────────────────────────────────────────────────────────
-function SeccionPedidos({ titulo, count, color, bg, accentColor, children }) {
+function SeccionPedidos({ titulo, count, color, accentColor, children }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '0 2px' }}>
-        <div style={{ width: 8, height: 8, borderRadius: 4, background: accentColor, boxShadow: `0 0 6px ${accentColor}` }} />
-        <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{titulo}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: accentColor, background: `${bg}`, border: `1px solid ${accentColor}33`, padding: '1px 6px', borderRadius: 10 }}>{count}</span>
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '0 2px' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{titulo}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: accentColor, border: `1px solid ${accentColor}44`, padding: '1px 7px', borderRadius: 10 }}>{count}</span>
       </div>
-      <div style={{ background: '#131313', borderRadius: 12, overflow: 'hidden', borderLeft: `2px solid ${accentColor}` }}>
-        {children}
-      </div>
+      {children}
     </div>
   )
 }
 
-// ─── Línea de pedido (lista) ───────────────────────────────────────────────
+// ─── Línea de pedido (card estilo Stitch) ─────────────────────────────────
 function LineaPedido({ pedido, timer, isNuevo, onTap }) {
   const nombre = pedido.usuarios?.nombre
     ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
     : 'Cliente'
 
-  return (
-    <button onClick={onTap} style={{
-      width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-      padding: '14px 16px', background: 'none', border: 'none',
-      borderBottom: '1px solid #1e1e1e',
-      cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-      transition: 'background 0.15s',
-    }}>
-      {/* Info pedido */}
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: '#E5E2E1', letterSpacing: '0.03em' }}>{pedido.codigo}</span>
-          {pedido.metodo_pago && <PagoBadge pago={pedido.metodo_pago} />}
-        </div>
-        <span style={{ fontSize: 12, color: '#ab8985', fontWeight: 500 }}>{nombre}</span>
-      </div>
+  const accionLabel = isNuevo ? 'ACEPTAR'
+    : ['aceptado', 'preparando'].includes(pedido.estado) ? 'MARCAR LISTO'
+    : pedido.estado === 'listo' ? 'RECOGIDO'
+    : null
 
+  const accionStyle = isNuevo
+    ? { background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', color: '#fff', border: 'none' }
+    : ['aceptado', 'preparando'].includes(pedido.estado)
+    ? { background: 'rgba(74,222,128,0.12)', color: '#86efac', border: '1px solid rgba(74,222,128,0.25)' }
+    : { background: '#242424', color: '#E5E2E1', border: 'none' }
+
+  return (
+    <div
+      onClick={onTap}
+      style={{
+        background: '#1A1A1A',
+        borderRadius: 12,
+        padding: '16px',
+        marginBottom: 8,
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+      }}
+    >
       {/* Timer (solo nuevos) */}
       {isNuevo && timer != null && timer > 0 && (
-        <span style={{
-          fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-          color: timer < 60 ? '#fca5a5' : '#fcd34d',
-          animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
-          flexShrink: 0, background: timer < 60 ? 'rgba(185,28,28,0.15)' : 'rgba(217,119,6,0.15)',
-          padding: '3px 8px', borderRadius: 6,
-        }}>{formatTimer(timer)}</span>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+          <span style={{
+            fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+            color: timer < 60 ? '#fca5a5' : '#fcd34d',
+            background: timer < 60 ? 'rgba(185,28,28,0.15)' : 'rgba(217,119,6,0.12)',
+            padding: '3px 8px', borderRadius: 6,
+            animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
+          }}>{formatTimer(timer)}</span>
+        </div>
       )}
 
-      {/* Total */}
-      <span style={{ fontSize: 14, fontWeight: 800, color: '#ffb4ab', flexShrink: 0 }}>
-        {(pedido.total || 0).toFixed(2)}€
-      </span>
+      {/* Código */}
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{pedido.codigo}</div>
 
-      {/* Chevron */}
-      <ChevronLeft size={14} style={{ transform: 'rotate(180deg)', color: '#353535', flexShrink: 0 }} />
-    </button>
+      {/* Nombre cliente */}
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: 14 }}>{nombre}</div>
+
+      {/* Precio + botón acción */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 16, fontWeight: 800, color: '#ffb4ab' }}>{(pedido.total || 0).toFixed(2)}€</span>
+        {accionLabel && (
+          <button
+            onClick={e => { e.stopPropagation(); onTap() }}
+            style={{
+              padding: '8px 16px', borderRadius: 8,
+              fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit', letterSpacing: '0.05em',
+              ...accionStyle,
+            }}
+          >{accionLabel}</button>
+        )}
+      </div>
+    </div>
   )
 }
 
 // ─── Pantalla de detalle ───────────────────────────────────────────────────
-const seccionLabel = { fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }
+const seccionLabel = { fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'block' }
 const seccionCard = { background: '#1A1A1A', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }
 
 function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, onAceptar, onRechazar, onMarcarListo, onMarcarRecogido, onMarcarEntregado, onCancelar, onReimprimir }) {
@@ -470,12 +446,11 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <button onClick={onVolver} style={{
-          display: 'flex', alignItems: 'center', padding: '8px 10px',
-          borderRadius: 8, border: '1px solid #353535', background: '#1A1A1A',
-          color: '#ab8985', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-        }}>
-          <ChevronLeft size={16} />
-        </button>
+          padding: '8px 14px', borderRadius: 8,
+          border: '1px solid #353535', background: '#1A1A1A',
+          color: '#ab8985', fontSize: 13, fontWeight: 600,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>Volver</button>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: '#E5E2E1', letterSpacing: '0.03em' }}>{pedido.codigo}</span>
@@ -494,24 +469,22 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
         )}
       </div>
 
-      {/* Tiempo estimado (solo si está en preparación) */}
+      {/* Tiempo estimado */}
       {(pedido.estado === 'preparando' || pedido.estado === 'aceptado') && pedido.minutos_preparacion && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: '#1A1A1A', borderRadius: 8 }}>
-          <span style={{ fontSize: 14 }}>⏱️</span>
           <span style={{ fontSize: 12, color: '#ab8985' }}>Tiempo estimado: <strong style={{ color: '#fcd34d' }}>{pedido.minutos_preparacion} min</strong></span>
         </div>
       )}
 
       {/* CLIENTE */}
       <div style={seccionCard}>
-        <div style={seccionLabel}><span>👤</span> Cliente</div>
+        <span style={seccionLabel}>Cliente</span>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#E5E2E1', marginBottom: 4 }}>{nombre}</div>
         {pedido.usuarios?.telefono && (
-          <div style={{ fontSize: 12, color: '#ab8985', marginBottom: pedido.direccion_entrega ? 8 : 0 }}>📞 {pedido.usuarios.telefono}</div>
+          <div style={{ fontSize: 12, color: '#ab8985', marginBottom: pedido.direccion_entrega ? 8 : 0 }}>{pedido.usuarios.telefono}</div>
         )}
         {pedido.direccion_entrega && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '1px solid #242424' }}>
-            <span style={{ fontSize: 14, flexShrink: 0 }}>📍</span>
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #242424' }}>
             <span style={{ fontSize: 12, color: '#E5E2E1', lineHeight: 1.5 }}>{pedido.direccion_entrega}</span>
           </div>
         )}
@@ -519,24 +492,24 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
 
       {/* ORIGEN & PAGO */}
       <div style={seccionCard}>
-        <div style={seccionLabel}><span>💳</span> Origen & Pago</div>
+        <span style={seccionLabel}>Origen y Pago</span>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Método de Pago</div>
-            <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>{pedido.metodo_pago === 'tarjeta' ? '💳 Tarjeta (Online)' : '💵 Efectivo'}</div>
-            {pedido.metodo_pago === 'efectivo' && <div style={{ fontSize: 10, color: '#fcd34d', marginTop: 2 }}>⚠️ Cobrar en mano</div>}
+            <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>{pedido.metodo_pago === 'tarjeta' ? 'Tarjeta (Online)' : 'Efectivo'}</div>
+            {pedido.metodo_pago === 'efectivo' && <div style={{ fontSize: 10, color: '#fcd34d', marginTop: 2 }}>Cobrar en mano</div>}
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Canal de Venta</div>
-            <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>📱 App Móvil PIDO</div>
+            <div style={{ fontSize: 12, color: '#E5E2E1', fontWeight: 600 }}>App Móvil PIDO</div>
           </div>
         </div>
       </div>
 
       {/* PRODUCTOS */}
       <div style={seccionCard}>
-        <div style={{ ...seccionLabel, justifyContent: 'space-between' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>🛒</span> Detalle de Productos</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ ...seccionLabel, marginBottom: 0 }}>Detalle de Productos</span>
           <span style={{ fontSize: 10, color: '#ab8985' }}>{items.length} artículo{items.length !== 1 ? 's' : ''}</span>
         </div>
         {items.map((item, i) => (
@@ -551,12 +524,9 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
           </div>
         ))}
         {pedido.notas && (
-          <div style={{ marginTop: 12, padding: '10px 12px', background: '#242424', borderRadius: 8, display: 'flex', gap: 8 }}>
-            <span style={{ flexShrink: 0, fontSize: 14 }}>📝</span>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Notas del Cliente</div>
-              <div style={{ fontSize: 12, fontStyle: 'italic', color: '#E5E2E1' }}>"{pedido.notas}"</div>
-            </div>
+          <div style={{ marginTop: 12, padding: '10px 12px', background: '#242424', borderRadius: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Notas del Cliente</div>
+            <div style={{ fontSize: 12, fontStyle: 'italic', color: '#E5E2E1' }}>"{pedido.notas}"</div>
           </div>
         )}
       </div>
@@ -581,8 +551,6 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
         </div>
       </div>
 
-      {/* ── Acciones según estado ── */}
-
       {/* NUEVO: selector tiempo + aceptar/rechazar */}
       {isNuevo && (
         <div style={{ marginBottom: 12 }}>
@@ -590,13 +558,12 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
             <div style={{ background: 'rgba(185,28,28,0.1)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.25)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo del rechazo</div>
               {MOTIVOS_RECHAZO.map(m => (
-                <button key={m.id} onClick={() => { onRechazar(pedido.id, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(185,28,28,0.08)', color: '#E5E2E1', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>{m.icon} {m.label}</button>
+                <button key={m.id} onClick={() => { onRechazar(pedido.id, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(185,28,28,0.08)', color: '#E5E2E1', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>{m.label}</button>
               ))}
               <button onClick={() => setRechazando(false)} style={{ width: '100%', padding: '8px 0', border: 'none', background: 'transparent', color: '#ab8985', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
             </div>
           ) : (
             <>
-              {/* Selector tiempo */}
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Seleccionar tiempo de preparación</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
@@ -613,11 +580,11 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 8, border: '1px solid #353535', background: 'transparent', color: '#E5E2E1', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  ✕ Rechazar
+                <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 8, border: '1px solid #353535', background: 'transparent', color: '#E5E2E1', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Rechazar
                 </button>
-                <button onClick={() => { onAceptar(pedido, minutosSel); onVolver() }} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  ✓ Aceptar pedido
+                <button onClick={() => { onAceptar(pedido, minutosSel); onVolver() }} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Aceptar pedido
                 </button>
               </div>
             </>
@@ -628,37 +595,37 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
       {/* PREPARANDO: listo + reimprimir */}
       {(pedido.estado === 'preparando' || pedido.estado === 'aceptado') && !isNuevo && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={() => onReimprimir(pedido)} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid #353535', background: '#1A1A1A', color: '#ab8985', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>🖨️</button>
-          <button onClick={() => { onMarcarListo(pedido.id); onVolver() }} style={{ flex: 1, padding: '13px 0', borderRadius: 8, border: 'none', background: 'rgba(74,222,128,0.15)', color: '#86efac', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: '1px solid rgba(74,222,128,0.3)' }}>✓ Pedido listo para recoger</button>
+          <button onClick={() => onReimprimir(pedido)} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid #353535', background: '#1A1A1A', color: '#ab8985', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Imprimir</button>
+          <button onClick={() => { onMarcarListo(pedido.id); onVolver() }} style={{ flex: 1, padding: '13px 0', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.15)', color: '#86efac', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Pedido listo para recoger</button>
         </div>
       )}
 
       {/* LISTO: recogida en local */}
       {pedido.estado === 'listo' && pedido.modo_entrega === 'recogida' && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'rgba(74,222,128,0.1)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#86efac', border: '1px solid rgba(74,222,128,0.2)' }}>🏪 Esperando al cliente</div>
-          <button onClick={() => { onMarcarEntregado(pedido.id); onVolver() }} style={{ padding: '13px 18px', borderRadius: 8, border: 'none', background: 'rgba(74,222,128,0.2)', color: '#86efac', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: '1px solid rgba(74,222,128,0.3)' }}>Entregado</button>
+          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'rgba(74,222,128,0.1)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#86efac', border: '1px solid rgba(74,222,128,0.2)' }}>Esperando al cliente</div>
+          <button onClick={() => { onMarcarEntregado(pedido.id); onVolver() }} style={{ padding: '13px 18px', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.2)', color: '#86efac', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Entregado</button>
         </div>
       )}
 
       {/* LISTO: delivery */}
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
         <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(74,222,128,0.08)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#86efac', marginBottom: 12, border: '1px solid rgba(74,222,128,0.2)' }}>
-          🛵 Esperando repartidor (Shipday)
+          Esperando repartidor (Shipday)
         </div>
       )}
 
       {/* RECOGIDO */}
       {pedido.estado === 'recogido' && (
         <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(96,165,250,0.08)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#93c5fd', marginBottom: 12, border: '1px solid rgba(96,165,250,0.2)' }}>
-          🛵 Repartidor recogió el pedido — en camino al cliente
+          Repartidor recogió el pedido — en camino al cliente
         </div>
       )}
 
       {/* EN CAMINO */}
       {pedido.estado === 'en_camino' && (
         <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(167,139,250,0.08)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#c4b5fd', marginBottom: 12, border: '1px solid rgba(167,139,250,0.2)' }}>
-          📍 Repartidor en camino al cliente
+          Repartidor en camino al cliente
         </div>
       )}
 
@@ -668,7 +635,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
           <div style={{ background: 'rgba(185,28,28,0.08)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.2)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo de cancelación</div>
             {MOTIVOS_CANCELACION.map(m => (
-              <button key={m.id} onClick={() => { onCancelar(pedido, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(185,28,28,0.06)', color: '#E5E2E1', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>{m.icon} {m.label}</button>
+              <button key={m.id} onClick={() => { onCancelar(pedido, m.id); onVolver() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(185,28,28,0.06)', color: '#E5E2E1', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>{m.label}</button>
             ))}
             <button onClick={() => setCancelando(false)} style={{ width: '100%', padding: '8px 0', border: 'none', background: 'transparent', color: '#ab8985', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Volver</button>
           </div>

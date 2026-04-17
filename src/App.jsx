@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, BarChart3, Tag, MessageCircle, ToggleLeft, Printer, Globe } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -23,6 +23,7 @@ import Activacion from './pages/Activacion'
 const isNative = Capacitor.isNativePlatform()
 
 const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings }
+
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, disponibilidad: ToggleLeft, impresora: Printer }
 
 function AppContent() {
@@ -61,7 +62,7 @@ function AppContent() {
   if (loading) {
     return (
       <div style={{ ...shell, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>🍽️</div>
+        <div style={{ fontSize: 13, color: '#ab8985', fontWeight: 600 }}>Cargando...</div>
       </div>
     )
   }
@@ -121,7 +122,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#131313', borderBottom: '1px solid #1e1e1e' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, overflow: 'hidden', flexShrink: 0 }}>
-            {restaurante.logo_url ? <img src={restaurante.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🍽️'}
+            {restaurante.logo_url ? <img src={restaurante.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{restaurante.nombre?.[0]?.toUpperCase() || 'R'}</span>}
           </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 13, color: '#E5E2E1', letterSpacing: '0.03em', textTransform: 'uppercase' }}>{restaurante.nombre}</div>
@@ -138,17 +139,16 @@ function AppInner({ seccion, setSeccion, nav }) {
               fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: '#991B1B',
               animation: 'pulse 1s infinite',
             }}>
-              🔔 {pedidosNuevos.length} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
+              {pedidosNuevos.length} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
             </button>
           )}
           {isNative ? (
             <button onClick={abrirPanelWeb} style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px',
-              borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)',
+              padding: '7px 12px', borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.12)',
               background: 'var(--c-surface2)', fontSize: 11, fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit', color: 'var(--c-muted)',
             }}>
-              <Globe size={13} strokeWidth={2} />
               Panel web
             </button>
           ) : (
@@ -156,17 +156,15 @@ function AppInner({ seccion, setSeccion, nav }) {
               <button onClick={() => setSeccion('soporte')} style={{
                 padding: '7px 10px', borderRadius: 10, border: 'none',
                 background: seccion === 'soporte' ? 'var(--c-primary)' : 'var(--c-surface2)',
-                fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                 color: seccion === 'soporte' ? '#fff' : 'var(--c-muted)',
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}><MessageCircle size={14} strokeWidth={2} /></button>
+              }}>Soporte</button>
               <button onClick={() => setSeccion('metricas')} style={{
                 padding: '7px 10px', borderRadius: 10, border: 'none',
                 background: seccion === 'metricas' ? 'var(--c-primary)' : 'var(--c-surface2)',
-                fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                 color: seccion === 'metricas' ? '#fff' : 'var(--c-muted)',
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}><BarChart3 size={14} strokeWidth={2} /></button>
+              }}>Métricas</button>
             </>
           )}
         </div>
@@ -185,7 +183,6 @@ function AppInner({ seccion, setSeccion, nav }) {
           animation: 'pulse 1.5s ease-in-out infinite',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 22 }}>🔔</span>
             <div style={{ textAlign: 'left' }}>
               <div style={{ color: '#fff', fontSize: 13, fontWeight: 800 }}>
                 {pedidosNuevos.length} pedido{pedidosNuevos.length > 1 ? 's' : ''} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
@@ -297,7 +294,7 @@ function ToastNotification() {
       animation: 'fadeIn 0.25s ease',
       fontFamily: "'DM Sans', sans-serif",
     }}>
-      {isError ? '⚠️ ' : '✅ '}{state.msg}
+      {state.msg}
     </div>
   )
 }
@@ -349,7 +346,6 @@ class ErrorBoundary extends Component {
     return (
       <div style={{ ...shell, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
         <div style={{ textAlign: 'center', maxWidth: 340 }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>⚠️</div>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#F5F5F5', marginBottom: 8 }}>Algo salió mal</div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 24, lineHeight: 1.5 }}>Ha ocurrido un error inesperado. Recarga la página para continuar.</div>
           <button onClick={() => window.location.reload()} style={{ padding: '12px 32px', borderRadius: 12, border: 'none', background: '#B91C1C', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Recargar</button>

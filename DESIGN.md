@@ -68,7 +68,27 @@ In this design system, shadows are almost invisible, and lines are non-existent.
 
 ---
 
-### 6. Do's and Don'ts
+### 6. No-Icons Rule (Stitch Design Decision)
+
+**No decorative or functional icons anywhere except bottom navigation.**
+
+- Bottom nav icons (ClipboardList, ToggleLeft, Printer, Clock, UtensilsCrossed, Settings, Tag) → KEEP
+- App logo in Login (UtensilsIcon SVG) → KEEP
+- Google brand icon in OAuth button → KEEP
+- All other icons, emojis, and decorative symbols → REMOVE
+
+Replace emoji labels with plain text:
+- `💳 Tarjeta` → `Tarjeta`
+- `📞 Teléfono` → just the phone number
+- `🖨️` reimprimir → `Imprimir`
+- Password toggle `👁️/🙈` → `VER / OCULTAR` (small caps text)
+- Status messages (🛵, 📍, 🏪, etc.) → plain text only
+
+Header action buttons (Soporte, Métricas, Panel web) → text-only buttons, no lucide icons.
+
+---
+
+### 7. Do's and Don'ts
 
 **Do:**
 *   **Use Asymmetry:** Place high-level stats (Revenue) off-center to create an editorial, high-end feel.
