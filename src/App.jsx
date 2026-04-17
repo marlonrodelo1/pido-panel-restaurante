@@ -107,9 +107,9 @@ function AppInner({ seccion, setSeccion, nav }) {
   const { pedidosNuevos } = usePedidoAlert()
   async function abrirPanelWeb() {
     try {
-      await Browser.open({ url: 'https://parnert.pidoo.es' })
+      await Browser.open({ url: 'https://panel.pidoo.es' })
     } catch {
-      window.open('https://parnert.pidoo.es', '_blank')
+      window.open('https://panel.pidoo.es', '_blank')
     }
   }
 
