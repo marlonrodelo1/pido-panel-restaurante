@@ -14,10 +14,12 @@ export default function MisRepartidores() {
   const [vinc, setVinc] = useState([])
   const [status, setStatus] = useState({})
   const [showAdd, setShowAdd] = useState(false)
+  const [earnings, setEarnings] = useState([])
 
   useEffect(() => {
     if (!restaurante?.id) return
     load()
+    loadEarnings()
     const channel = supabase.channel(`mis-riders-${restaurante.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_status' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurante_riders', filter: `establecimiento_id=eq.${restaurante.id}` }, load)
@@ -25,6 +27,16 @@ export default function MisRepartidores() {
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [restaurante?.id])
+
+  async function loadEarnings() {
+    const hace7 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const { data } = await supabase
+      .from('rider_earnings')
+      .select('*, rider_accounts(nombre)')
+      .eq('establecimiento_id', restaurante.id)
+      .gte('created_at', hace7)
+    setEarnings(data || [])
+  }
 
   async function load() {
     const { data } = await supabase.from('restaurante_riders')
@@ -126,6 +138,81 @@ export default function MisRepartidores() {
           })}
         </div>
       )}
+
+      {/* Finanzas de riders (últimos 7 días) */}
+      <div style={{ marginTop: 30 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: '#E5E2E1', margin: 0 }}>Finanzas de riders</h2>
+          <span style={{ fontSize: 11, color: '#ab8985' }}>Últimos 7 días</span>
+        </div>
+        {earnings.length === 0 ? (
+          <div style={{ padding: 30, textAlign: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: 12, color: '#ab8985', fontSize: 13 }}>
+            Sin pedidos entregados en los últimos 7 días.
+          </div>
+        ) : (() => {
+          const grouped = {}
+          for (const e of earnings) {
+            const id = e.rider_account_id
+            if (!grouped[id]) {
+              grouped[id] = {
+                rider_id: id,
+                nombre: e.rider_accounts?.nombre || '—',
+                pedidos: 0,
+                total_envios: 0,
+                total_comision_rider: 0,
+                total_propinas: 0,
+                total_neto: 0,
+                pendiente: 0,
+              }
+            }
+            const g = grouped[id]
+            g.pedidos += 1
+            g.total_envios += Number(e.coste_envio || 0)
+            g.total_comision_rider += Number(e.comision_rider_sobre_subtotal || 0)
+            g.total_propinas += Number(e.propina || 0)
+            g.total_neto += Number(e.neto_rider || 0)
+            if (e.estado_pago === 'pendiente') g.pendiente += Number(e.neto_rider || 0)
+          }
+          const rows = Object.values(grouped).sort((a, b) => b.total_neto - a.total_neto)
+          const fmt = v => `${Number(v).toFixed(2)} €`
+          return (
+            <div style={{ overflowX: 'auto', background: 'rgba(255,255,255,0.04)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: '#E5E2E1' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    {['Rider', 'Pedidos', 'Envíos', 'Comisión (10%)', 'Propinas', 'Neto rider', 'Estado'].map(h => (
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, color: '#ab8985', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.rider_id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 700 }}>{r.nombre}</td>
+                      <td style={{ padding: '10px 12px' }}>{r.pedidos}</td>
+                      <td style={{ padding: '10px 12px' }}>{fmt(r.total_envios)}</td>
+                      <td style={{ padding: '10px 12px' }}>{fmt(r.total_comision_rider)}</td>
+                      <td style={{ padding: '10px 12px' }}>{fmt(r.total_propinas)}</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 800, color: '#4ade80' }}>{fmt(r.total_neto)}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        {r.pendiente > 0 ? (
+                          <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#FBBF24' }}>
+                            Pendiente {fmt(r.pendiente)}
+                          </span>
+                        ) : (
+                          <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>
+                            Pagado
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
+      </div>
 
       {showAdd && (
         <AddRiderModal

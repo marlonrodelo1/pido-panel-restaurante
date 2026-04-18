@@ -29,6 +29,28 @@ export default function Ajustes() {
   const [obteniendoUbi, setObteniendoUbi] = useState(false)
   const [ubiOk, setUbiOk] = useState(!!restaurante?.latitud)
 
+  // Delivery config (algoritmo + tarifa)
+  const [deliveryCfg, setDeliveryCfg] = useState({
+    algoritmo_asignacion: 'nearest',
+    timing_envio_rider: 'on_accept',
+    tarifa_base: '',
+    tarifa_radio_base_km: '',
+    tarifa_precio_km: '',
+    tarifa_maxima: '',
+    override_activo: false,
+  })
+  const [overrideAlgoPermitido, setOverrideAlgoPermitido] = useState(true)
+  const [overrideTarifaPermitido, setOverrideTarifaPermitido] = useState(true)
+  const [globalDefaults, setGlobalDefaults] = useState({
+    envio_tarifa_base: '',
+    envio_radio_base_km: '',
+    envio_precio_km_adicional: '',
+    envio_tarifa_maxima: '',
+    default_algoritmo_asignacion: 'nearest',
+    default_timing_envio_rider: 'on_accept',
+  })
+  const [guardandoDelivery, setGuardandoDelivery] = useState(false)
+
   // Printer config
   const [printerIp, setPrinterIp] = useState('')
   const [printerPort, setPrinterPort] = useState(9100)
@@ -44,11 +66,89 @@ export default function Ajustes() {
   useEffect(() => {
     if (restaurante) {
       loadCategorias()
+      loadDeliveryConfig()
       const h = restaurante.horario || null
       setHorario(h)
       setHorarioOriginal(h ? JSON.stringify(h) : null)
     }
   }, [restaurante?.id])
+
+  async function loadDeliveryConfig() {
+    // Cargar config global + override flags
+    const { data: platform } = await supabase
+      .from('configuracion_plataforma')
+      .select('clave, valor')
+      .in('clave', [
+        'override_algoritmo_permitido',
+        'override_tarifa_permitido',
+        'default_algoritmo_asignacion',
+        'default_timing_envio_rider',
+        'envio_tarifa_base',
+        'envio_radio_base_km',
+        'envio_precio_km_adicional',
+        'envio_tarifa_maxima',
+      ])
+    const map = {}
+    ;(platform || []).forEach(r => { map[r.clave] = r.valor })
+    setOverrideAlgoPermitido(map.override_algoritmo_permitido !== 'false')
+    setOverrideTarifaPermitido(map.override_tarifa_permitido !== 'false')
+    setGlobalDefaults({
+      envio_tarifa_base: map.envio_tarifa_base ?? '',
+      envio_radio_base_km: map.envio_radio_base_km ?? '',
+      envio_precio_km_adicional: map.envio_precio_km_adicional ?? '',
+      envio_tarifa_maxima: map.envio_tarifa_maxima ?? '',
+      default_algoritmo_asignacion: map.default_algoritmo_asignacion || 'nearest',
+      default_timing_envio_rider: map.default_timing_envio_rider || 'on_accept',
+    })
+
+    // Cargar config del restaurante
+    const { data: cfg } = await supabase
+      .from('restaurante_config_delivery')
+      .select('*')
+      .eq('establecimiento_id', restaurante.id)
+      .maybeSingle()
+    if (cfg) {
+      setDeliveryCfg({
+        algoritmo_asignacion: cfg.algoritmo_asignacion || map.default_algoritmo_asignacion || 'nearest',
+        timing_envio_rider: cfg.timing_envio_rider || map.default_timing_envio_rider || 'on_accept',
+        tarifa_base: cfg.tarifa_base ?? '',
+        tarifa_radio_base_km: cfg.tarifa_radio_base_km ?? '',
+        tarifa_precio_km: cfg.tarifa_precio_km ?? '',
+        tarifa_maxima: cfg.tarifa_maxima ?? '',
+        override_activo: !!cfg.override_activo,
+      })
+    } else {
+      setDeliveryCfg(prev => ({
+        ...prev,
+        algoritmo_asignacion: map.default_algoritmo_asignacion || 'nearest',
+        timing_envio_rider: map.default_timing_envio_rider || 'on_accept',
+      }))
+    }
+  }
+
+  async function guardarDelivery() {
+    setGuardandoDelivery(true)
+    const payload = {
+      establecimiento_id: restaurante.id,
+      algoritmo_asignacion: deliveryCfg.algoritmo_asignacion,
+      timing_envio_rider: deliveryCfg.timing_envio_rider,
+      tarifa_base: deliveryCfg.tarifa_base === '' ? null : Number(deliveryCfg.tarifa_base),
+      tarifa_radio_base_km: deliveryCfg.tarifa_radio_base_km === '' ? null : Number(deliveryCfg.tarifa_radio_base_km),
+      tarifa_precio_km: deliveryCfg.tarifa_precio_km === '' ? null : Number(deliveryCfg.tarifa_precio_km),
+      tarifa_maxima: deliveryCfg.tarifa_maxima === '' ? null : Number(deliveryCfg.tarifa_maxima),
+      override_activo: !!deliveryCfg.override_activo,
+    }
+    const { error } = await supabase
+      .from('restaurante_config_delivery')
+      .upsert(payload, { onConflict: 'establecimiento_id' })
+    setGuardandoDelivery(false)
+    if (error) return toast('Error guardando: ' + error.message, 'error')
+    toast('Configuración de delivery guardada', 'success')
+  }
+
+  function updateDelivery(field, value) {
+    setDeliveryCfg(prev => ({ ...prev, [field]: value }))
+  }
 
   // Load printer config from localStorage
   useEffect(() => {
@@ -552,6 +652,161 @@ export default function Ajustes() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Delivery — Algoritmo de asignación */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Algoritmo de asignación</h3>
+        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14 }}>
+          Cómo se elige el rider que recibirá tus pedidos
+        </p>
+
+        {!overrideAlgoPermitido && (
+          <div style={{ padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', fontSize: 11, color: '#FBBF24', marginBottom: 12 }}>
+            Tu Pidoo no permite personalizar esto todavía. Se están usando las reglas globales.
+          </div>
+        )}
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>Algoritmo</label>
+          <select
+            value={overrideAlgoPermitido ? deliveryCfg.algoritmo_asignacion : globalDefaults.default_algoritmo_asignacion}
+            onChange={e => updateDelivery('algoritmo_asignacion', e.target.value)}
+            disabled={!overrideAlgoPermitido}
+            style={{ ...inp, opacity: overrideAlgoPermitido ? 1 : 0.6 }}
+          >
+            <option value="nearest">Más cercano</option>
+            <option value="fewest_orders">Menos pedidos activos</option>
+            <option value="same_area">Misma zona</option>
+            <option value="broadcast_all">Difundir a todos los riders</option>
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>Cuándo se envía el pedido al rider</label>
+          <select
+            value={overrideAlgoPermitido ? deliveryCfg.timing_envio_rider : globalDefaults.default_timing_envio_rider}
+            onChange={e => updateDelivery('timing_envio_rider', e.target.value)}
+            disabled={!overrideAlgoPermitido}
+            style={{ ...inp, opacity: overrideAlgoPermitido ? 1 : 0.6 }}
+          >
+            <option value="on_accept">Al aceptar el pedido</option>
+            <option value="on_ready">Cuando esté listo para recoger</option>
+          </select>
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: overrideAlgoPermitido ? 'pointer' : 'default', opacity: overrideAlgoPermitido ? 1 : 0.6 }}>
+          <input
+            type="checkbox"
+            checked={!!deliveryCfg.override_activo}
+            onChange={e => updateDelivery('override_activo', e.target.checked)}
+            disabled={!overrideAlgoPermitido}
+            style={{ width: 18, height: 18, accentColor: 'var(--c-primary)' }}
+          />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Usar mi configuración</span>
+        </label>
+      </div>
+
+      {/* Delivery — Tarifa de envío al cliente */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Tarifa de envío que cobras al cliente</h3>
+        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14 }}>
+          Esto es lo que aparece en el carrito del cliente. El 100% va íntegro al rider junto con un 10% de comisión sobre el subtotal y las propinas.
+        </p>
+
+        {!overrideTarifaPermitido && (
+          <div style={{ padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', fontSize: 11, color: '#FBBF24', marginBottom: 12 }}>
+            Tu Pidoo no permite personalizar esto todavía. Se están usando las reglas globales.
+          </div>
+        )}
+
+        {(() => {
+          const readOnly = !overrideTarifaPermitido
+          const base = readOnly ? globalDefaults.envio_tarifa_base : deliveryCfg.tarifa_base
+          const radio = readOnly ? globalDefaults.envio_radio_base_km : deliveryCfg.tarifa_radio_base_km
+          const precio = readOnly ? globalDefaults.envio_precio_km_adicional : deliveryCfg.tarifa_precio_km
+          const maxima = readOnly ? globalDefaults.envio_tarifa_maxima : deliveryCfg.tarifa_maxima
+          const fmt = v => (v === '' || v === null || v === undefined) ? '—' : Number(v).toFixed(2)
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={lbl}>Tarifa base (€)</label>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={base}
+                    onChange={e => updateDelivery('tarifa_base', e.target.value)}
+                    disabled={readOnly}
+                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
+                  />
+                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Asignada a todos los pedidos</div>
+                </div>
+                <div>
+                  <label style={lbl}>Distancia base (km)</label>
+                  <input
+                    type="number" step="0.1" min="0"
+                    value={radio}
+                    onChange={e => updateDelivery('tarifa_radio_base_km', e.target.value)}
+                    disabled={readOnly}
+                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
+                  />
+                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Si se excede, se añade cargo adicional</div>
+                </div>
+                <div>
+                  <label style={lbl}>Tarifa adicional por km (€)</label>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={precio}
+                    onChange={e => updateDelivery('tarifa_precio_km', e.target.value)}
+                    disabled={readOnly}
+                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
+                  />
+                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Esto se cobra por cada km sobre la distancia base</div>
+                </div>
+                <div>
+                  <label style={lbl}>Tarifa máxima (€)</label>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={maxima}
+                    onChange={e => updateDelivery('tarifa_maxima', e.target.value)}
+                    disabled={readOnly}
+                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
+                  />
+                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Tope del envío</div>
+                </div>
+              </div>
+
+              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.2)', fontSize: 12, color: 'var(--c-text)', lineHeight: 1.6, marginBottom: 12 }}>
+                A tus clientes se les cobrará <strong>{fmt(base)}€</strong> por los primeros <strong>{fmt(radio)} km</strong>. Después, <strong>{fmt(precio)}€</strong> por cada km adicional, con un máximo de <strong>{fmt(maxima)}€</strong>.
+              </div>
+            </>
+          )
+        })()}
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: overrideTarifaPermitido ? 'pointer' : 'default', opacity: overrideTarifaPermitido ? 1 : 0.6 }}>
+          <input
+            type="checkbox"
+            checked={!!deliveryCfg.override_activo}
+            onChange={e => updateDelivery('override_activo', e.target.checked)}
+            disabled={!overrideTarifaPermitido}
+            style={{ width: 18, height: 18, accentColor: 'var(--c-primary)' }}
+          />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Usar mi configuración</span>
+        </label>
+
+        <button
+          onClick={guardarDelivery}
+          disabled={guardandoDelivery || (!overrideAlgoPermitido && !overrideTarifaPermitido)}
+          style={{
+            width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 12, border: 'none',
+            background: guardandoDelivery ? 'var(--c-muted)' : 'var(--c-primary)',
+            color: '#fff', fontSize: 13, fontWeight: 800,
+            cursor: guardandoDelivery ? 'default' : 'pointer', fontFamily: 'inherit',
+            opacity: (!overrideAlgoPermitido && !overrideTarifaPermitido) ? 0.5 : 1,
+          }}
+        >
+          {guardandoDelivery ? 'Guardando...' : 'Guardar configuración delivery'}
+        </button>
       </div>
 
       {/* Categorías del establecimiento (nivel 2) */}
