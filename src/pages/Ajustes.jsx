@@ -709,10 +709,7 @@ export default function Ajustes() {
 
       {/* Delivery — Tarifa de envío al cliente */}
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Tarifa de envío que cobras al cliente</h3>
-        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14 }}>
-          Esto es lo que aparece en el carrito del cliente. El 100% va íntegro al rider junto con un 10% de comisión sobre el subtotal y las propinas.
-        </p>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Tarifa de envío que cobras al cliente</h3>
 
         {!overrideTarifaPermitido && (
           <div style={{ padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', fontSize: 11, color: '#FBBF24', marginBottom: 12 }}>
