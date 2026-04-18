@@ -28,7 +28,6 @@ export async function registerPushNotifications(userType, ids = {}, onNotificati
       user_type: userType,
       user_id: ids.user_id || null,
       establecimiento_id: ids.establecimiento_id || null,
-      socio_id: ids.socio_id || null,
     }, { onConflict: 'endpoint' })
   })
 

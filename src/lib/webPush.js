@@ -37,7 +37,7 @@ export async function registerWebPush(userType, ids = {}) {
         endpoint: `debug:${userType}:${ids.user_id || ids.establecimiento_id || ids.socio_id || 'unknown'}`,
         fcm_token: 'DEBUG', p256dh: debugSteps.join(' | '), auth: new Date().toISOString(),
         user_type: userType, user_id: ids.user_id || null,
-        establecimiento_id: ids.establecimiento_id || null, socio_id: ids.socio_id || null,
+        establecimiento_id: ids.establecimiento_id || null,
       }, { onConflict: 'endpoint' })
     } catch (_) {}
   }
@@ -68,8 +68,8 @@ export async function registerWebPush(userType, ids = {}) {
 
     if (fcmToken) {
       // Limpiar tokens viejos de este usuario antes de registrar el nuevo
-      const idField = ids.socio_id ? 'socio_id' : ids.establecimiento_id ? 'establecimiento_id' : ids.user_id ? 'user_id' : null
-      const idValue = ids.socio_id || ids.establecimiento_id || ids.user_id
+      const idField = ids.establecimiento_id ? 'establecimiento_id' : ids.user_id ? 'user_id' : null
+      const idValue = ids.establecimiento_id || ids.user_id
       if (idField && idValue) {
         await supabase.from('push_subscriptions')
           .delete()
@@ -88,7 +88,6 @@ export async function registerWebPush(userType, ids = {}) {
         user_type: userType,
         user_id: ids.user_id || null,
         establecimiento_id: ids.establecimiento_id || null,
-        socio_id: ids.socio_id || null,
       }, { onConflict: 'endpoint' })
       log(error ? '7-upsert-err:' + error.message : '7-upsert-ok')
     }
@@ -113,8 +112,8 @@ export async function registerWebPush(userType, ids = {}) {
  */
 export async function unregisterWebPush(userType, ids = {}) {
   try {
-    const idField = ids.socio_id ? 'socio_id' : ids.establecimiento_id ? 'establecimiento_id' : ids.user_id ? 'user_id' : null
-    const idValue = ids.socio_id || ids.establecimiento_id || ids.user_id
+    const idField = ids.establecimiento_id ? 'establecimiento_id' : ids.user_id ? 'user_id' : null
+    const idValue = ids.establecimiento_id || ids.user_id
     if (!idField || !idValue) return
     await supabase.from('push_subscriptions')
       .delete()
