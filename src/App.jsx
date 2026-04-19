@@ -334,12 +334,12 @@ const shell = {
   '--c-surface3': '#2a2a2a', '--c-border': '#353535',
   '--c-text': '#E5E2E1', '--c-muted': '#ab8985', '--c-accent': '#ffb4ab',
   '--c-btn-gradient': 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)',
-  fontFamily: "'DM Sans', sans-serif", width: '100%',
+  fontFamily: "'Inter', system-ui, -apple-system, sans-serif", width: '100%',
   background: 'var(--c-bg)', color: 'var(--c-text)',
 }
 
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -380,7 +380,7 @@ function ToastNotification() {
       fontSize: 13, fontWeight: 600, textAlign: 'center',
       boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
       animation: 'fadeIn 0.25s ease',
-      fontFamily: "'DM Sans', sans-serif",
+      fontFamily: "'Inter', system-ui, sans-serif",
     }}>
       {state.msg}
     </div>

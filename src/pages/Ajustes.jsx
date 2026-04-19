@@ -8,6 +8,51 @@ import { toast } from '../App'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
+  // --- F2: URL propia tienda pública ---
+  const [slugDraft, setSlugDraft] = useState('')
+  const [slugSaving, setSlugSaving] = useState(false)
+  const [slugError, setSlugError] = useState(null)
+  const [slugCopied, setSlugCopied] = useState(false)
+  function slugify(txt) {
+    return (txt || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+      .slice(0, 40)
+  }
+  useEffect(() => {
+    if (!restaurante?.slug && restaurante?.nombre && !slugDraft) {
+      setSlugDraft(slugify(restaurante.nombre))
+    }
+  }, [restaurante?.nombre, restaurante?.slug])
+  async function guardarSlug() {
+    setSlugError(null)
+    const s = slugify(slugDraft)
+    if (!s || s.length < 3) { setSlugError('Mínimo 3 caracteres'); return }
+    const RESERVED = ['terminos','privacidad','reset-password','landing-repartidores','perfil','home','carrito','mis-pedidos','favoritos','mapa','notificaciones','admin','panel','api','login','registro','tracking','tienda','pedido']
+    if (RESERVED.includes(s)) { setSlugError('Ese nombre está reservado'); return }
+    setSlugSaving(true)
+    const { error } = await supabase.from('establecimientos').update({ slug: s }).eq('id', restaurante.id)
+    setSlugSaving(false)
+    if (error) {
+      if (String(error.message || '').toLowerCase().includes('duplicate') || error.code === '23505') {
+        setSlugError('Ese nombre ya está en uso. Prueba otro.')
+      } else {
+        setSlugError(error.message || 'No se pudo guardar')
+      }
+      return
+    }
+    await updateRestaurante?.({ slug: s })
+  }
+  async function copiarUrl() {
+    try {
+      await navigator.clipboard.writeText(`https://pidoo.es/${restaurante?.slug}`)
+      setSlugCopied(true)
+      setTimeout(() => setSlugCopied(false), 2000)
+    } catch (_) {}
+  }
+  // --- fin F2 ---
   const [activo, setActivo] = useState(restaurante?.activo ?? true)
   const [nombre, setNombre] = useState(restaurante?.nombre || '')
   const [tipo, setTipo] = useState(restaurante?.tipo || 'restaurante')
@@ -377,6 +422,91 @@ export default function Ajustes() {
   return (
     <div style={{ paddingBottom: hayCambios ? 90 : 0 }}>
       <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 20px' }}>Ajustes</h2>
+
+      {/* ── F2: URL propia tienda pública ── */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Mi URL propia</h3>
+        <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+          Tu restaurante sigue apareciendo en pidoo.es. Esta URL es adicional.
+        </div>
+        {restaurante?.slug ? (
+          <>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '12px 14px', borderRadius: 10,
+              background: 'var(--c-surface2)', border: '1px solid var(--c-border)',
+              marginBottom: 10,
+            }}>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--c-text)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                https://pidoo.es/{restaurante.slug}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={copiarUrl} style={{
+                flex: 1, padding: '10px 14px', borderRadius: 10,
+                border: '1px solid var(--c-border)', background: 'var(--c-surface2)',
+                color: 'var(--c-text)', fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                {slugCopied ? '✓ Copiado' : 'Copiar'}
+              </button>
+              <button onClick={() => window.open(`https://pidoo.es/${restaurante.slug}`, '_blank', 'noopener,noreferrer')} style={{
+                flex: 1, padding: '10px 14px', borderRadius: 10,
+                border: 'none', background: 'var(--c-primary, #B91C1C)',
+                color: '#fff', fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                Abrir tienda
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 8 }}>
+              Crea tu URL personalizada (solo minúsculas, números y guiones).
+            </div>
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: 6, marginBottom: 8 }}>
+              <span style={{
+                display: 'flex', alignItems: 'center', padding: '0 10px',
+                borderRadius: 10, background: 'var(--c-surface2)',
+                border: '1px solid var(--c-border)', fontSize: 12, color: 'var(--c-muted)', fontFamily: 'monospace',
+              }}>
+                pidoo.es/
+              </span>
+              <input
+                value={slugDraft}
+                onChange={e => { setSlugDraft(slugify(e.target.value)); setSlugError(null) }}
+                placeholder="mi-restaurante"
+                maxLength={40}
+                style={{
+                  flex: 1, padding: '10px 12px', borderRadius: 10,
+                  background: 'var(--c-surface2)', border: '1px solid var(--c-border)',
+                  color: 'var(--c-text)', fontSize: 14, fontFamily: 'monospace',
+                  outline: 'none', minHeight: 40,
+                }}
+              />
+            </div>
+            {slugError && (
+              <div style={{ fontSize: 12, color: '#EF4444', marginBottom: 8, fontWeight: 600 }}>
+                {slugError}
+              </div>
+            )}
+            <button
+              onClick={guardarSlug}
+              disabled={slugSaving || !slugDraft || slugDraft.length < 3}
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: 10,
+                border: 'none',
+                background: slugSaving || !slugDraft || slugDraft.length < 3 ? 'rgba(255,255,255,0.1)' : 'var(--c-primary, #B91C1C)',
+                color: '#fff', fontSize: 13, fontWeight: 700,
+                cursor: slugSaving || !slugDraft || slugDraft.length < 3 ? 'default' : 'pointer',
+                fontFamily: 'inherit',
+              }}>
+              {slugSaving ? 'Guardando...' : 'Crear URL'}
+            </button>
+          </>
+        )}
+      </div>
 
       {/* Estado abierto/cerrado — inmediato */}
       <div style={{ background: activo ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

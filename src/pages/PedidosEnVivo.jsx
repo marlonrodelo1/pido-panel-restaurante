@@ -8,26 +8,20 @@ import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
 import { toast } from '../App'
 import { Truck } from 'lucide-react'
+import { colors, type, ds, stateBadge } from '../lib/uiStyles'
 
 // ─── Badges ────────────────────────────────────────────────────────────────
 function PagoBadge({ pago }) {
   const t = pago === 'tarjeta'
-  return <span style={{ background: t ? 'rgba(96,165,250,0.15)' : 'rgba(74,222,128,0.12)', color: t ? '#93c5fd' : '#86efac', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>{t ? 'Tarjeta' : 'Efectivo'}</span>
+  return <span style={{ background: t ? colors.infoSoft : colors.stateOkSoft, color: t ? colors.info : colors.stateOk, fontSize: type.xxs, fontWeight: 700, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.04em' }}>{t ? 'Tarjeta' : 'Efectivo'}</span>
 }
 function CanalBadge() {
-  return <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fdba74', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>PIDO</span>
+  return <span style={{ background: colors.primarySoft, color: colors.primary, fontSize: type.xxs, fontWeight: 700, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.04em' }}>PIDO</span>
 }
 function EstadoBadge({ estado }) {
-  const map = {
-    preparando: { bg: 'rgba(251,191,36,0.12)', c: '#fcd34d', label: 'Preparando' },
-    aceptado:   { bg: 'rgba(251,191,36,0.12)', c: '#fcd34d', label: 'Preparando' },
-    listo:      { bg: 'rgba(74,222,128,0.12)', c: '#86efac', label: 'Listo' },
-    recogido:   { bg: 'rgba(96,165,250,0.12)', c: '#93c5fd', label: 'Recogido' },
-    en_camino:  { bg: 'rgba(167,139,250,0.12)', c: '#c4b5fd', label: 'En camino' },
-    nuevo:      { bg: 'rgba(185,28,28,0.2)', c: '#fca5a5', label: 'Nuevo' },
-  }
-  const s = map[estado] || { bg: '#242424', c: '#ab8985', label: estado }
-  return <span style={{ background: s.bg, color: s.c, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em', textTransform: 'uppercase' }}>{s.label}</span>
+  const sb = stateBadge(estado)
+  const { _label, ...style } = sb
+  return <span style={style}>{_label}</span>
 }
 
 // ─── Constantes ────────────────────────────────────────────────────────────
@@ -368,21 +362,21 @@ export default function PedidosEnVivo() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: '#E5E2E1', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Pedidos en Vivo</h2>
-        <button onClick={() => { unlockAudio(); startAlarm(); setTimeout(stopAlarm, 2000) }} style={{ padding: '7px 12px', borderRadius: 6, border: '1px solid #353535', background: '#1A1A1A', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#ab8985' }}>
+        <h2 style={{ ...ds.h1, margin: 0 }}>Pedidos en vivo</h2>
+        <button onClick={() => { unlockAudio(); startAlarm(); setTimeout(stopAlarm, 2000) }} style={ds.filterBtn}>
           Probar alarma
         </button>
       </div>
 
       {!hayAlgo && (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: '#ab8985' }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Esperando nuevos pedidos...</div>
-          <div style={{ fontSize: 11, color: '#353535', marginTop: 4 }}>Los pedidos aparecerán aquí en tiempo real</div>
+        <div style={{ textAlign: 'center', padding: '60px 0', color: colors.textMute }}>
+          <div style={{ fontSize: type.sm, fontWeight: 600 }}>Esperando nuevos pedidos...</div>
+          <div style={{ fontSize: type.xs, color: colors.textFaint, marginTop: 4 }}>Los pedidos aparecerán aquí en tiempo real</div>
         </div>
       )}
 
       {entrantes.length > 0 && (
-        <SeccionPedidos titulo="Nuevos" count={entrantes.length} color="#fca5a5" accentColor="#B91C1C">
+        <SeccionPedidos titulo="Nuevos" count={entrantes.length} color={colors.stateNew} accentColor={colors.stateNew}>
           {entrantes.map(p => (
             <LineaPedido key={p.id} pedido={p} timer={timers[p.id]} isNuevo onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -390,7 +384,7 @@ export default function PedidosEnVivo() {
       )}
 
       {preparando.length > 0 && (
-        <SeccionPedidos titulo="En Preparación" count={preparando.length} color="#fcd34d" accentColor="#d97706">
+        <SeccionPedidos titulo="En preparación" count={preparando.length} color={colors.statePrep} accentColor={colors.statePrep}>
           {preparando.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -398,7 +392,7 @@ export default function PedidosEnVivo() {
       )}
 
       {listos.length > 0 && (
-        <SeccionPedidos titulo="Listos" count={listos.length} color="#86efac" accentColor="#16a34a">
+        <SeccionPedidos titulo="Listos" count={listos.length} color={colors.stateOk} accentColor={colors.stateOk}>
           {listos.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -406,7 +400,7 @@ export default function PedidosEnVivo() {
       )}
 
       {enCamino.length > 0 && (
-        <SeccionPedidos titulo="En Camino" count={enCamino.length} color="#93c5fd" accentColor="#2563eb">
+        <SeccionPedidos titulo="En camino" count={enCamino.length} color={colors.stateOk} accentColor={colors.stateOk}>
           {enCamino.map(p => (
             <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
@@ -421,8 +415,8 @@ function SeccionPedidos({ titulo, count, color, accentColor, children }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '0 2px' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{titulo}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: accentColor, border: `1px solid ${accentColor}44`, padding: '1px 7px', borderRadius: 10 }}>{count}</span>
+        <span style={{ fontSize: type.xxs, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{titulo}</span>
+        <span style={{ fontSize: type.xxs, fontWeight: 700, color: accentColor, border: `1px solid ${accentColor}44`, padding: '1px 7px', borderRadius: 10 }}>{count}</span>
       </div>
       {children}
     </div>
@@ -441,18 +435,19 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
     : null
 
   const accionStyle = isNuevo
-    ? { background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', color: '#fff', border: 'none' }
+    ? { background: colors.primary, color: '#fff', border: 'none' }
     : ['aceptado', 'preparando'].includes(pedido.estado)
-    ? { background: 'rgba(74,222,128,0.12)', color: '#86efac', border: '1px solid rgba(74,222,128,0.25)' }
-    : { background: '#242424', color: '#E5E2E1', border: 'none' }
+    ? { background: colors.stateOkSoft, color: colors.stateOk, border: `1px solid ${colors.stateOkSoft}` }
+    : { background: colors.surface2, color: colors.text, border: 'none' }
 
   return (
     <div
       onClick={onTap}
       style={{
-        background: '#1A1A1A',
+        background: colors.surface,
+        border: `1px solid ${colors.border}`,
         borderRadius: 12,
-        padding: '16px',
+        padding: '14px 16px',
         marginBottom: 8,
         cursor: 'pointer',
         transition: 'background 0.15s',
@@ -463,16 +458,16 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
           {timer > 0 ? (
             <span style={{
-              fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-              color: timer < 60 ? '#fca5a5' : '#fcd34d',
-              background: timer < 60 ? 'rgba(185,28,28,0.15)' : 'rgba(217,119,6,0.12)',
+              fontSize: type.sm, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+              color: timer < 60 ? colors.stateNew : colors.statePrep,
+              background: timer < 60 ? colors.stateNewSoft : colors.statePrepSoft,
               padding: '3px 8px', borderRadius: 6,
               animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
             }}>{formatTimer(timer)}</span>
           ) : (
             <span style={{
-              fontSize: 13, fontWeight: 800,
-              color: '#fca5a5', background: 'rgba(185,28,28,0.15)',
+              fontSize: type.sm, fontWeight: 800,
+              color: colors.stateNew, background: colors.stateNewSoft,
               padding: '3px 8px', borderRadius: 6,
             }}>Expirando...</span>
           )}
@@ -480,23 +475,23 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
       )}
 
       {/* Código */}
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{pedido.codigo}</div>
+      <div style={{ fontSize: type.xxs, fontWeight: 700, color: colors.textMute, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{pedido.codigo}</div>
 
       {/* Nombre cliente */}
-      <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: pedido.modo_entrega === 'delivery' ? 8 : 14 }}>{nombre}</div>
+      <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text, marginBottom: pedido.modo_entrega === 'delivery' ? 8 : 14 }}>{nombre}</div>
 
       {/* Rider info (solo delivery) */}
       {pedido.modo_entrega === 'delivery' && <RiderInfo pedido={pedido} />}
 
       {/* Precio + botón acción */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: '#ffb4ab' }}>{(pedido.total || 0).toFixed(2)}€</span>
+        <span style={{ fontSize: type.lg, fontWeight: 800, color: colors.text }}>{(pedido.total || 0).toFixed(2)}€</span>
         {accionLabel && (
           <button
             onClick={e => { e.stopPropagation(); onTap() }}
             style={{
               padding: '8px 16px', borderRadius: 8,
-              fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              fontSize: type.xxs, fontWeight: 700, cursor: 'pointer',
               fontFamily: 'inherit', letterSpacing: '0.05em',
               ...accionStyle,
             }}
@@ -588,8 +583,8 @@ function ModalReasignar({ pedido, onClose }) {
 }
 
 // ─── Pantalla de detalle ───────────────────────────────────────────────────
-const seccionLabel = { fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'block' }
-const seccionCard = { background: '#1A1A1A', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }
+const seccionLabel = { fontSize: type.xxs, fontWeight: 700, color: colors.textMute, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'block' }
+const seccionCard = { background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 12, padding: '14px 16px', marginBottom: 12 }
 
 function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, onAceptar, onRechazar, onMarcarListo, onMarcarRecogido, onMarcarEntregado, onCancelar, onReimprimir }) {
   const [rechazando, setRechazando] = useState(false)
