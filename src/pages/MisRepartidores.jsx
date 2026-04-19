@@ -11,11 +11,17 @@ const ESTADOS = {
 }
 
 export default function MisRepartidores() {
-  const { restaurante } = useRest()
+  const { restaurante, updateRestaurante } = useRest()
   const [vinc, setVinc] = useState([])
   const [status, setStatus] = useState({})
   const [showAdd, setShowAdd] = useState(false)
   const [earnings, setEarnings] = useState([])
+  const [riderUnicoId, setRiderUnicoId] = useState(restaurante?.rider_unico_id || null)
+  const [savingRiderUnico, setSavingRiderUnico] = useState(false)
+
+  useEffect(() => {
+    setRiderUnicoId(restaurante?.rider_unico_id || null)
+  }, [restaurante?.rider_unico_id])
 
   useEffect(() => {
     if (!restaurante?.id) return
@@ -28,6 +34,24 @@ export default function MisRepartidores() {
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [restaurante?.id])
+
+  async function setRiderUnico(newId) {
+    if (savingRiderUnico) return
+    setSavingRiderUnico(true)
+    const prev = riderUnicoId
+    setRiderUnicoId(newId)
+    const { error } = await supabase.from('establecimientos')
+      .update({ rider_unico_id: newId })
+      .eq('id', restaurante.id)
+    setSavingRiderUnico(false)
+    if (error) {
+      setRiderUnicoId(prev)
+      toast('Error: ' + error.message, 'error')
+      return
+    }
+    await updateRestaurante?.({ rider_unico_id: newId })
+    toast('Rider de tienda pública actualizado')
+  }
 
   async function loadEarnings() {
     const hace7 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -58,12 +82,19 @@ export default function MisRepartidores() {
 
   async function desvincular(rider) {
     if (!confirm(`¿Desvincular "${rider.nombre}" de tu restaurante?`)) return
+    // Si es el rider forzado para tienda pública, limpiar la referencia
+    const esForzado = rider.id === riderUnicoId
+    if (esForzado) {
+      await supabase.from('establecimientos').update({ rider_unico_id: null }).eq('id', restaurante.id)
+      setRiderUnicoId(null)
+      await updateRestaurante?.({ rider_unico_id: null })
+    }
     const { error } = await supabase.from('restaurante_riders')
       .delete()
       .eq('establecimiento_id', restaurante.id)
       .eq('rider_account_id', rider.id)
     if (error) return toast('Error: ' + error.message, 'error')
-    toast('Rider desvinculado')
+    toast(esForzado ? 'Rider desvinculado y quitado de tienda pública' : 'Rider desvinculado')
     load()
   }
 
@@ -88,6 +119,98 @@ export default function MisRepartidores() {
         <Stat label="En línea" value={online} color={colors.stateOk} />
         <Stat label="Pendientes" value={pendientes} color={colors.statePrep} />
       </div>
+
+      {/* Sección Rider de tienda pública (solo plan pro) */}
+      {restaurante?.plan_pro && (() => {
+        const ridersActivos = vinc
+          .map(v => v.rider_accounts)
+          .filter(r => r && r.estado === 'activa' && r.activa)
+        const modoEspecifico = riderUnicoId != null
+        return (
+          <div style={{ ...ds.card, marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4, gap: 10, flexWrap: 'wrap' }}>
+              <h2 style={{ ...ds.h2, margin: 0 }}>🏪 Rider de tienda pública</h2>
+            </div>
+            <div style={{ fontSize: type.xs, color: colors.textMute, marginBottom: 14, lineHeight: 1.5 }}>
+              Elige quién recibe los pedidos que entran por <span style={{ fontFamily: 'monospace', color: colors.textDim }}>pidoo.es/{restaurante.slug || 'tu-tienda'}</span>.
+            </div>
+
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10, padding: 12,
+              borderRadius: 10, cursor: savingRiderUnico ? 'default' : 'pointer',
+              background: !modoEspecifico ? colors.primarySoft : colors.elev,
+              border: `1px solid ${!modoEspecifico ? colors.primaryBorder : colors.border}`,
+              marginBottom: 8, transition: 'all 0.15s',
+            }}>
+              <input
+                type="radio"
+                checked={!modoEspecifico}
+                disabled={savingRiderUnico}
+                onChange={() => setRiderUnico(null)}
+                style={{ marginTop: 2, accentColor: colors.primary }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.text }}>🔀 Todos mis riders vinculados</div>
+                <div style={{ fontSize: type.xxs, color: colors.textMute, marginTop: 3, lineHeight: 1.4 }}>
+                  Algoritmo normal: elige el más cercano online entre tus riders. (Recomendado)
+                </div>
+              </div>
+            </label>
+
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10, padding: 12,
+              borderRadius: 10, cursor: savingRiderUnico || ridersActivos.length === 0 ? 'default' : 'pointer',
+              background: modoEspecifico ? colors.primarySoft : colors.elev,
+              border: `1px solid ${modoEspecifico ? colors.primaryBorder : colors.border}`,
+              marginBottom: 10, opacity: ridersActivos.length === 0 ? 0.55 : 1, transition: 'all 0.15s',
+            }}>
+              <input
+                type="radio"
+                checked={modoEspecifico}
+                disabled={savingRiderUnico || ridersActivos.length === 0}
+                onChange={() => {
+                  if (ridersActivos.length === 0) return
+                  setRiderUnico(ridersActivos[0].id)
+                }}
+                style={{ marginTop: 2, accentColor: colors.primary }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.text }}>📌 Solo un rider específico</div>
+                <div style={{ fontSize: type.xxs, color: colors.textMute, marginTop: 3, lineHeight: 1.4 }}>
+                  Todos los pedidos de tienda pública van siempre a ese rider (si está offline, cae al algoritmo normal).
+                </div>
+                {modoEspecifico && (
+                  <select
+                    value={riderUnicoId || ''}
+                    disabled={savingRiderUnico}
+                    onChange={e => setRiderUnico(e.target.value || null)}
+                    onClick={e => e.stopPropagation()}
+                    style={{ ...ds.select, marginTop: 10, maxWidth: 320 }}
+                  >
+                    {ridersActivos.map(r => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </label>
+
+            {ridersActivos.length === 0 && (
+              <div style={{ fontSize: type.xxs, color: colors.statePrep, marginBottom: 8 }}>
+                Añade y aprueba al menos 1 rider para poder elegir uno específico.
+              </div>
+            )}
+
+            <div style={{
+              marginTop: 6, padding: '10px 12px', borderRadius: 10,
+              background: colors.infoSoft, border: `1px solid ${colors.border}`,
+              fontSize: type.xxs, color: colors.textDim, lineHeight: 1.5,
+            }}>
+              💡 <strong style={{ color: colors.text }}>Recomendación Pidoo:</strong> paga al rider 10% del subtotal + 100% del envío. Puedes pactar otra cifra libremente con él.
+            </div>
+          </div>
+        )
+      })()}
 
       {vinc.length === 0 ? (
         <div style={{ padding: 30, textAlign: 'center', background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 12, color: colors.textMute, fontSize: type.sm }}>
@@ -122,6 +245,13 @@ export default function MisRepartidores() {
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {restaurante?.plan_pro && r.id === riderUnicoId && (
+                    <span style={{
+                      padding: '3px 8px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700,
+                      background: colors.primarySoft, color: colors.primary, whiteSpace: 'nowrap',
+                      letterSpacing: '0.02em', border: `1px solid ${colors.primaryBorder}`,
+                    }}>📌 Tienda pública</span>
+                  )}
                   <span style={{
                     padding: '3px 8px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700,
                     background: estadoInfo.bg, color: estadoInfo.color, whiteSpace: 'nowrap',

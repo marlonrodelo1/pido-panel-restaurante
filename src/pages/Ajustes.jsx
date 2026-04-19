@@ -96,6 +96,29 @@ export default function Ajustes() {
   })
   const [guardandoDelivery, setGuardandoDelivery] = useState(false)
 
+  // F4: tarifa envío fija tienda pública (plan pro)
+  const [tarifaEnvioFija, setTarifaEnvioFija] = useState(restaurante?.tarifa_envio_fija ?? '')
+  const [guardandoTarifaFija, setGuardandoTarifaFija] = useState(false)
+  useEffect(() => {
+    setTarifaEnvioFija(restaurante?.tarifa_envio_fija ?? '')
+  }, [restaurante?.tarifa_envio_fija])
+  async function guardarTarifaFija() {
+    setGuardandoTarifaFija(true)
+    const parsed = tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija)
+    if (parsed != null && (Number.isNaN(parsed) || parsed < 0)) {
+      setGuardandoTarifaFija(false)
+      return toast('Introduce un importe válido', 'error')
+    }
+    const { error } = await supabase
+      .from('establecimientos')
+      .update({ tarifa_envio_fija: parsed })
+      .eq('id', restaurante.id)
+    setGuardandoTarifaFija(false)
+    if (error) return toast('Error: ' + error.message, 'error')
+    await updateRestaurante?.({ tarifa_envio_fija: parsed })
+    toast('Tarifa de envío fija guardada', 'success')
+  }
+
   // Printer config
   const [printerIp, setPrinterIp] = useState('')
   const [printerPort, setPrinterPort] = useState(9100)
@@ -507,6 +530,49 @@ export default function Ajustes() {
           </>
         )}
       </div>
+
+      {/* ── F4: Envío tienda pública (solo plan pro) ── */}
+      {restaurante?.plan_pro && (
+        <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Envío tienda pública</h3>
+          <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+            Este importe es el que paga el cliente y el que recibe el rider en los pedidos que entren por <span style={{ fontFamily: 'monospace' }}>pidoo.es/{restaurante.slug || 'tu-tienda'}</span>.
+            Si lo dejas vacío, se aplica la tarifa global por distancia.
+          </div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4, display: 'block' }}>
+            Tarifa envío fija (€)
+          </label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={tarifaEnvioFija ?? ''}
+              onChange={e => setTarifaEnvioFija(e.target.value)}
+              placeholder="Ej: 3.50"
+              style={{
+                flex: 1, padding: '10px 12px', borderRadius: 10,
+                background: 'var(--c-surface2)', border: '1px solid var(--c-border)',
+                color: 'var(--c-text)', fontSize: 14, fontFamily: 'monospace',
+                outline: 'none', minHeight: 40,
+              }}
+            />
+            <button
+              onClick={guardarTarifaFija}
+              disabled={guardandoTarifaFija}
+              style={{
+                padding: '0 18px', borderRadius: 10,
+                border: 'none',
+                background: guardandoTarifaFija ? 'rgba(255,255,255,0.1)' : 'var(--c-primary, #B91C1C)',
+                color: '#fff', fontSize: 13, fontWeight: 700,
+                cursor: guardandoTarifaFija ? 'default' : 'pointer',
+                fontFamily: 'inherit', minHeight: 40,
+              }}>
+              {guardandoTarifaFija ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Estado abierto/cerrado — inmediato */}
       <div style={{ background: activo ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
