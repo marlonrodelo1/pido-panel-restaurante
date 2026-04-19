@@ -104,7 +104,7 @@ function AppContent() {
 
 function AppInner({ seccion, setSeccion, nav }) {
   const { restaurante } = useRest()
-  const { pedidosNuevos } = usePedidoAlert()
+  const { pedidosNuevos, silenciada, silenciar } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -229,30 +229,57 @@ function AppInner({ seccion, setSeccion, nav }) {
         </div>
       </div>
 
-      {/* Banner flotante cuando hay pedidos nuevos y NO estamos en Pedidos (solo app nativa) */}
-      {isNative && pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
-        <button onClick={() => setSeccion('pedidos')} style={{
+      {/* Banner flotante cuando hay pedidos nuevos (solo app nativa).
+          Se muestra siempre que haya pedidos nuevos — incluso en la sección
+          Pedidos — para dar acceso rápido al botón Silenciar. */}
+      {isNative && pedidosNuevos.length > 0 && (
+        <div style={{
           position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
           width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100,
           background: 'linear-gradient(135deg, #B91C1C, #DC2626)',
-          borderRadius: 14, padding: '14px 18px', border: 'none',
+          borderRadius: 14, padding: '12px 14px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          cursor: 'pointer', fontFamily: 'inherit',
+          gap: 10, fontFamily: 'inherit',
           boxShadow: '0 8px 32px rgba(185,28,28,0.4)',
-          animation: 'pulse 1.5s ease-in-out infinite',
+          animation: silenciada ? 'none' : 'pulse 1.5s ease-in-out infinite',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ color: '#fff', fontSize: 13, fontWeight: 800 }}>
-                {pedidosNuevos.length} pedido{pedidosNuevos.length > 1 ? 's' : ''} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
-              </div>
-              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600 }}>Toca para ver y aceptar</div>
+          <div
+            onClick={() => { if (seccion !== 'pedidos') setSeccion('pedidos') }}
+            style={{ flex: 1, cursor: seccion !== 'pedidos' ? 'pointer' : 'default', textAlign: 'left', minWidth: 0 }}
+          >
+            <div style={{ color: '#fff', fontSize: 13, fontWeight: 800 }}>
+              {pedidosNuevos.length} pedido{pedidosNuevos.length > 1 ? 's' : ''} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: 600 }}>
+              {silenciada ? 'Alarma silenciada' : (seccion !== 'pedidos' ? 'Toca para ver y aceptar' : 'Acepta o rechaza desde la lista')}
             </div>
           </div>
-          <div style={{ color: '#fff', fontSize: 12, fontWeight: 700, background: 'rgba(255,255,255,0.25)', padding: '6px 12px', borderRadius: 8 }}>
-            Ir a pedidos
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {!silenciada && (
+              <button
+                onClick={(e) => { e.stopPropagation(); silenciar() }}
+                style={{
+                  padding: '7px 11px', borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  background: 'rgba(0,0,0,0.25)', color: '#fff',
+                  fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >Silenciar</button>
+            )}
+            {seccion !== 'pedidos' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setSeccion('pedidos') }}
+                style={{
+                  color: '#fff', fontSize: 11, fontWeight: 700,
+                  background: 'rgba(255,255,255,0.25)', padding: '7px 11px',
+                  borderRadius: 8, border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit', whiteSpace: 'nowrap',
+                }}
+              >Ir a pedidos</button>
+            )}
           </div>
-        </button>
+        </div>
       )}
 
       {/* Contenido */}

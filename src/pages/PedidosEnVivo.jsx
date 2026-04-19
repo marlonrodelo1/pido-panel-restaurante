@@ -54,6 +54,10 @@ const formatTimer = s => {
 // ─── Componente principal ──────────────────────────────────────────────────
 export default function PedidosEnVivo() {
   const { restaurante } = useRest()
+  // pedidosNuevos viene del contexto global (fuente única de verdad para "nuevos").
+  // La suscripción realtime de INSERT vive en PedidoAlertContext, por encima
+  // del router, así la alarma persiste al cambiar de sección.
+  const { pedidosNuevos } = usePedidoAlert()
   const [entrantes, setEntrantes] = useState([])
   const [activos, setActivos] = useState([])
   const [itemsMap, setItemsMap] = useState({})
@@ -68,32 +72,12 @@ export default function PedidosEnVivo() {
     if (!existe) setPedidoDetalleId(null)
   }, [entrantes, activos])
 
-  // ── Realtime ───────────────────────────────────────────────────────────────
+  // ── Fetch inicial + Realtime UPDATE (los INSERT los maneja el contexto) ──
   useEffect(() => {
     if (!restaurante) return
     fetchPedidos()
 
-    const channel = supabase.channel('pedidos-rest')
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'pedidos',
-        filter: `establecimiento_id=eq.${restaurante.id}`,
-      }, async payload => {
-        if (payload.new.canal !== 'pido') return
-        let pedidoConCliente = payload.new
-        if (payload.new.usuario_id) {
-          const { data: usr } = await supabase.from('usuarios').select('nombre, apellido, telefono').eq('id', payload.new.usuario_id).single()
-          if (usr) pedidoConCliente = { ...payload.new, usuarios: usr }
-        }
-        if (payload.new.rider_account_id) {
-          const { data: rider } = await supabase.from('rider_accounts').select('id, nombre, telefono').eq('id', payload.new.rider_account_id).single()
-          if (rider) pedidoConCliente = { ...pedidoConCliente, rider_accounts: rider }
-        }
-        setEntrantes(prev => [pedidoConCliente, ...prev])
-        setTimers(prev => ({ ...prev, [payload.new.id]: 180 }))
-        const { data: newItems } = await supabase.from('pedido_items').select('*').eq('pedido_id', payload.new.id)
-        if (newItems?.length > 0) setItemsMap(prev => ({ ...prev, [payload.new.id]: newItems }))
-        startAlarm()
-      })
+    const channel = supabase.channel('pedidos-rest-page-' + restaurante.id)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'pedidos',
         filter: `establecimiento_id=eq.${restaurante.id}`,
@@ -102,43 +86,76 @@ export default function PedidosEnVivo() {
         const p = payload.new
         if (['entregado', 'cancelado'].includes(p.estado)) {
           setActivos(prev => prev.filter(x => x.id !== p.id))
-          setEntrantes(prev => {
-            const remaining = prev.filter(x => x.id !== p.id)
-            if (remaining.length === 0) stopAlarm()
-            return remaining
-          })
           setTimers(prev => { const n = { ...prev }; delete n[p.id]; return n })
         } else if (['aceptado', 'preparando', 'listo', 'recogido', 'en_camino'].includes(p.estado)) {
-          // Si el pedido ya no está en 'nuevo', limpiar cualquier timer huérfano
           setTimers(prev => {
             if (!(p.id in prev)) return prev
             const n = { ...prev }; delete n[p.id]; return n
-          })
-          // Asegurarnos de que salga de entrantes si todavía estaba ahí
-          setEntrantes(prev => {
-            if (!prev.some(x => x.id === p.id)) return prev
-            const remaining = prev.filter(x => x.id !== p.id)
-            if (remaining.length === 0) stopAlarm()
-            return remaining
           })
           let rider_accounts = null
           if (p.rider_account_id && p.rider_account_id !== payload.old?.rider_account_id) {
             const { data } = await supabase.from('rider_accounts').select('id, nombre, telefono').eq('id', p.rider_account_id).single()
             rider_accounts = data || null
           }
-          setActivos(prev => prev.map(x => {
-            if (x.id !== p.id) return x
-            const merged = { ...x, ...p }
-            if (rider_accounts) merged.rider_accounts = rider_accounts
-            else if (!p.rider_account_id) merged.rider_accounts = null
-            return merged
-          }))
+          setActivos(prev => {
+            if (!prev.some(x => x.id === p.id)) return prev
+            return prev.map(x => {
+              if (x.id !== p.id) return x
+              const merged = { ...x, ...p }
+              if (rider_accounts) merged.rider_accounts = rider_accounts
+              else if (!p.rider_account_id) merged.rider_accounts = null
+              return merged
+            })
+          })
         }
       })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [restaurante?.id])
+
+  // ── Sincronizar "entrantes" locales con pedidosNuevos del contexto ───────
+  // Al llegar un pedido nuevo (detectado por el contexto), aquí lo
+  // enriquecemos con usuarios/rider/items y arrancamos su timer local.
+  useEffect(() => {
+    if (!restaurante) return
+    const nuevosIds = new Set(pedidosNuevos.map(p => p.id))
+    const existentesIds = new Set(entrantes.map(p => p.id))
+
+    const faltan = pedidosNuevos.filter(p => !existentesIds.has(p.id))
+    if (faltan.length > 0) {
+      ;(async () => {
+        for (const p of faltan) {
+          let pedidoEnriquecido = p
+          if (p.usuario_id) {
+            const { data: usr } = await supabase.from('usuarios').select('nombre, apellido, telefono').eq('id', p.usuario_id).single()
+            if (usr) pedidoEnriquecido = { ...pedidoEnriquecido, usuarios: usr }
+          }
+          if (p.rider_account_id) {
+            const { data: rider } = await supabase.from('rider_accounts').select('id, nombre, telefono').eq('id', p.rider_account_id).single()
+            if (rider) pedidoEnriquecido = { ...pedidoEnriquecido, rider_accounts: rider }
+          }
+          setEntrantes(prev => {
+            if (prev.some(x => x.id === p.id)) return prev
+            return [pedidoEnriquecido, ...prev]
+          })
+          setTimers(prev => prev[p.id] != null ? prev : { ...prev, [p.id]: 180 })
+          const { data: newItems } = await supabase.from('pedido_items').select('*').eq('pedido_id', p.id)
+          if (newItems?.length > 0) setItemsMap(prev => ({ ...prev, [p.id]: newItems }))
+        }
+      })()
+    }
+
+    // Quitar locales que ya no están en contexto (aceptados/cancelados)
+    if (entrantes.some(p => !nuevosIds.has(p.id))) {
+      setEntrantes(prev => prev.filter(p => nuevosIds.has(p.id)))
+      setTimers(prev => {
+        const n = {}
+        Object.keys(prev).forEach(id => { if (nuevosIds.has(id)) n[id] = prev[id] })
+        return n
+      })
+    }
+  }, [pedidosNuevos, restaurante?.id])
 
   // ── Timer countdown ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -163,6 +180,8 @@ export default function PedidosEnVivo() {
   }, [entrantes.length, restaurante?.id])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
+  // Solo carga pedidos activos; los "nuevos" vienen del contexto PedidoAlertContext
+  // y se sincronizan con "entrantes" en el effect de arriba.
   async function fetchPedidos() {
     try {
       const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
@@ -172,7 +191,6 @@ export default function PedidosEnVivo() {
       ])
       setEntrantes(nuevos || [])
       setActivos(prep || [])
-      if ((nuevos || []).length > 0) startAlarm()
       const t = {}
       for (const p of nuevos || []) t[p.id] = 180
       setTimers(t)
