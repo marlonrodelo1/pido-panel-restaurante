@@ -446,13 +446,32 @@ export default function Ajustes() {
     <div style={{ paddingBottom: hayCambios ? 90 : 0 }}>
       <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 20px' }}>Ajustes</h2>
 
-      {/* ── F2: URL propia tienda pública ── */}
+      {/* ── F2: URL propia tienda pública (solo plan pro) ── */}
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Mi URL propia</h3>
-        <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-          Tu restaurante sigue apareciendo en pidoo.es. Esta URL es adicional.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Mi URL propia</h3>
+          {!restaurante?.plan_pro && (
+            <span style={{
+              fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999,
+              background: 'rgba(251,191,36,0.15)', color: '#FBBF24',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+            }}>Plan Pro</span>
+          )}
         </div>
-        {restaurante?.slug ? (
+        <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+          {restaurante?.plan_pro
+            ? 'Tu restaurante sigue apareciendo en pidoo.es. Esta URL es adicional.'
+            : 'Activa el plan Tienda Pública (39€/mes) para tener tu propia URL pidoo.es/<tu-slug> donde los clientes pueden pedir solo a ti, sin comisión Pidoo.'}
+        </div>
+        {!restaurante?.plan_pro ? (
+          <div style={{
+            padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.25)',
+            fontSize: 12, color: 'var(--c-text)', lineHeight: 1.5,
+          }}>
+            Ve al menú <strong>Más → Plan tienda</strong> para activarlo.
+          </div>
+        ) : restaurante?.slug ? (
           <>
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
