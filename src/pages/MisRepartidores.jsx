@@ -72,19 +72,19 @@ export default function MisRepartidores() {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#E5E2E1', margin: 0 }}>Mis repartidores</h1>
-          <div style={{ fontSize: 12, color: '#ab8985', marginTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 800, color: '#E5E2E1', margin: 0, letterSpacing: '-0.01em' }}>Mis repartidores</h1>
+          <div style={{ fontSize: 11.5, color: '#ab8985', marginTop: 3, lineHeight: 1.4 }}>
             Los riders que registras aquí reciben tus pedidos de delivery. Requieren aprobación de Pidoo.
           </div>
         </div>
-        <button onClick={() => setShowAdd(true)} style={btnPrimary}>+ Añadir repartidor</button>
+        <button onClick={() => setShowAdd(true)} style={{ ...btnPrimary, fontSize: 11.5, padding: '8px 12px', whiteSpace: 'nowrap', flexShrink: 0 }}>+ Añadir rider</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 18 }}>
         <Stat label="Activos" value={activos} color="#4ade80" />
-        <Stat label="En línea ahora" value={online} color="#4ade80" />
+        <Stat label="En línea" value={online} color="#4ade80" />
         <Stat label="Pendientes" value={pendientes} color="#FBBF24" />
       </div>
 
@@ -102,37 +102,44 @@ export default function MisRepartidores() {
             const estadoInfo = ESTADOS[r.estado] || ESTADOS.pendiente
             return (
               <div key={r.id} style={{
-                padding: '14px 16px', borderRadius: 12,
+                padding: 12, borderRadius: 12,
                 background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
-                display: 'flex', alignItems: 'center', gap: 14,
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               }}>
                 <div style={{
-                  width: 38, height: 38, borderRadius: 10, background: 'rgba(185,28,28,0.18)',
+                  width: 34, height: 34, borderRadius: 10, background: 'rgba(185,28,28,0.18)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F87171',
-                  fontSize: 15, fontWeight: 800,
+                  fontSize: 13, fontWeight: 800, flexShrink: 0,
                 }}>{r.nombre?.[0]?.toUpperCase() || '?'}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#E5E2E1' }}>{r.nombre}</div>
-                  <div style={{ fontSize: 11, color: '#ab8985', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    {r.telefono && <span>📞 {r.telefono}</span>}
-                    {r.email && <span>✉ {r.email}</span>}
+                <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#E5E2E1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.nombre}</div>
+                  <div style={{ fontSize: 10.5, color: '#ab8985', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {[r.telefono && `📞 ${r.telefono}`, r.email && `✉ ${r.email}`].filter(Boolean).join(' · ')}
                   </div>
                   {r.estado === 'rechazada' && r.motivo_rechazo && (
-                    <div style={{ fontSize: 11, color: '#F87171', marginTop: 4 }}>Motivo: {r.motivo_rechazo}</div>
+                    <div style={{ fontSize: 10.5, color: '#F87171', marginTop: 3 }}>Motivo: {r.motivo_rechazo}</div>
                   )}
                 </div>
-                <span style={{
-                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                  background: estadoInfo.bg, color: estadoInfo.color,
-                }}>{estadoInfo.label}</span>
-                {r.estado === 'activa' && (
-                  online ? (
-                    <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>● Online</span>
-                  ) : (
-                    <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(148,163,184,0.15)', color: '#94A3B8' }}>○ Offline</span>
-                  )
-                )}
-                <button onClick={() => desvincular(r)} style={btnGhost}>Desvincular</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{
+                    padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700,
+                    background: estadoInfo.bg, color: estadoInfo.color, whiteSpace: 'nowrap',
+                  }}>{estadoInfo.label}</span>
+                  {r.estado === 'activa' && (
+                    online ? (
+                      <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(34,197,94,0.15)', color: '#4ade80', whiteSpace: 'nowrap' }}>● Online</span>
+                    ) : (
+                      <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(148,163,184,0.15)', color: '#94A3B8', whiteSpace: 'nowrap' }}>○ Offline</span>
+                    )
+                  )}
+                  <button onClick={() => desvincular(r)} style={{
+                    padding: '5px 10px', borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: 'transparent', color: '#ab8985',
+                    fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+                  }}>Desvincular</button>
+                </div>
               </div>
             )
           })}
@@ -142,8 +149,8 @@ export default function MisRepartidores() {
       {/* Finanzas de riders (últimos 7 días) */}
       <div style={{ marginTop: 30 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: '#E5E2E1', margin: 0 }}>Finanzas de riders</h2>
-          <span style={{ fontSize: 11, color: '#ab8985' }}>Últimos 7 días</span>
+          <h2 style={{ fontSize: 15, fontWeight: 800, color: '#E5E2E1', margin: 0, letterSpacing: '-0.01em' }}>Finanzas de riders</h2>
+          <span style={{ fontSize: 10.5, color: '#ab8985' }}>Últimos 7 días</span>
         </div>
         {earnings.length === 0 ? (
           <div style={{ padding: 30, textAlign: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: 12, color: '#ab8985', fontSize: 13 }}>
@@ -228,9 +235,9 @@ export default function MisRepartidores() {
 
 function Stat({ label, value, color }) {
   return (
-    <div style={{ padding: 14, borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <div style={{ fontSize: 10, color: '#ab8985', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
+    <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ fontSize: 9.5, color: '#ab8985', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2, lineHeight: 1.1 }}>{value}</div>
     </div>
   )
 }

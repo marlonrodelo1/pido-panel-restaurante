@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef, Component } from 'react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, BarChart3 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -29,7 +29,7 @@ const NAV_ICONS_NATIVE = { pedidos: ClipboardList, disponibilidad: ToggleLeft, i
 
 function AppContent() {
   const { user, restaurante, loading } = useRest()
-  const [seccion, setSeccion] = useState('pedidos')
+  const [seccion, setSeccion] = useState(isNative ? 'pedidos' : 'historial')
 
   const handleNuevoPedido = useCallback(() => {
     setSeccion('pedidos')
@@ -88,7 +88,6 @@ function AppContent() {
         { id: 'impresora', label: 'Config' },
       ]
     : [
-        { id: 'pedidos', label: 'Pedidos' },
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
@@ -105,6 +104,9 @@ function AppContent() {
 function AppInner({ seccion, setSeccion, nav }) {
   const { restaurante } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+
   async function abrirPanelWeb() {
     try {
       await Browser.open({ url: 'https://panel.pidoo.es' })
@@ -113,27 +115,46 @@ function AppInner({ seccion, setSeccion, nav }) {
     }
   }
 
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDocClick(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [menuOpen])
+
   const navIcons = isNative ? NAV_ICONS_NATIVE : NAV_ICONS_WEB
+
+  const extraOpciones = [
+    { id: 'repartidores', label: 'Repartidores', Icon: Truck },
+    { id: 'metricas', label: 'Métricas', Icon: BarChart3 },
+    { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
+  ]
+  const extraActive = extraOpciones.find(e => e.id === seccion)
 
   return (
     <div style={{ ...shell, minHeight: '100vh', position: 'relative', paddingBottom: 80 }}>
       <style>{css}</style>
 
       {/* Header */}
-      <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#131313', borderBottom: '1px solid #1e1e1e' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#131313', borderBottom: '1px solid #1e1e1e' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
             {restaurante.logo_url ? <img src={restaurante.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{restaurante.nombre?.[0]?.toUpperCase() || 'R'}</span>}
           </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 13, color: '#E5E2E1', letterSpacing: '0.03em', textTransform: 'uppercase' }}>{restaurante.nombre}</div>
-            <div style={{ fontSize: 10, color: restaurante.activo ? '#4ade80' : '#ab8985', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              {restaurante.activo ? '● Abierto' : '● Cerrado'}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#E5E2E1', letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {restaurante.nombre}
+            </div>
+            <div style={{ fontSize: 10, color: restaurante.activo ? '#4ade80' : '#ab8985', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: restaurante.activo ? '#4ade80' : '#ab8985', display: 'inline-block' }} />
+              {restaurante.activo ? 'Abierto' : 'Cerrado'}
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {isNative && pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
             <button onClick={() => setSeccion('pedidos')} style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px',
               borderRadius: 10, border: 'none', background: '#FEF2F2',
@@ -153,32 +174,61 @@ function AppInner({ seccion, setSeccion, nav }) {
               Panel web
             </button>
           ) : (
-            <>
-              <button onClick={() => setSeccion('repartidores')} style={{
-                padding: '7px 10px', borderRadius: 10, border: 'none',
-                background: seccion === 'repartidores' ? 'var(--c-primary)' : 'var(--c-surface2)',
-                fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                color: seccion === 'repartidores' ? '#fff' : 'var(--c-muted)',
-              }}>Repartidores</button>
-              <button onClick={() => setSeccion('soporte')} style={{
-                padding: '7px 10px', borderRadius: 10, border: 'none',
-                background: seccion === 'soporte' ? 'var(--c-primary)' : 'var(--c-surface2)',
-                fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                color: seccion === 'soporte' ? '#fff' : 'var(--c-muted)',
-              }}>Soporte</button>
-              <button onClick={() => setSeccion('metricas')} style={{
-                padding: '7px 10px', borderRadius: 10, border: 'none',
-                background: seccion === 'metricas' ? 'var(--c-primary)' : 'var(--c-surface2)',
-                fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                color: seccion === 'metricas' ? '#fff' : 'var(--c-muted)',
-              }}>Métricas</button>
-            </>
+            <div ref={menuRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setMenuOpen(v => !v)}
+                aria-label="Más opciones"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 12px', borderRadius: 10,
+                  border: 'none',
+                  background: extraActive ? 'var(--c-primary)' : 'var(--c-surface2)',
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                  color: extraActive ? '#fff' : 'var(--c-text)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {extraActive ? <extraActive.Icon size={14} strokeWidth={2.2} /> : <MoreHorizontal size={16} strokeWidth={2.2} />}
+                {extraActive ? extraActive.label : 'Más'}
+              </button>
+              {menuOpen && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200,
+                  minWidth: 180, background: '#1A1A1A',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: 12, padding: 6, display: 'flex', flexDirection: 'column',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.45)',
+                }}>
+                  {extraOpciones.map(opt => {
+                    const active = seccion === opt.id
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => { setSeccion(opt.id); setMenuOpen(false) }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '9px 12px', borderRadius: 8,
+                          border: 'none', background: active ? 'var(--c-primary-light)' : 'transparent',
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          fontSize: 13, fontWeight: 600,
+                          color: active ? '#fff' : 'var(--c-text)',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <opt.Icon size={15} strokeWidth={2} color={active ? 'var(--c-primary)' : 'var(--c-muted)'} />
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Banner flotante cuando hay pedidos nuevos y NO estamos en Pedidos */}
-      {pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
+      {/* Banner flotante cuando hay pedidos nuevos y NO estamos en Pedidos (solo app nativa) */}
+      {isNative && pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
         <button onClick={() => setSeccion('pedidos')} style={{
           position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
           width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100,
@@ -205,7 +255,7 @@ function AppInner({ seccion, setSeccion, nav }) {
 
       {/* Contenido */}
       <div style={{ padding: 20, animation: 'fadeIn 0.3s ease' }}>
-        {seccion === 'pedidos' && <PedidosEnVivo />}
+        {seccion === 'pedidos' && isNative && <PedidosEnVivo />}
         {/* Native-only */}
         {seccion === 'disponibilidad' && <DisponibilidadProductos />}
         {seccion === 'impresora' && <ConfigImpresora />}
