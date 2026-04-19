@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
-import { startAlarm, stopAlarm, unlockAudio } from '../lib/alarm'
+import { usePedidoAlert } from '../context/PedidoAlertContext'
+import { stopAlarm, unlockAudio, startAlarm } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
@@ -106,7 +107,20 @@ export default function PedidosEnVivo() {
             if (remaining.length === 0) stopAlarm()
             return remaining
           })
+          setTimers(prev => { const n = { ...prev }; delete n[p.id]; return n })
         } else if (['aceptado', 'preparando', 'listo', 'recogido', 'en_camino'].includes(p.estado)) {
+          // Si el pedido ya no está en 'nuevo', limpiar cualquier timer huérfano
+          setTimers(prev => {
+            if (!(p.id in prev)) return prev
+            const n = { ...prev }; delete n[p.id]; return n
+          })
+          // Asegurarnos de que salga de entrantes si todavía estaba ahí
+          setEntrantes(prev => {
+            if (!prev.some(x => x.id === p.id)) return prev
+            const remaining = prev.filter(x => x.id !== p.id)
+            if (remaining.length === 0) stopAlarm()
+            return remaining
+          })
           let rider_accounts = null
           if (p.rider_account_id && p.rider_account_id !== payload.old?.rider_account_id) {
             const { data } = await supabase.from('rider_accounts').select('id, nombre, telefono').eq('id', p.rider_account_id).single()
@@ -196,8 +210,8 @@ export default function PedidosEnVivo() {
     imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
     if (pedido.modo_entrega === 'delivery') {
       ;(async () => {
-        const MAX_RETRIES = 1
-        const RETRY_DELAY = 3000
+        const MAX_RETRIES = 3 // total 4 intentos
+        const RETRY_DELAYS = [2000, 4000, 8000] // delay exponencial antes de los intentos 2, 3 y 4
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
             const { data, error } = await supabase.functions.invoke('create-shipday-order', { body: { pedido_id: pedido.id } })
@@ -205,8 +219,27 @@ export default function PedidosEnVivo() {
             throw error
           } catch (err) {
             console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
-            if (attempt === MAX_RETRIES) { toast('Pedido aceptado. Repartidor no asignado automáticamente — revisa Shipday.', 'error'); return }
-            await new Promise(r => setTimeout(r, RETRY_DELAY))
+            if (attempt === MAX_RETRIES) {
+              toast(`No se pudo crear orden Shipday tras 4 intentos para ${pedido.codigo}. Super-admin avisado.`, 'error')
+              try {
+                await supabase.from('pedidos').update({ shipday_status: 'error_crear_orden' }).eq('id', pedido.id)
+              } catch (e) { console.error('[Shipday] Error marcando pedido con error_crear_orden:', e) }
+              try {
+                const { data: admins } = await supabase.from('usuarios').select('id').eq('rol', 'superadmin')
+                for (const a of admins || []) {
+                  await supabase.functions.invoke('enviar_push', {
+                    body: {
+                      usuarioId: a.id,
+                      titulo: 'Pedido con error delivery',
+                      cuerpo: `${restaurante.nombre} aceptó pedido ${pedido.codigo} pero Shipday falló 4 veces. Revisar manualmente.`,
+                      tipo: 'admin_alert',
+                    },
+                  })
+                }
+              } catch (e) { console.error('[Shipday] Error notificando superadmin:', e) }
+              return
+            }
+            await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]))
           }
         }
       })()
@@ -245,6 +278,7 @@ export default function PedidosEnVivo() {
     const motivoTexto = MOTIVOS_CANCELACION.find(m => m.id === motivoId)?.label || 'Cancelado por el restaurante'
     await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', pedido.id)
     setActivos(prev => prev.filter(p => p.id !== pedido.id))
+    setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
     setPedidoDetalleId(prev => prev === pedido.id ? null : prev)
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
     if (pedido.metodo_pago === 'tarjeta') {
@@ -407,15 +441,23 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
       }}
     >
       {/* Timer (solo nuevos) */}
-      {isNuevo && timer != null && timer > 0 && (
+      {isNuevo && timer != null && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-          <span style={{
-            fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-            color: timer < 60 ? '#fca5a5' : '#fcd34d',
-            background: timer < 60 ? 'rgba(185,28,28,0.15)' : 'rgba(217,119,6,0.12)',
-            padding: '3px 8px', borderRadius: 6,
-            animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
-          }}>{formatTimer(timer)}</span>
+          {timer > 0 ? (
+            <span style={{
+              fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+              color: timer < 60 ? '#fca5a5' : '#fcd34d',
+              background: timer < 60 ? 'rgba(185,28,28,0.15)' : 'rgba(217,119,6,0.12)',
+              padding: '3px 8px', borderRadius: 6,
+              animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
+            }}>{formatTimer(timer)}</span>
+          ) : (
+            <span style={{
+              fontSize: 13, fontWeight: 800,
+              color: '#fca5a5', background: 'rgba(185,28,28,0.15)',
+              padding: '3px 8px', borderRadius: 6,
+            }}>Expirando...</span>
+          )}
         </div>
       )}
 
@@ -477,6 +519,12 @@ function ModalReasignar({ pedido, onClose }) {
   const [motivo, setMotivo] = useState('')
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape' && !loading) onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, loading])
+
   async function confirmar() {
     setLoading(true)
     try {
@@ -491,10 +539,18 @@ function ModalReasignar({ pedido, onClose }) {
     }
   }
 
+  const handleOverlayClick = () => { if (!loading) onClose() }
+
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1A1A1A', borderRadius: 12, padding: 20, width: '100%', maxWidth: 420, border: '1px solid #353535' }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#E5E2E1', marginBottom: 6 }}>Reasignar pedido</div>
+    <div onClick={handleOverlayClick} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ position: 'relative', background: '#1A1A1A', borderRadius: 12, padding: 20, width: '100%', maxWidth: 420, border: '1px solid #353535' }}>
+        <button
+          onClick={onClose}
+          disabled={loading}
+          aria-label="Cerrar"
+          style={{ position: 'absolute', top: 8, right: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: '#ab8985', fontSize: 20, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', borderRadius: 6, lineHeight: 1 }}
+        >×</button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#E5E2E1', marginBottom: 6, paddingRight: 28 }}>Reasignar pedido</div>
         <div style={{ fontSize: 12, color: '#ab8985', marginBottom: 14 }}>Se buscará el siguiente rider disponible más cercano.</div>
         <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Motivo (opcional)</label>
         <textarea
@@ -549,14 +605,21 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
           </div>
           <div style={{ fontSize: 11, color: '#ab8985', marginTop: 2 }}>{restaurante?.nombre}</div>
         </div>
-        {isNuevo && timer != null && timer > 0 && (
-          <div style={{
-            background: timer < 60 ? 'rgba(185,28,28,0.2)' : 'rgba(217,119,6,0.15)',
-            borderRadius: 8, padding: '6px 12px',
-            color: timer < 60 ? '#fca5a5' : '#fcd34d',
-            fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-            animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
-          }}>{formatTimer(timer)}</div>
+        {isNuevo && timer != null && (
+          timer > 0 ? (
+            <div style={{
+              background: timer < 60 ? 'rgba(185,28,28,0.2)' : 'rgba(217,119,6,0.15)',
+              borderRadius: 8, padding: '6px 12px',
+              color: timer < 60 ? '#fca5a5' : '#fcd34d',
+              fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+              animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
+            }}>{formatTimer(timer)}</div>
+          ) : (
+            <div style={{
+              background: 'rgba(185,28,28,0.2)', borderRadius: 8, padding: '6px 12px',
+              color: '#fca5a5', fontSize: 14, fontWeight: 800,
+            }}>Expirando...</div>
+          )
         )}
       </div>
 
