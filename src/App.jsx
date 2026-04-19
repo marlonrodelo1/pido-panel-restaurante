@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, BarChart3, Wallet } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, BarChart3, Wallet, CreditCard } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -21,6 +21,7 @@ import ConfigImpresora from './pages/ConfigImpresora'
 import Activacion from './pages/Activacion'
 import MisRepartidores from './pages/MisRepartidores'
 import FinanzasRestaurante from './pages/FinanzasRestaurante'
+import PlanTiendaPublica from './pages/PlanTiendaPublica'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -129,6 +130,7 @@ function AppInner({ seccion, setSeccion, nav }) {
 
   const extraOpciones = [
     { id: 'repartidores', label: 'Repartidores', Icon: Truck },
+    { id: 'plan-tienda', label: 'Plan tienda', Icon: CreditCard },
     { id: 'finanzas', label: 'Finanzas', Icon: Wallet },
     { id: 'metricas', label: 'Métricas', Icon: BarChart3 },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
@@ -295,6 +297,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'soporte' && <Soporte />}
         {seccion === 'metricas' && <Metricas />}
         {seccion === 'repartidores' && <MisRepartidores />}
+        {seccion === 'plan-tienda' && <PlanTiendaPublica />}
         {seccion === 'finanzas' && <FinanzasRestaurante />}
         {seccion === 'ajustes' && <Ajustes />}
       </div>
