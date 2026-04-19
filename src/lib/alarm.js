@@ -7,11 +7,14 @@ let isPlaying = false
 let audioElement = null
 let alarmDataUrl = null
 
-// Generar un wav de alarma en base64 (sirena corta) para no depender de archivos externos
+// Genera un WAV con un chime premium de 2 notas (A5 → D6) estilo "ding-dong"
+// Envelope suave (attack + sustain + release) para evitar clicks y sonar agradable
+// Mantiene la intensidad alta para que no se escape al restaurante
 function generateAlarmDataUrl() {
-  const sampleRate = 22050
-  const duration = 0.5
-  const samples = sampleRate * duration
+  const sampleRate = 44100
+  // 0.9s de sonido + 1.6s de silencio → loop natural cada 2.5s
+  const duration = 2.5
+  const samples = Math.floor(sampleRate * duration)
   const buffer = new ArrayBuffer(44 + samples * 2)
   const view = new DataView(buffer)
 
@@ -31,12 +34,39 @@ function generateAlarmDataUrl() {
   writeString(36, 'data')
   view.setUint32(40, samples * 2, true)
 
-  // Generate two-tone siren
+  // Parámetros de las 2 notas
+  const notes = [
+    { freq: 880.00,  start: 0.00, dur: 0.35 }, // A5  ("ding")
+    { freq: 1174.66, start: 0.28, dur: 0.45 }, // D6  ("dong")
+  ]
+
+  // Envelope ADSR sencillo: attack 20ms, release 180ms
+  const attack = 0.02
+  const release = 0.18
+
   for (let i = 0; i < samples; i++) {
     const t = i / sampleRate
-    const freq = t < 0.25 ? 1000 : 1400
-    const val = Math.sin(2 * Math.PI * freq * t) * 0.9
-    view.setInt16(44 + i * 2, val * 32767, true)
+    let sample = 0
+
+    for (const n of notes) {
+      const local = t - n.start
+      if (local < 0 || local > n.dur) continue
+
+      // Envelope
+      let env
+      if (local < attack) env = local / attack
+      else if (local > n.dur - release) env = Math.max(0, (n.dur - local) / release)
+      else env = 1
+
+      // Sine wave puro (más agradable que square) + ligero armónico para tener cuerpo
+      const fundamental = Math.sin(2 * Math.PI * n.freq * local)
+      const harmonic = Math.sin(2 * Math.PI * n.freq * 2 * local) * 0.12
+      sample += (fundamental + harmonic) * env * 0.75
+    }
+
+    // Clip suave y escribir
+    sample = Math.max(-1, Math.min(1, sample))
+    view.setInt16(44 + i * 2, sample * 32767, true)
   }
 
   const blob = new Blob([buffer], { type: 'audio/wav' })
@@ -124,7 +154,7 @@ function startWebAudioAlarm() {
     playAlarmTone(audioContext)
     alarmInterval = setInterval(() => {
       if (audioContext && isPlaying) playAlarmTone(audioContext)
-    }, 600)
+    }, 2500)
   } catch (e) {
     console.warn('Audio no disponible:', e)
     showNotification()
@@ -172,26 +202,39 @@ export function unlockAudio() {
 function playAlarmTone(ctx) {
   try {
     if (ctx.state === 'closed') return
-    playBeep(ctx, 1000, 0.25, 1.0)
-    setTimeout(() => {
-      if (isPlaying && ctx.state !== 'closed') playBeep(ctx, 1400, 0.25, 1.0)
-    }, 280)
+    // Chime ding-dong: A5 (0.35s) → gap 30ms → D6 (0.45s) con envelope suave
+    playNote(ctx, 880.00, 0, 0.35)
+    playNote(ctx, 1174.66, 0.28, 0.45)
   } catch {}
 }
 
-function playBeep(ctx, frequency, duration, volume) {
+function playNote(ctx, freq, startOffset, duration) {
   try {
     if (ctx.state === 'closed') return
-    const oscillator = ctx.createOscillator()
-    const gainNode = ctx.createGain()
-    oscillator.connect(gainNode)
-    gainNode.connect(ctx.destination)
-    oscillator.frequency.value = frequency
-    oscillator.type = 'square'
-    gainNode.gain.setValueAtTime(volume, ctx.currentTime)
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration)
-    oscillator.start(ctx.currentTime)
-    oscillator.stop(ctx.currentTime + duration)
+    const start = ctx.currentTime + startOffset
+    // Oscilador principal (sine = tono limpio)
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    // Pequeño armónico para darle cuerpo
+    const osc2 = ctx.createOscillator()
+    osc2.type = 'sine'
+    osc2.frequency.value = freq * 2
+    // Gain con envelope ADSR
+    const gain = ctx.createGain()
+    const gain2 = ctx.createGain()
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(0.75, start + 0.02)        // attack 20ms
+    gain.gain.setValueAtTime(0.75, start + duration - 0.18)      // sustain
+    gain.gain.exponentialRampToValueAtTime(0.001, start + duration) // release 180ms
+    gain2.gain.setValueAtTime(0, start)
+    gain2.gain.linearRampToValueAtTime(0.09, start + 0.02)
+    gain2.gain.setValueAtTime(0.09, start + duration - 0.18)
+    gain2.gain.exponentialRampToValueAtTime(0.001, start + duration)
+    osc.connect(gain).connect(ctx.destination)
+    osc2.connect(gain2).connect(ctx.destination)
+    osc.start(start); osc.stop(start + duration + 0.02)
+    osc2.start(start); osc2.stop(start + duration + 0.02)
   } catch {}
 }
 
