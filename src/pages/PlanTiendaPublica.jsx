@@ -16,9 +16,9 @@ const cardElementOptions = {
     base: {
       fontFamily: "'Inter', system-ui, sans-serif",
       fontSize: '15px',
-      color: 'var(--c-text)',
-      '::placeholder': { color: 'rgba(245,245,245,0.40)' },
-      iconColor: 'var(--c-text)',
+      color: '#1F1F1E',
+      '::placeholder': { color: '#6B6B68' },
+      iconColor: '#1F1F1E',
     },
     invalid: { color: '#DC2626', iconColor: '#DC2626' },
   },
