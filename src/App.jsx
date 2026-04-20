@@ -74,14 +74,20 @@ function AppContent() {
     return <div style={shell}><style>{css}</style><Login /></div>
   }
 
+  // Bypass de pantallas intermedias (CompletarRegistro / Activacion).
+  // Si el usuario aún no tiene fila en `establecimientos`, mostramos un
+  // estado de carga en lugar de pedirle un formulario — debe entrar directo
+  // al panel cuando el restaurante esté disponible.
   if (!restaurante) {
-    return <div style={shell}><style>{css}</style><CompletarRegistro /></div>
+    return (
+      <div style={{ ...shell, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <style>{css}</style>
+        <div style={{ fontSize: 13, color: 'var(--c-muted)', fontWeight: 600 }}>Cargando restaurante...</div>
+      </div>
+    )
   }
 
-  // Restaurante registrado por un socio pero aún no activado por el dueño
-  if (restaurante.activado === false) {
-    return <div style={shell}><style>{css}</style><Activacion /></div>
-  }
+  // (Antes: si restaurante.activado === false → <Activacion />. Bypass solicitado por el usuario.)
 
   const nav = isNative
     ? [
