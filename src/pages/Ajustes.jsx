@@ -246,6 +246,27 @@ export default function Ajustes() {
     })
   }
 
+  function agregarCat(catId) {
+    setCatsSeleccionadas(prev => {
+      if (prev.includes(catId) || prev.length >= 3) return prev
+      return [...prev, catId]
+    })
+  }
+
+  function quitarCat(catId) {
+    setCatsSeleccionadas(prev => prev.filter(id => id !== catId))
+  }
+
+  function moverCat(idx, delta) {
+    setCatsSeleccionadas(prev => {
+      const newIdx = idx + delta
+      if (newIdx < 0 || newIdx >= prev.length) return prev
+      const arr = [...prev]
+      ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
+      return arr
+    })
+  }
+
   const hayCambios =
     nombre !== (restaurante?.nombre || '') ||
     tipo !== (restaurante?.tipo || 'restaurante') ||
@@ -439,8 +460,8 @@ export default function Ajustes() {
     setTimeout(() => setConnectResult(null), 5000)
   }
 
-  const inp = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', fontSize: 13, fontFamily: 'inherit', background: 'rgba(255,255,255,0.06)', color: '#F5F5F5', outline: 'none', boxSizing: 'border-box' }
-  const lbl = { fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4, display: 'block' }
+  const inp = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', fontSize: 13, fontFamily: 'inherit', background: 'rgba(0,0,0,0.06)', color: 'var(--c-text)', outline: 'none', boxSizing: 'border-box' }
+  const lbl = { fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' }
 
   return (
     <div style={{ paddingBottom: hayCambios ? 90 : 0 }}>
@@ -466,7 +487,7 @@ export default function Ajustes() {
         {!restaurante?.plan_pro ? (
           <div style={{
             padding: '12px 14px', borderRadius: 10,
-            background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.25)',
+            background: 'var(--c-primary-light)', border: '1px solid rgba(185,28,28,0.25)',
             fontSize: 12, color: 'var(--c-text)', lineHeight: 1.5,
           }}>
             Ve al menú <strong>Más → Plan tienda</strong> para activarlo.
@@ -494,7 +515,7 @@ export default function Ajustes() {
               </button>
               <button onClick={() => window.open(`https://pidoo.es/${restaurante.slug}`, '_blank', 'noopener,noreferrer')} style={{
                 flex: 1, padding: '10px 14px', borderRadius: 10,
-                border: 'none', background: 'var(--c-primary, #B91C1C)',
+                border: 'none', background: 'var(--c-primary)',
                 color: '#fff', fontSize: 13, fontWeight: 700,
                 cursor: 'pointer', fontFamily: 'inherit',
               }}>
@@ -529,7 +550,7 @@ export default function Ajustes() {
               />
             </div>
             {slugError && (
-              <div style={{ fontSize: 12, color: '#EF4444', marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 8, fontWeight: 600 }}>
                 {slugError}
               </div>
             )}
@@ -539,7 +560,7 @@ export default function Ajustes() {
               style={{
                 width: '100%', padding: '12px 14px', borderRadius: 10,
                 border: 'none',
-                background: slugSaving || !slugDraft || slugDraft.length < 3 ? 'rgba(255,255,255,0.1)' : 'var(--c-primary, #B91C1C)',
+                background: slugSaving || !slugDraft || slugDraft.length < 3 ? 'rgba(0,0,0,0.1)' : 'var(--c-primary)',
                 color: '#fff', fontSize: 13, fontWeight: 700,
                 cursor: slugSaving || !slugDraft || slugDraft.length < 3 ? 'default' : 'pointer',
                 fontFamily: 'inherit',
@@ -558,7 +579,7 @@ export default function Ajustes() {
             Este importe es el que paga el cliente y el que recibe el rider en los pedidos que entren por <span style={{ fontFamily: 'monospace' }}>pidoo.es/{restaurante.slug || 'tu-tienda'}</span>.
             Si lo dejas vacío, se aplica la tarifa global por distancia.
           </div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4, display: 'block' }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' }}>
             Tarifa envío fija (€)
           </label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
@@ -582,7 +603,7 @@ export default function Ajustes() {
               style={{
                 padding: '0 18px', borderRadius: 10,
                 border: 'none',
-                background: guardandoTarifaFija ? 'rgba(255,255,255,0.1)' : 'var(--c-primary, #B91C1C)',
+                background: guardandoTarifaFija ? 'rgba(0,0,0,0.1)' : 'var(--c-primary)',
                 color: '#fff', fontSize: 13, fontWeight: 700,
                 cursor: guardandoTarifaFija ? 'default' : 'pointer',
                 fontFamily: 'inherit', minHeight: 40,
@@ -596,10 +617,10 @@ export default function Ajustes() {
       {/* Estado abierto/cerrado — inmediato */}
       <div style={{ background: activo ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: activo ? '#4ADE80' : '#EF4444' }}>{activo ? 'Abierto' : 'Cerrado'}</div>
-          <div style={{ fontSize: 12, color: activo ? '#22C55E' : '#EF4444', marginTop: 2 }}>{activo ? 'Recibiendo pedidos' : 'No se reciben pedidos'}</div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: activo ? '#16A34A' : '#DC2626' }}>{activo ? 'Abierto' : 'Cerrado'}</div>
+          <div style={{ fontSize: 12, color: activo ? '#22C55E' : '#DC2626', marginTop: 2 }}>{activo ? 'Recibiendo pedidos' : 'No se reciben pedidos'}</div>
         </div>
-        <button onClick={toggleActivo} style={{ width: 52, height: 28, borderRadius: 14, border: 'none', background: activo ? '#16A34A' : 'rgba(255,255,255,0.2)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0 }}>
+        <button onClick={toggleActivo} style={{ width: 52, height: 28, borderRadius: 14, border: 'none', background: activo ? '#16A34A' : 'rgba(0,0,0,0.2)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0 }}>
           <span style={{ position: 'absolute', top: 3, left: activo ? 27 : 3, width: 22, height: 22, borderRadius: 11, background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
         </button>
       </div>
@@ -674,7 +695,7 @@ export default function Ajustes() {
             }} disabled={obteniendoUbi} style={{
               flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid var(--c-border)',
               background: ubiOk ? 'rgba(34,197,94,0.12)' : 'var(--c-surface2)',
-              color: ubiOk ? '#4ADE80' : 'var(--c-text)',
+              color: ubiOk ? '#16A34A' : 'var(--c-text)',
               fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>
               {obteniendoUbi ? 'Obteniendo...' : ubiOk ? '✅ Ubicación guardada' : '📍 Obtener ubicación actual'}
@@ -699,7 +720,7 @@ export default function Ajustes() {
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Radio de cobertura</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <input type="range" min="1" max="30" value={radioCobertura} onChange={e => setRadioCobertura(Number(e.target.value))} style={{ flex: 1, accentColor: '#B91C1C' }} />
+          <input type="range" min="1" max="30" value={radioCobertura} onChange={e => setRadioCobertura(Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--c-primary)' }} />
           <span style={{ minWidth: 50, textAlign: 'center', fontWeight: 800, fontSize: 16, color: 'var(--c-primary)' }}>{radioCobertura} km</span>
         </div>
         <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 8 }}>Solo los clientes dentro de este radio verán tu restaurante.</div>
@@ -715,7 +736,7 @@ export default function Ajustes() {
               <span style={{
                 fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 50,
                 background: estado.abierto ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                color: estado.abierto ? '#4ADE80' : '#EF4444',
+                color: estado.abierto ? '#16A34A' : '#DC2626',
               }}>
                 {estado.abierto ? 'Abierto ahora' : 'Cerrado'}
               </span>
@@ -761,8 +782,8 @@ export default function Ajustes() {
               return (
                 <div key={dia} style={{
                   marginBottom: 10, borderRadius: 10, overflow: 'hidden',
-                  border: '1px solid ' + (abierto ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)'),
-                  background: abierto ? 'rgba(34,197,94,0.04)' : 'rgba(255,255,255,0.02)',
+                  border: '1px solid ' + (abierto ? 'rgba(34,197,94,0.2)' : 'rgba(0,0,0,0.06)'),
+                  background: abierto ? 'rgba(34,197,94,0.04)' : 'rgba(0,0,0,0.02)',
                 }}>
                   {/* Header del día */}
                   <div
@@ -774,7 +795,7 @@ export default function Ajustes() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <button onClick={() => toggleDia(dia)} style={{
                         width: 48, height: 28, borderRadius: 14, border: 'none',
-                        background: abierto ? '#16A34A' : 'rgba(255,255,255,0.15)',
+                        background: abierto ? '#16A34A' : 'rgba(0,0,0,0.15)',
                         cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
                         minHeight: 44, minWidth: 48, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
                       }}>
@@ -810,8 +831,8 @@ export default function Ajustes() {
                             onChange={e => updateTurno(dia, idx, 'abre', e.target.value)}
                             style={{
                               padding: '10px 8px', borderRadius: 8,
-                              border: '1px solid rgba(255,255,255,0.1)',
-                              background: 'rgba(255,255,255,0.06)', color: '#F5F5F5',
+                              border: '1px solid rgba(0,0,0,0.1)',
+                              background: 'rgba(0,0,0,0.06)', color: 'var(--c-text)',
                               fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 44,
                             }}
                           />
@@ -822,14 +843,14 @@ export default function Ajustes() {
                             onChange={e => updateTurno(dia, idx, 'cierra', e.target.value)}
                             style={{
                               padding: '10px 8px', borderRadius: 8,
-                              border: '1px solid rgba(255,255,255,0.1)',
-                              background: 'rgba(255,255,255,0.06)', color: '#F5F5F5',
+                              border: '1px solid rgba(0,0,0,0.1)',
+                              background: 'rgba(0,0,0,0.06)', color: 'var(--c-text)',
                               fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 44,
                             }}
                           />
                           {turnos.length > 1 && (
                             <button onClick={() => removeTurno(dia, idx)} style={{
-                              background: 'rgba(239,68,68,0.1)', border: 'none', color: '#EF4444',
+                              background: 'rgba(239,68,68,0.1)', border: 'none', color: '#DC2626',
                               fontSize: 16, cursor: 'pointer', padding: 0,
                               width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>×</button>
@@ -855,13 +876,13 @@ export default function Ajustes() {
             })}
 
             {/* Error horario */}
-            {horarioError && <div style={{ color: '#EF4444', fontSize: 11, fontWeight: 600, padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 8, marginTop: 8 }}>{horarioError}</div>}
+            {horarioError && <div style={{ color: '#DC2626', fontSize: 11, fontWeight: 600, padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 8, marginTop: 8 }}>{horarioError}</div>}
 
             {/* Quitar horario */}
             <button onClick={() => { setHorario(null); setHorarioError(null) }} style={{
               width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 10,
               border: '1px solid rgba(239,68,68,0.2)', background: 'transparent',
-              color: '#EF4444', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              color: '#DC2626', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
             }}>
               Quitar horario (usar solo toggle abierto/cerrado)
             </button>
@@ -988,7 +1009,7 @@ export default function Ajustes() {
                 </div>
               </div>
 
-              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.2)', fontSize: 12, color: 'var(--c-text)', lineHeight: 1.6, marginBottom: 12 }}>
+              <div style={{ padding: 12, borderRadius: 10, background: 'var(--c-primary-light)', border: '1px solid rgba(185,28,28,0.2)', fontSize: 12, color: 'var(--c-text)', lineHeight: 1.6, marginBottom: 12 }}>
                 A tus clientes se les cobrará <strong>{fmt(base)}€</strong> por los primeros <strong>{fmt(radio)} km</strong>. Después, <strong>{fmt(precio)}€</strong> por cada km adicional, con un máximo de <strong>{fmt(maxima)}€</strong>.
               </div>
             </>
@@ -1024,33 +1045,114 @@ export default function Ajustes() {
       {/* Categorías del establecimiento (nivel 2) */}
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Categorías de tu negocio</h3>
-        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14 }}>Elige hasta 3 categorías para que los clientes te encuentren (ej: Pizzas, Burgers)</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {catsGenerales.map(c => {
-            const sel = catsSeleccionadas.includes(c.id)
-            const disabled = !sel && catsSeleccionadas.length >= 3
-            return (
-              <button key={c.id} onClick={() => !disabled && toggleCat(c.id)} style={{
-                padding: '8px 14px', borderRadius: 50, cursor: disabled ? 'default' : 'pointer',
-                fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-                border: sel ? '2px solid var(--c-primary)' : '1px solid var(--c-border)',
-                background: sel ? 'rgba(185,28,28,0.12)' : 'var(--c-surface)',
-                color: sel ? 'var(--c-primary)' : disabled ? 'rgba(255,255,255,0.2)' : 'var(--c-text)',
-                opacity: disabled ? 0.5 : 1,
-              }}>
-                {c.emoji} {c.nombre}
-              </button>
-            )
-          })}
-        </div>
+        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14 }}>
+          Elige hasta 3 categorías para que los clientes te encuentren. La primera será la <strong>principal</strong>.
+        </p>
+
+        {/* Chips de categorías seleccionadas (en orden) */}
         {catsSeleccionadas.length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--c-primary)', marginTop: 10, fontWeight: 600 }}>
-            {catsSeleccionadas.length}/3 seleccionadas
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+            {catsSeleccionadas.map((catId, idx) => {
+              const cat = catsGenerales.find(c => c.id === catId)
+              if (!cat) return null
+              return (
+                <div key={catId} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: 'rgba(255,107,44,0.12)',
+                  border: '1px solid #FF6B2C',
+                  borderRadius: 50, padding: '6px 10px 6px 14px',
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#FF6B2C', minWidth: 18 }}>
+                    {idx + 1}.
+                  </span>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#FF6B2C' }}>
+                    {cat.emoji} {cat.nombre}
+                    {idx === 0 && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#FF6B2C', opacity: 0.7 }}>· principal</span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => moverCat(idx, -1)}
+                    disabled={idx === 0}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%', border: 'none',
+                      background: idx === 0 ? 'transparent' : 'rgba(0,0,0,0.08)',
+                      color: idx === 0 ? 'rgba(0,0,0,0.2)' : 'var(--c-text)',
+                      cursor: idx === 0 ? 'default' : 'pointer', fontFamily: 'inherit',
+                      fontSize: 14, fontWeight: 800, lineHeight: 1,
+                    }}
+                    aria-label="Subir"
+                  >↑</button>
+                  <button
+                    type="button"
+                    onClick={() => moverCat(idx, 1)}
+                    disabled={idx === catsSeleccionadas.length - 1}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%', border: 'none',
+                      background: idx === catsSeleccionadas.length - 1 ? 'transparent' : 'rgba(0,0,0,0.08)',
+                      color: idx === catsSeleccionadas.length - 1 ? 'rgba(0,0,0,0.2)' : 'var(--c-text)',
+                      cursor: idx === catsSeleccionadas.length - 1 ? 'default' : 'pointer', fontFamily: 'inherit',
+                      fontSize: 14, fontWeight: 800, lineHeight: 1,
+                    }}
+                    aria-label="Bajar"
+                  >↓</button>
+                  <button
+                    type="button"
+                    onClick={() => quitarCat(catId)}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%', border: 'none',
+                      background: 'rgba(239,68,68,0.15)', color: '#DC2626',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      fontSize: 14, fontWeight: 800, lineHeight: 1,
+                    }}
+                    aria-label="Quitar"
+                  >×</button>
+                </div>
+              )
+            })}
           </div>
         )}
+
+        {/* Select para añadir */}
+        <select
+          value=""
+          onChange={e => {
+            const id = e.target.value
+            if (id) agregarCat(id)
+          }}
+          disabled={catsSeleccionadas.length >= 3}
+          style={{
+            width: '100%', padding: '12px 14px', borderRadius: 10,
+            border: '1px solid var(--c-border)',
+            background: catsSeleccionadas.length >= 3 ? 'rgba(0,0,0,0.04)' : 'var(--c-surface2, var(--c-surface))',
+            color: catsSeleccionadas.length >= 3 ? 'var(--c-muted)' : 'var(--c-text)',
+            fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+            cursor: catsSeleccionadas.length >= 3 ? 'not-allowed' : 'pointer',
+            appearance: 'auto',
+          }}
+        >
+          <option value="">
+            {catsSeleccionadas.length >= 3
+              ? 'Máximo 3 categorías'
+              : catsSeleccionadas.length === 0
+                ? 'Selecciona una categoría...'
+                : 'Añadir otra categoría...'}
+          </option>
+          {catsGenerales
+            .filter(c => !catsSeleccionadas.includes(c.id))
+            .map(c => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.nombre}</option>
+            ))}
+        </select>
+
+        <div style={{ fontSize: 11, color: catsSeleccionadas.length >= 3 ? '#FF6B2C' : 'var(--c-muted)', marginTop: 8, fontWeight: 600 }}>
+          {catsSeleccionadas.length}/3 seleccionadas
+        </div>
       </div>
 
-      {/* Impresora térmica */}
+      {/* Impresora térmica - solo en app nativa */}
+      {Capacitor.isNativePlatform() && (
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
           <span style={{ fontSize: 22 }}>🖨️</span>
@@ -1066,8 +1168,8 @@ export default function Ajustes() {
             {/* Impresora conectada */}
             <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: 12, padding: 16, marginBottom: 14, border: '1px solid rgba(34,197,94,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#4ADE80', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#4ADE80' }}>Conectada</span>
+                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#16A34A', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#16A34A' }}>Conectada</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 18 }}>🖨️</span>
@@ -1098,7 +1200,7 @@ export default function Ajustes() {
                 onClick={handleDisconnect}
                 style={{
                   flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid rgba(239,68,68,0.3)',
-                  background: 'rgba(239,68,68,0.08)', color: '#EF4444',
+                  background: 'rgba(239,68,68,0.08)', color: '#DC2626',
                   fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
@@ -1111,7 +1213,7 @@ export default function Ajustes() {
               <div style={{
                 marginTop: 10, padding: '10px 14px', borderRadius: 8,
                 background: connectResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: connectResult.ok ? '#4ADE80' : '#EF4444',
+                color: connectResult.ok ? '#16A34A' : '#DC2626',
                 fontSize: 12, fontWeight: 600, textAlign: 'center',
               }}>
                 {connectResult.ok ? 'Ticket de prueba enviado!' : 'Error al imprimir. Verifica que la impresora este encendida.'}
@@ -1129,7 +1231,7 @@ export default function Ajustes() {
                     savePrinterConfig({ ...cfg, tickets: opt.v })
                   }} style={{
                     flex: 1, padding: '10px 8px', borderRadius: 10, border: 'none',
-                    background: ticketCount === opt.v ? 'var(--c-primary)' : 'rgba(255,255,255,0.08)',
+                    background: ticketCount === opt.v ? 'var(--c-primary)' : 'rgba(0,0,0,0.08)',
                     color: ticketCount === opt.v ? '#fff' : 'var(--c-muted)',
                     fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                     minHeight: 44,
@@ -1150,7 +1252,7 @@ export default function Ajustes() {
               disabled={scanning}
               style={{
                 width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
-                background: scanning ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, var(--c-primary), #D94420)',
+                background: scanning ? 'rgba(0,0,0,0.06)' : 'linear-gradient(135deg, var(--c-primary), #D94420)',
                 color: '#fff', fontSize: 14, fontWeight: 800, cursor: scanning ? 'default' : 'pointer',
                 fontFamily: 'inherit', marginBottom: 14,
                 opacity: scanning ? 0.7 : 1,
@@ -1158,7 +1260,7 @@ export default function Ajustes() {
             >
               {scanning ? (
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid rgba(0,0,0,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                   Buscando impresoras...
                 </span>
               ) : (
@@ -1176,7 +1278,7 @@ export default function Ajustes() {
 
             {scanDone && !scanning && foundPrinters.length === 0 && (
               <div style={{
-                background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: 16,
+                background: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 16,
                 textAlign: 'center', marginBottom: 14,
               }}>
                 <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>🔍</span>
@@ -1195,7 +1297,7 @@ export default function Ajustes() {
                 {foundPrinters.map(p => (
                   <div key={p.ip} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '12px 14px',
+                    background: 'rgba(0,0,0,0.04)', borderRadius: 12, padding: '12px 14px',
                     marginBottom: 8, border: '1px solid var(--c-border)',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1212,7 +1314,7 @@ export default function Ajustes() {
                       disabled={connecting === p.ip}
                       style={{
                         padding: '8px 16px', borderRadius: 8, border: 'none',
-                        background: connecting === p.ip ? 'rgba(255,255,255,0.1)' : '#16A34A',
+                        background: connecting === p.ip ? 'rgba(0,0,0,0.1)' : '#16A34A',
                         color: '#fff', fontSize: 12, fontWeight: 700,
                         cursor: connecting === p.ip ? 'default' : 'pointer', fontFamily: 'inherit',
                       }}
@@ -1229,7 +1331,7 @@ export default function Ajustes() {
               <div style={{
                 marginBottom: 14, padding: '10px 14px', borderRadius: 8,
                 background: connectResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: connectResult.ok ? '#4ADE80' : '#EF4444',
+                color: connectResult.ok ? '#16A34A' : '#DC2626',
                 fontSize: 12, fontWeight: 600, textAlign: 'center',
               }}>
                 {connectResult.ok
@@ -1260,7 +1362,7 @@ export default function Ajustes() {
                 disabled={!manualIp.trim() || connecting}
                 style={{
                   padding: '12px 18px', borderRadius: 10, border: 'none',
-                  background: !manualIp.trim() ? 'rgba(255,255,255,0.06)' : 'var(--c-primary)',
+                  background: !manualIp.trim() ? 'rgba(0,0,0,0.06)' : 'var(--c-primary)',
                   color: '#fff', fontSize: 12, fontWeight: 700,
                   cursor: !manualIp.trim() ? 'default' : 'pointer', fontFamily: 'inherit',
                   whiteSpace: 'nowrap',
@@ -1278,12 +1380,13 @@ export default function Ajustes() {
           </div>
         )}
       </div>
+      )}
 
       {/* Spinner animation */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Cerrar sesión */}
-      <button onClick={logout} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#EF4444', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>Cerrar sesión</button>
+      <button onClick={logout} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#DC2626', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>Cerrar sesión</button>
 
       {/* Botón guardar cambios flotante */}
       {hayCambios && (

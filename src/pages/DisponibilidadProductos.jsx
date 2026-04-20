@@ -61,14 +61,14 @@ export default function DisponibilidadProductos() {
             flex: 1, background: 'rgba(34,197,94,0.1)', borderRadius: 12,
             padding: '12px 14px', border: '1px solid rgba(34,197,94,0.2)',
           }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#4ADE80' }}>{disponibles}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: '#16A34A' }}>{disponibles}</div>
             <div style={{ fontSize: 11, color: 'rgba(74,222,128,0.8)', fontWeight: 600 }}>Disponibles</div>
           </div>
           <div style={{
             flex: 1, background: 'rgba(239,68,68,0.1)', borderRadius: 12,
             padding: '12px 14px', border: '1px solid rgba(239,68,68,0.2)',
           }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#EF4444' }}>{noDisponibles}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: '#DC2626' }}>{noDisponibles}</div>
             <div style={{ fontSize: 11, color: 'rgba(239,68,68,0.8)', fontWeight: 600 }}>No disponibles</div>
           </div>
         </div>
@@ -138,7 +138,7 @@ function ProductoRow({ p, toggle }) {
         <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {p.nombre}
         </div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: p.disponible ? '#4ADE80' : 'var(--c-muted)', marginTop: 2 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: p.disponible ? '#16A34A' : 'var(--c-muted)', marginTop: 2 }}>
           {p.disponible ? 'Disponible' : 'No disponible'}
         </div>
       </div>
@@ -146,7 +146,7 @@ function ProductoRow({ p, toggle }) {
         onClick={() => toggle(p.id, p.disponible)}
         style={{
           width: 48, height: 28, borderRadius: 14, border: 'none',
-          background: p.disponible ? '#16A34A' : 'rgba(255,255,255,0.15)',
+          background: p.disponible ? '#16A34A' : 'rgba(0,0,0,0.15)',
           cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
           minHeight: 44, minWidth: 48, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
         }}

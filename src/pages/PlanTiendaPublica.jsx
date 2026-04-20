@@ -16,11 +16,11 @@ const cardElementOptions = {
     base: {
       fontFamily: "'Inter', system-ui, sans-serif",
       fontSize: '15px',
-      color: '#F5F5F5',
+      color: 'var(--c-text)',
       '::placeholder': { color: 'rgba(245,245,245,0.40)' },
-      iconColor: '#F5F5F5',
+      iconColor: 'var(--c-text)',
     },
-    invalid: { color: '#EF4444', iconColor: '#EF4444' },
+    invalid: { color: '#DC2626', iconColor: '#DC2626' },
   },
 }
 

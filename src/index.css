@@ -1,5 +1,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+:root {
+  --c-bg: #FAFAF7;
+  --c-surface: #FFFFFF;
+  --c-surface2: #F4F2EC;
+  --c-surface3: #EDEAE2;
+  --c-elev: #FFFFFF;
+  --c-elev2: #F8F6F1;
+  --c-border: #E8E6E0;
+  --c-border-strong: #D4D2CC;
+
+  --c-text: #1F1F1E;
+  --c-text-soft: #3D3D3B;
+  --c-muted: #6B6B68;
+  --c-text-faint: #A8A6A0;
+
+  --c-primary: #FF6B2C;
+  --c-primary-dark: #E85A1F;
+  --c-primary-light: rgba(255,107,44,0.10);
+  --c-primary-soft: rgba(255,107,44,0.16);
+
+  --c-success: #16A34A;
+  --c-success-soft: rgba(22,163,74,0.10);
+  --c-danger: #DC2626;
+  --c-danger-soft: rgba(220,38,38,0.10);
+  --c-warning: #D97706;
+  --c-warning-soft: rgba(217,119,6,0.12);
+  --c-info: #2563EB;
+  --c-info-soft: rgba(37,99,235,0.10);
+
+  --c-shadow: 0 1px 2px rgba(15,15,15,0.04), 0 1px 3px rgba(15,15,15,0.06);
+  --c-shadow-md: 0 4px 12px rgba(15,15,15,0.08);
+  --c-shadow-lg: 0 12px 30px rgba(15,15,15,0.12);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -14,7 +48,8 @@ html {
 }
 
 body {
-  background: #0D0D0D;
+  background: var(--c-bg);
+  color: var(--c-text);
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   height: 100%;
@@ -37,7 +72,6 @@ input, select, textarea, button {
   font-size: 16px !important;
 }
 
-/* Safe areas for notch/dynamic island */
 body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
@@ -45,7 +79,6 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
-/* Responsive: full width siempre */
 #root {
   width: 100%;
   max-width: 100%;

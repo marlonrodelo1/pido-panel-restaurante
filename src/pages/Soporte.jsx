@@ -100,7 +100,7 @@ export default function Soporte() {
         {mensajes.map((m) => (
           <div key={m.id || m.created_at} style={{ alignSelf: m.de === 'restaurante' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
             <div style={{
-              background: m.de === 'restaurante' ? '#B91C1C' : 'var(--c-surface)',
+              background: m.de === 'restaurante' ? 'var(--c-primary)' : 'var(--c-surface)',
               color: m.de === 'restaurante' ? '#fff' : 'var(--c-text)',
               borderRadius: 14,
               borderBottomRightRadius: m.de === 'restaurante' ? 4 : 14,
@@ -125,7 +125,7 @@ export default function Soporte() {
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !enviando && enviar()}
           placeholder="Escribe tu mensaje..."
           style={{ flex: 1, padding: '12px 16px', borderRadius: 12, border: '1px solid var(--c-border)', fontSize: 13, fontFamily: 'inherit', background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none' }} />
-        <button onClick={enviar} disabled={enviando || !input.trim()} style={{ width: 44, height: 44, borderRadius: 12, border: 'none', background: enviando || !input.trim() ? 'rgba(255,255,255,0.1)' : '#B91C1C', color: '#fff', cursor: enviando || !input.trim() ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button onClick={enviar} disabled={enviando || !input.trim()} style={{ width: 44, height: 44, borderRadius: 12, border: 'none', background: enviando || !input.trim() ? 'rgba(0,0,0,0.1)' : 'var(--c-primary)', color: '#fff', cursor: enviando || !input.trim() ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>

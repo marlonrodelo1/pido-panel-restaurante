@@ -5,9 +5,9 @@ import { useRest } from '../context/RestContext'
 function StatCard({ label, value, sub, accent }) {
   return (
     <div style={{ background: accent ? 'var(--c-primary)' : 'var(--c-surface)', borderRadius: 14, padding: '14px 16px', border: accent ? 'none' : '1px solid var(--c-border)', flex: '1 1 120px', minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: accent ? 'rgba(255,255,255,0.7)' : 'var(--c-muted)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: accent ? 'rgba(0,0,0,0.7)' : 'var(--c-muted)', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 800, color: accent ? '#fff' : 'var(--c-text)', letterSpacing: -0.5 }}>{value}</div>
-      {sub && <div style={{ fontSize: 10, color: accent ? 'rgba(255,255,255,0.5)' : 'var(--c-muted)', marginTop: 3 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 10, color: accent ? 'rgba(0,0,0,0.5)' : 'var(--c-muted)', marginTop: 3 }}>{sub}</div>}
     </div>
   )
 }
@@ -82,7 +82,7 @@ export default function Metricas() {
       {error && !loading && (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#F5F5F5', marginBottom: 4 }}>Error al cargar</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-text)', marginBottom: 4 }}>Error al cargar</div>
           <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 20 }}>{error}</div>
           <button onClick={fetchStats} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: 'var(--c-primary)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Reintentar</button>
         </div>
@@ -90,10 +90,10 @@ export default function Metricas() {
       {loading ? <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--c-muted)' }}>Cargando...</div> : !error && (
         <>
           {/* Ventas */}
-          <div style={{ background: 'linear-gradient(135deg, #B91C1C, #DC2626)', borderRadius: 16, padding: '20px 22px', marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: 6 }}>Ventas {periodoLabel[periodo].toLowerCase()}</div>
+          <div style={{ background: 'linear-gradient(135deg, #FF6B2C, #E85A1F)', borderRadius: 16, padding: '20px 22px', marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(0,0,0,0.7)', marginBottom: 6 }}>Ventas {periodoLabel[periodo].toLowerCase()}</div>
             <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: -1 }}>{stats.ventas?.toFixed(2)} €</div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 12, fontSize: 11, color: 'rgba(255,255,255,0.6)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, marginTop: 12, fontSize: 11, color: 'rgba(0,0,0,0.6)', flexWrap: 'wrap' }}>
               <span>💳 {stats.ventasTarjeta?.toFixed(2)} € ({stats.pedidosTarjeta})</span>
               <span>💵 {stats.ventasEfectivo?.toFixed(2)} € ({stats.pedidosEfectivo})</span>
             </div>
@@ -112,17 +112,17 @@ export default function Metricas() {
           <h3 style={{ fontSize: 16, fontWeight: 800, margin: '24px 0 14px' }}>Reseñas de clientes</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--c-text)' }}>{restaurante?.rating?.toFixed(1) || '—'}</span>
-            <div style={{ display: 'flex', gap: 1 }}>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= Math.round(restaurante?.rating || 0) ? '#FBBF24' : 'rgba(255,255,255,0.15)', fontSize: 16 }}>★</span>)}</div>
+            <div style={{ display: 'flex', gap: 1 }}>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= Math.round(restaurante?.rating || 0) ? '#FBBF24' : 'rgba(0,0,0,0.15)', fontSize: 16 }}>★</span>)}</div>
             <span style={{ fontSize: 12, color: 'var(--c-muted)' }}>({restaurante?.total_resenas || 0} reseñas)</span>
           </div>
           {resenas.map(r => (
             <div key={r.id} style={{ background: 'var(--c-surface)', borderRadius: 12, padding: '12px 16px', border: '1px solid var(--c-border)', marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div style={{ display: 'flex', gap: 1 }}>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= r.rating ? '#FBBF24' : 'rgba(255,255,255,0.15)', fontSize: 12 }}>★</span>)}</div>
+                <div style={{ display: 'flex', gap: 1 }}>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= r.rating ? '#FBBF24' : 'rgba(0,0,0,0.15)', fontSize: 12 }}>★</span>)}</div>
                 <span style={{ fontSize: 10, color: 'var(--c-muted)' }}>{new Date(r.created_at).toLocaleDateString('es-ES')}</span>
               </div>
               {r.texto && <div style={{ fontSize: 12, color: 'var(--c-muted)', lineHeight: 1.5 }}>{r.texto}</div>}
-              {!r.texto && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>Sin comentario</div>}
+              {!r.texto && <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.2)', fontStyle: 'italic' }}>Sin comentario</div>}
             </div>
           ))}
           {resenas.length === 0 && <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--c-muted)', fontSize: 13 }}>Aún no tienes reseñas</div>}

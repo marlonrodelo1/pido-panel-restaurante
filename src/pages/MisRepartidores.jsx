@@ -452,7 +452,7 @@ function AddRiderModal({ restauranteId, vinculadosIds, onClose, onSaved }) {
 
   return (
     <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000,
+      position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)', zIndex: 1000,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{

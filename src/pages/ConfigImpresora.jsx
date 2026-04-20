@@ -89,9 +89,9 @@ export default function ConfigImpresora() {
 
   const inp = {
     width: '100%', padding: '12px 14px', borderRadius: 10,
-    border: '1px solid rgba(255,255,255,0.12)', fontSize: 13,
-    fontFamily: 'inherit', background: 'rgba(255,255,255,0.06)',
-    color: '#F5F5F5', outline: 'none', boxSizing: 'border-box',
+    border: '1px solid rgba(0,0,0,0.12)', fontSize: 13,
+    fontFamily: 'inherit', background: 'rgba(0,0,0,0.06)',
+    color: 'var(--c-text)', outline: 'none', boxSizing: 'border-box',
   }
 
   return (
@@ -105,10 +105,10 @@ export default function ConfigImpresora() {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: activo ? '#4ADE80' : '#EF4444' }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: activo ? '#16A34A' : '#DC2626' }}>
             {activo ? 'Abierto' : 'Cerrado'}
           </div>
-          <div style={{ fontSize: 12, color: activo ? '#22C55E' : '#EF4444', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: activo ? '#22C55E' : '#DC2626', marginTop: 2 }}>
             {activo ? 'Recibiendo pedidos' : 'No se reciben pedidos'}
           </div>
         </div>
@@ -116,7 +116,7 @@ export default function ConfigImpresora() {
           onClick={toggleActivo}
           style={{
             width: 52, height: 28, borderRadius: 14, border: 'none',
-            background: activo ? '#16A34A' : 'rgba(255,255,255,0.2)',
+            background: activo ? '#16A34A' : 'rgba(0,0,0,0.2)',
             cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
             minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0,
           }}
@@ -145,8 +145,8 @@ export default function ConfigImpresora() {
           <div>
             <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: 12, padding: 16, marginBottom: 14, border: '1px solid rgba(34,197,94,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#4ADE80', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#4ADE80' }}>Conectada</span>
+                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#16A34A', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#16A34A' }}>Conectada</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 18 }}>🖨️</span>
@@ -176,7 +176,7 @@ export default function ConfigImpresora() {
                 onClick={handleDisconnect}
                 style={{
                   flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid rgba(239,68,68,0.3)',
-                  background: 'rgba(239,68,68,0.08)', color: '#EF4444',
+                  background: 'rgba(239,68,68,0.08)', color: '#DC2626',
                   fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
@@ -188,7 +188,7 @@ export default function ConfigImpresora() {
               <div style={{
                 marginTop: 10, padding: '10px 14px', borderRadius: 8,
                 background: connectResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: connectResult.ok ? '#4ADE80' : '#EF4444',
+                color: connectResult.ok ? '#16A34A' : '#DC2626',
                 fontSize: 12, fontWeight: 600, textAlign: 'center',
               }}>
                 {connectResult.ok ? 'Ticket de prueba enviado!' : 'Error al imprimir. Verifica que la impresora esté encendida.'}
@@ -206,7 +206,7 @@ export default function ConfigImpresora() {
                     savePrinterConfig({ ...cfg, tickets: opt.v })
                   }} style={{
                     flex: 1, padding: '10px 8px', borderRadius: 10, border: 'none',
-                    background: ticketCount === opt.v ? 'var(--c-primary)' : 'rgba(255,255,255,0.08)',
+                    background: ticketCount === opt.v ? 'var(--c-primary)' : 'rgba(0,0,0,0.08)',
                     color: ticketCount === opt.v ? '#fff' : 'var(--c-muted)',
                     fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minHeight: 44,
                   }}>{opt.label}</button>
@@ -227,7 +227,7 @@ export default function ConfigImpresora() {
               disabled={scanning}
               style={{
                 width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
-                background: scanning ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, var(--c-primary), #D94420)',
+                background: scanning ? 'rgba(0,0,0,0.06)' : 'linear-gradient(135deg, var(--c-primary), #D94420)',
                 color: '#fff', fontSize: 14, fontWeight: 800,
                 cursor: scanning ? 'default' : 'pointer', fontFamily: 'inherit',
                 marginBottom: 14, opacity: scanning ? 0.7 : 1,
@@ -235,7 +235,7 @@ export default function ConfigImpresora() {
             >
               {scanning ? (
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid rgba(0,0,0,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                   Buscando impresoras...
                 </span>
               ) : 'Buscar impresoras en la red'}
@@ -248,7 +248,7 @@ export default function ConfigImpresora() {
             )}
 
             {scanDone && !scanning && foundPrinters.length === 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: 16, textAlign: 'center', marginBottom: 14 }}>
+              <div style={{ background: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 16, textAlign: 'center', marginBottom: 14 }}>
                 <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>🔍</span>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>No se encontraron impresoras</div>
                 <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>
@@ -265,7 +265,7 @@ export default function ConfigImpresora() {
                 {foundPrinters.map(p => (
                   <div key={p.ip} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '12px 14px',
+                    background: 'rgba(0,0,0,0.04)', borderRadius: 12, padding: '12px 14px',
                     marginBottom: 8, border: '1px solid var(--c-border)',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -282,7 +282,7 @@ export default function ConfigImpresora() {
                       disabled={connecting === p.ip}
                       style={{
                         padding: '8px 16px', borderRadius: 8, border: 'none',
-                        background: connecting === p.ip ? 'rgba(255,255,255,0.1)' : '#16A34A',
+                        background: connecting === p.ip ? 'rgba(0,0,0,0.1)' : '#16A34A',
                         color: '#fff', fontSize: 12, fontWeight: 700,
                         cursor: connecting === p.ip ? 'default' : 'pointer', fontFamily: 'inherit',
                       }}
@@ -298,7 +298,7 @@ export default function ConfigImpresora() {
               <div style={{
                 marginBottom: 14, padding: '10px 14px', borderRadius: 8,
                 background: connectResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: connectResult.ok ? '#4ADE80' : '#EF4444',
+                color: connectResult.ok ? '#16A34A' : '#DC2626',
                 fontSize: 12, fontWeight: 600, textAlign: 'center',
               }}>
                 {connectResult.ok
@@ -326,7 +326,7 @@ export default function ConfigImpresora() {
                 disabled={!manualIp.trim() || !!connecting}
                 style={{
                   padding: '12px 18px', borderRadius: 10, border: 'none',
-                  background: !manualIp.trim() ? 'rgba(255,255,255,0.06)' : 'var(--c-primary)',
+                  background: !manualIp.trim() ? 'rgba(0,0,0,0.06)' : 'var(--c-primary)',
                   color: '#fff', fontSize: 12, fontWeight: 700,
                   cursor: !manualIp.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
                 }}
@@ -351,7 +351,7 @@ export default function ConfigImpresora() {
         onClick={logout}
         style={{
           width: '100%', padding: '14px 0', borderRadius: 14, border: 'none',
-          background: 'rgba(239,68,68,0.12)', color: '#EF4444',
+          background: 'rgba(239,68,68,0.12)', color: '#DC2626',
           fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20,
         }}
       >

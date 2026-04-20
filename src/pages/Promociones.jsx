@@ -145,8 +145,8 @@ export default function Promociones() {
   const necesitaProducto = tipo === '2x1' || tipo === 'producto_gratis'
   const necesitaValor = tipo === 'descuento_porcentaje' || tipo === 'descuento_fijo'
 
-  const inp = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', fontSize: 13, fontFamily: 'inherit', background: 'rgba(255,255,255,0.06)', color: '#F5F5F5', outline: 'none', boxSizing: 'border-box' }
-  const lbl = { fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4, display: 'block' }
+  const inp = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', fontSize: 13, fontFamily: 'inherit', background: 'rgba(0,0,0,0.06)', color: 'var(--c-text)', outline: 'none', boxSizing: 'border-box' }
+  const lbl = { fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' }
 
   return (
     <div>
@@ -178,7 +178,7 @@ export default function Promociones() {
                 }} style={{
                   padding: '12px 10px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
                   border: tipo === t.id ? '2px solid var(--c-primary)' : '1px solid var(--c-border)',
-                  background: tipo === t.id ? 'rgba(185,28,28,0.1)' : 'rgba(255,255,255,0.03)',
+                  background: tipo === t.id ? 'rgba(185,28,28,0.1)' : 'rgba(0,0,0,0.03)',
                   textAlign: 'center',
                 }}>
                   <div style={{ fontSize: 22, marginBottom: 4 }}>{t.icon}</div>
@@ -309,7 +309,7 @@ export default function Promociones() {
               </div>
               <button onClick={() => toggleActiva(p.id, p.activa)} style={{
                 width: 48, height: 28, borderRadius: 14, border: 'none',
-                background: p.activa ? '#16A34A' : 'rgba(255,255,255,0.15)',
+                background: p.activa ? '#16A34A' : 'rgba(0,0,0,0.15)',
                 cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
                 minHeight: 44, minWidth: 48, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
               }}>
@@ -323,31 +323,31 @@ export default function Promociones() {
 
             {/* Detalles */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(185,28,28,0.12)', color: 'var(--c-primary)' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'var(--c-primary-light)', color: 'var(--c-primary)' }}>
                 {tipoData?.label}
               </span>
               {p.valor && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: 'var(--c-text)' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.06)', color: 'var(--c-text)' }}>
                   {p.tipo === 'descuento_porcentaje' ? `${p.valor}%` : `${p.valor}€`}
                 </span>
               )}
               {p.minimo_compra > 0 && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: 'var(--c-muted)' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.06)', color: 'var(--c-muted)' }}>
                   Min. {p.minimo_compra}€
                 </span>
               )}
               {p.producto_nombre && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: 'var(--c-muted)' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.06)', color: 'var(--c-muted)' }}>
                   {p.producto_nombre}
                 </span>
               )}
               {vencida && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(239,68,68,0.12)', color: '#DC2626' }}>
                   Vencida
                 </span>
               )}
               {p.fecha_fin && !vencida && (
-                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: 'var(--c-muted)' }}>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.06)', color: 'var(--c-muted)' }}>
                   Hasta {new Date(p.fecha_fin).toLocaleDateString('es')}
                 </span>
               )}
@@ -362,7 +362,7 @@ export default function Promociones() {
               }}>Editar</button>
               <button onClick={() => eliminar(p.id)} style={{
                 padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)',
-                background: 'transparent', color: '#EF4444',
+                background: 'transparent', color: '#DC2626',
                 fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
               }}>Eliminar</button>
             </div>

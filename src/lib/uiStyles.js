@@ -1,44 +1,50 @@
 // Estilos compartidos panel-restaurante
-// Design system: Inter + rojo #B91C1C discreto, 4 colores de estado, 6 tamaños tipográficos
+// Design system: Inter + naranja Pidoo #FF6B2C, light mode estilo Claude (off-white cálido)
 // Inspirado en pido-super-admin/src/lib/darkStyles.js
 
 export const colors = {
-  // Superficies
-  bg: '#0D0D0D',
-  surface: '#1A1A1A',
-  surface2: '#242424',
-  elev: '#161616',
-  elev2: '#1C1C1C',
-  border: 'rgba(255,255,255,0.08)',
-  borderStrong: 'rgba(255,255,255,0.14)',
+  // Superficies (light, cálidas)
+  bg: '#FAFAF7',
+  surface: '#FFFFFF',
+  surface2: '#F4F2EC',
+  elev: '#FFFFFF',
+  elev2: '#F8F6F1',
+  border: '#E8E6E0',
+  borderStrong: '#D4D2CC',
 
   // Tipografía
-  text: '#F5F5F5',
-  textDim: 'rgba(245,245,245,0.62)',
-  textMute: 'rgba(245,245,245,0.40)',
-  textFaint: 'rgba(245,245,245,0.22)',
+  text: '#1F1F1E',
+  textDim: '#3D3D3B',
+  textMute: '#6B6B68',
+  textFaint: '#A8A6A0',
 
-  // Primario (usado con moderación)
-  primary: '#B91C1C',
-  primarySoft: 'rgba(185,28,28,0.12)',
-  primaryBorder: 'rgba(185,28,28,0.32)',
+  // Primario (naranja Pidoo, marca oficial)
+  primary: '#FF6B2C',
+  primaryDark: '#E85A1F',
+  primarySoft: 'rgba(255,107,44,0.10)',
+  primaryBorder: 'rgba(255,107,44,0.32)',
 
   // Paleta 4 estados
-  stateNew: '#B91C1C',
-  stateNewSoft: 'rgba(185,28,28,0.15)',
-  statePrep: '#FBBF24',
-  statePrepSoft: 'rgba(251,191,36,0.12)',
-  stateOk: '#22C55E',
-  stateOkSoft: 'rgba(34,197,94,0.12)',
-  stateNeutral: '#A1A1AA',
-  stateNeutralSoft: 'rgba(161,161,170,0.12)',
+  stateNew: '#DC2626',
+  stateNewSoft: 'rgba(220,38,38,0.10)',
+  statePrep: '#D97706',
+  statePrepSoft: 'rgba(217,119,6,0.12)',
+  stateOk: '#16A34A',
+  stateOkSoft: 'rgba(22,163,74,0.10)',
+  stateNeutral: '#6B6B68',
+  stateNeutralSoft: 'rgba(107,107,104,0.10)',
 
   // Accesorios
-  danger: '#EF4444',
-  dangerSoft: 'rgba(239,68,68,0.12)',
-  dangerText: '#F8B4B4',
-  info: '#60A5FA',
-  infoSoft: 'rgba(96,165,250,0.12)',
+  danger: '#DC2626',
+  dangerSoft: 'rgba(220,38,38,0.10)',
+  dangerText: '#991B1B',
+  info: '#2563EB',
+  infoSoft: 'rgba(37,99,235,0.10)',
+
+  // Sombras
+  shadow: '0 1px 2px rgba(15,15,15,0.04), 0 1px 3px rgba(15,15,15,0.06)',
+  shadowMd: '0 4px 12px rgba(15,15,15,0.08)',
+  shadowLg: '0 12px 30px rgba(15,15,15,0.12)',
 }
 
 // Escala tipográfica fija (6 tamaños)
@@ -60,6 +66,7 @@ export const ds = {
     borderRadius: 12,
     padding: '16px 18px',
     border: `1px solid ${colors.border}`,
+    boxShadow: colors.shadow,
   },
 
   // Tables (flex-based)
@@ -68,13 +75,14 @@ export const ds = {
     borderRadius: 12,
     overflow: 'hidden',
     border: `1px solid ${colors.border}`,
+    boxShadow: colors.shadow,
   },
   tableHeader: {
     display: 'flex', alignItems: 'center', padding: '9px 14px', gap: 12,
     fontSize: type.xxs, fontWeight: 700, color: colors.textMute,
     borderBottom: `1px solid ${colors.border}`,
     textTransform: 'uppercase', letterSpacing: '0.08em',
-    background: colors.elev,
+    background: colors.elev2,
   },
   tableRow: {
     display: 'flex', alignItems: 'center', padding: '10px 14px', gap: 12,
@@ -86,7 +94,7 @@ export const ds = {
   badge: {
     fontSize: type.xxs, fontWeight: 700, padding: '3px 8px', borderRadius: 6,
     letterSpacing: '0.04em', textTransform: 'uppercase',
-    background: 'rgba(255,255,255,0.05)', color: colors.textDim,
+    background: colors.surface2, color: colors.textDim,
     border: `1px solid ${colors.border}`, display: 'inline-flex',
     alignItems: 'center', gap: 5,
   },
@@ -110,7 +118,7 @@ export const ds = {
     fontFamily: FONT, background: colors.surface,
     color: colors.text, outline: 'none', boxSizing: 'border-box',
     appearance: 'none', WebkitAppearance: 'none',
-    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(245,245,245,0.40)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>')}")`,
+    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B6B68" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>')}")`,
     backgroundRepeat: 'no-repeat',
     backgroundPosition: 'right 12px center',
     cursor: 'pointer',
@@ -165,7 +173,7 @@ export const ds = {
 
   // Modal
   modal: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+    position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)',
     zIndex: 1000, display: 'flex', alignItems: 'center',
     justifyContent: 'center', backdropFilter: 'blur(4px)',
     padding: 16,
@@ -174,7 +182,7 @@ export const ds = {
     background: colors.surface, borderRadius: 14, padding: 22,
     width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto',
     border: `1px solid ${colors.borderStrong}`,
-    boxShadow: '0 40px 80px rgba(0,0,0,0.6)',
+    boxShadow: colors.shadowLg,
   },
 }
 
@@ -187,7 +195,7 @@ export function stateBadge(estado) {
     preparando: { bg: colors.statePrepSoft,    color: colors.statePrep,    label: 'Preparando' },
     listo:      { bg: colors.stateOkSoft,      color: colors.stateOk,      label: 'Listo' },
     recogido:   { bg: colors.stateOkSoft,      color: colors.stateOk,      label: 'Recogido' },
-    en_camino:  { bg: colors.stateOkSoft,      color: colors.stateOk,      label: 'En camino' },
+    en_camino:  { bg: colors.infoSoft,         color: colors.info,         label: 'En camino' },
     entregado:  { bg: colors.stateNeutralSoft, color: colors.stateNeutral, label: 'Entregado' },
     cancelado:  { bg: colors.stateNeutralSoft, color: colors.stateNeutral, label: 'Cancelado' },
     fallido:    { bg: colors.stateNeutralSoft, color: colors.stateNeutral, label: 'Fallido' },

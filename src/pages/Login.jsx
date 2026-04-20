@@ -35,13 +35,13 @@ function LegalModal({ slug, onClose }) {
   }, [slug])
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1A1A1A', borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column', border: '1px solid #353535', borderBottom: 'none' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid #353535' }}>
-          <span style={{ fontWeight: 700, fontSize: 15, color: '#E5E2E1' }}>{titulo || '...'}</span>
-          <button onClick={onClose} style={{ background: '#242424', border: 'none', color: '#E5E2E1', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--c-surface2)', borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--c-border)', borderBottom: 'none' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid var(--c-border)' }}>
+          <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--c-text)' }}>{titulo || '...'}</span>
+          <button onClick={onClose} style={{ background: 'var(--c-surface2)', border: 'none', color: 'var(--c-text)', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
-        <div style={{ overflowY: 'auto', padding: '16px 20px', fontSize: 13, color: '#ab8985', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+        <div style={{ overflowY: 'auto', padding: '16px 20px', fontSize: 13, color: 'var(--c-muted)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
           {contenido === null ? 'Cargando...' : contenido}
         </div>
       </div>
@@ -72,9 +72,9 @@ function ResetPassword({ email, setEmail, onBack }) {
   if (sent) {
     return (
       <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E2E1', marginBottom: 8 }}>Email enviado</div>
-        <p style={{ fontSize: 12, color: '#ab8985', lineHeight: 1.5, marginBottom: 20 }}>
-          Hemos enviado un enlace a <strong style={{ color: '#E5E2E1' }}>{email}</strong> para restablecer tu contraseña.
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-text)', marginBottom: 8 }}>Email enviado</div>
+        <p style={{ fontSize: 12, color: 'var(--c-muted)', lineHeight: 1.5, marginBottom: 20 }}>
+          Hemos enviado un enlace a <strong style={{ color: 'var(--c-text)' }}>{email}</strong> para restablecer tu contraseña.
         </p>
         <button onClick={onBack} style={btnPrimary}>Volver al login</button>
       </div>
@@ -96,19 +96,19 @@ function ResetPassword({ email, setEmail, onBack }) {
 // ── Estilos reutilizables ─────────────────────────────────────────────────────
 const btnPrimary = {
   width: '100%', padding: '15px 0', borderRadius: 8, border: 'none',
-  background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)',
+  background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
   color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
   fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center',
   gap: 8, letterSpacing: '0.02em',
 }
 const btnGhost = {
   width: '100%', padding: '13px 0', borderRadius: 8,
-  border: '1px solid #353535', background: 'transparent',
-  color: '#E5E2E1', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+  border: '1px solid var(--c-border)', background: 'transparent',
+  color: 'var(--c-text)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
   fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
 }
 const sectionLabel = {
-  fontSize: 11, fontWeight: 700, color: '#ab8985',
+  fontSize: 11, fontWeight: 700, color: 'var(--c-muted)',
   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'block',
 }
 
@@ -123,10 +123,9 @@ function InputField({ label, ...props }) {
         onBlur={e => { setFocused(false); props.onBlur?.(e) }}
         style={{
           width: '100%', padding: '13px 14px', borderRadius: 8,
-          border: 'none',
-          borderBottom: `2px solid ${focused ? '#B91C1C' : 'transparent'}`,
+          border: `1px solid ${focused ? 'var(--c-primary)' : 'var(--c-border)'}`,
           fontSize: 14, fontFamily: 'inherit',
-          background: '#20201f', color: '#E5E2E1', outline: 'none',
+          background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none',
           boxSizing: 'border-box', transition: 'border-color 0.2s',
           ...props.style,
         }}
@@ -141,11 +140,11 @@ function SelectField({ label, children, value, onChange, style }) {
       {label && <label style={sectionLabel}>{label}</label>}
       <select value={value} onChange={onChange} style={{
         width: '100%', padding: '13px 14px', borderRadius: 8,
-        border: 'none', borderBottom: '2px solid transparent',
+        border: '1px solid var(--c-border)',
         fontSize: 14, fontFamily: 'inherit',
-        background: '#20201f', color: '#E5E2E1', outline: 'none',
+        background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none',
         boxSizing: 'border-box', appearance: 'none', WebkitAppearance: 'none',
-        backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ab8985" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>')}")`,
+        backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--c-muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>')}")`,
         backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', paddingRight: 36,
         ...style,
       }}>{children}</select>
@@ -156,9 +155,9 @@ function SelectField({ label, children, value, onChange, style }) {
 function ErrorBox({ msg }) {
   return (
     <div style={{
-      color: '#ffb4ab', fontSize: 12, marginBottom: 12, textAlign: 'center',
-      background: 'rgba(185,28,28,0.15)', padding: '10px 14px', borderRadius: 8,
-      border: '1px solid rgba(185,28,28,0.3)',
+      color: 'var(--c-primary)', fontSize: 12, marginBottom: 12, textAlign: 'center',
+      background: 'var(--c-primary-light)', padding: '10px 14px', borderRadius: 8,
+      border: '1px solid var(--c-primary-soft)',
     }}>{msg}</div>
   )
 }
@@ -249,7 +248,7 @@ export default function Login() {
     <>
       {legalSlug && <LegalModal slug={legalSlug} onClose={() => setLegalSlug(null)} />}
       <div style={{
-        minHeight: '100vh', background: 'radial-gradient(ellipse at 50% 0%, #1a1a1a 0%, #0D0D0D 70%)',
+        minHeight: '100vh', background: 'var(--c-bg)',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', padding: '32px 20px',
       }}>
@@ -259,24 +258,24 @@ export default function Login() {
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <div style={{
               width: 60, height: 60, borderRadius: 16,
-              background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)',
+              background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px', boxShadow: '0 8px 24px rgba(185,28,28,0.35)',
+              margin: '0 auto 16px', boxShadow: '0 8px 24px rgba(255,107,44,0.30)',
             }}>
               <UtensilsIcon />
             </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#E5E2E1', letterSpacing: '-0.02em', marginBottom: 2 }}>PIDO</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#ab8985', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Panel Restaurante</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--c-text)', letterSpacing: '-0.02em', marginBottom: 2 }}>PIDO</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Panel Restaurante</div>
           </div>
 
           {/* Card contenedor */}
-          <div style={{ background: '#131313', borderRadius: 16, padding: '28px 24px', border: '1px solid #1e1e1e' }}>
+          <div style={{ background: 'var(--c-surface)', borderRadius: 16, padding: '28px 24px', border: '1px solid var(--c-border)' }}>
 
             {modo === 'reset' ? (
               <>
                 <div style={{ marginBottom: 24 }}>
-                  <h2 style={{ fontSize: 20, fontWeight: 700, color: '#E5E2E1', marginBottom: 4 }}>Recuperar acceso</h2>
-                  <p style={{ fontSize: 13, color: '#ab8985' }}>Te enviaremos un enlace a tu email.</p>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--c-text)', marginBottom: 4 }}>Recuperar acceso</h2>
+                  <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>Te enviaremos un enlace a tu email.</p>
                 </div>
                 <ResetPassword email={email} setEmail={setEmail} onBack={() => { setModo('login'); setError(null) }} />
               </>
@@ -284,21 +283,21 @@ export default function Login() {
               <>
                 {/* Encabezado */}
                 <div style={{ marginBottom: 24 }}>
-                  <h2 style={{ fontSize: 20, fontWeight: 700, color: '#E5E2E1', marginBottom: 4 }}>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--c-text)', marginBottom: 4 }}>
                     {modo === 'login' ? 'Bienvenido de nuevo' : 'Registra tu negocio'}
                   </h2>
-                  <p style={{ fontSize: 13, color: '#ab8985' }}>
+                  <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>
                     {modo === 'login' ? 'Gestiona tu operación en tiempo real.' : 'Crea tu cuenta en PIDOO y empieza a recibir pedidos.'}
                   </p>
                 </div>
 
                 {/* Tabs */}
-                <div style={{ display: 'flex', background: '#1A1A1A', borderRadius: 8, padding: 3, marginBottom: 20, gap: 3 }}>
+                <div style={{ display: 'flex', background: 'var(--c-surface2)', borderRadius: 8, padding: 3, marginBottom: 20, gap: 3 }}>
                   {['login', 'registro'].map(m => (
                     <button key={m} onClick={() => { setModo(m); setError(null) }} style={{
                       flex: 1, padding: '9px 0', borderRadius: 6, border: 'none',
-                      background: modo === m ? 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)' : 'transparent',
-                      color: modo === m ? '#fff' : '#ab8985',
+                      background: modo === m ? 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)' : 'transparent',
+                      color: modo === m ? '#fff' : 'var(--c-muted)',
                       fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                       transition: 'all 0.2s',
                     }}>{m === 'login' ? 'Iniciar sesión' : 'Registrarse'}</button>
@@ -319,30 +318,30 @@ export default function Login() {
                         onKeyDown={e => e.key === 'Enter' && !loginBloqueado && handleLogin()}
                         style={{
                           width: '100%', padding: '13px 44px 13px 14px', borderRadius: 8,
-                          border: 'none', borderBottom: '2px solid transparent',
+                          border: '1px solid var(--c-border)',
                           fontSize: 14, fontFamily: 'inherit',
-                          background: '#20201f', color: '#E5E2E1', outline: 'none',
+                          background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none',
                           boxSizing: 'border-box',
                         }}
                       />
                       <button onClick={() => setShowPassword(!showPassword)} style={{
                         position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                        background: 'none', border: 'none', color: '#ab8985', cursor: 'pointer',
+                        background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer',
                         fontSize: 10, fontWeight: 700, padding: 4, fontFamily: 'inherit', letterSpacing: '0.04em',
                       }}>{showPassword ? 'OCULTAR' : 'VER'}</button>
                     </div>
 
                     {/* Requisitos de seguridad */}
-                    <div style={{ marginBottom: 16, padding: '10px 12px', background: '#1A1A1A', borderRadius: 8 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#ab8985', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Requisitos de seguridad</div>
+                    <div style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--c-surface2)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Requisitos de seguridad</div>
                       {[
                         { label: 'Mínimo 8 caracteres', ok: password.length >= 8 },
                         { label: '1 letra mayúscula', ok: /[A-Z]/.test(password) },
                         { label: '1 número', ok: /\d/.test(password) },
                       ].map(r => (
                         <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                          <div style={{ width: 4, height: 4, borderRadius: 2, background: r.ok ? '#4ade80' : '#353535', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, color: r.ok ? '#4ade80' : '#ab8985' }}>{r.label}</span>
+                          <div style={{ width: 4, height: 4, borderRadius: 2, background: r.ok ? '#16A34A' : 'var(--c-border)', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: r.ok ? '#16A34A' : 'var(--c-muted)' }}>{r.label}</span>
                         </div>
                       ))}
                     </div>
@@ -353,7 +352,7 @@ export default function Login() {
                       {loading ? 'Entrando...' : loginBloqueado ? `Espera ${bloqueadoSegundos}s...` : 'Iniciar sesión →'}
                     </button>
 
-                    <button onClick={() => { setModo('reset'); setError(null) }} style={{ width: '100%', padding: '8px 0', background: 'none', border: 'none', color: '#ab8985', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}>
+                    <button onClick={() => { setModo('reset'); setError(null) }} style={{ width: '100%', padding: '8px 0', background: 'none', border: 'none', color: 'var(--c-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}>
                       ¿Olvidaste tu contraseña?
                     </button>
                   </>
@@ -381,12 +380,12 @@ export default function Login() {
 
                     {/* Términos */}
                     <button onClick={() => setAceptaTerminos(!aceptaTerminos)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', padding: 0, marginBottom: 16 }}>
-                      <div style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: 1, border: aceptaTerminos ? 'none' : '2px solid #353535', background: aceptaTerminos ? '#B91C1C' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff' }}>{aceptaTerminos && '✓'}</div>
-                      <span style={{ fontSize: 11, color: '#ab8985', lineHeight: 1.4 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: 1, border: aceptaTerminos ? 'none' : '2px solid var(--c-border)', background: aceptaTerminos ? 'var(--c-primary)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff' }}>{aceptaTerminos && '✓'}</div>
+                      <span style={{ fontSize: 11, color: 'var(--c-muted)', lineHeight: 1.4 }}>
                         Acepto los{' '}
-                        <button type="button" onClick={e => { e.stopPropagation(); setLegalSlug('terminos-restaurantes') }} style={{ color: '#ffb4ab', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0 }}>términos y condiciones</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); setLegalSlug('terminos-restaurantes') }} style={{ color: 'var(--c-primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0 }}>términos y condiciones</button>
                         {' '}y la{' '}
-                        <button type="button" onClick={e => { e.stopPropagation(); setLegalSlug('privacidad-restaurantes') }} style={{ color: '#ffb4ab', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0 }}>política de privacidad</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); setLegalSlug('privacidad-restaurantes') }} style={{ color: 'var(--c-primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0 }}>política de privacidad</button>
                       </span>
                     </button>
 
@@ -399,9 +398,9 @@ export default function Login() {
 
                 {/* Google */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
-                  <div style={{ flex: 1, height: 1, background: '#353535' }} />
-                  <span style={{ fontSize: 11, color: '#ab8985', fontWeight: 600 }}>o</span>
-                  <div style={{ flex: 1, height: 1, background: '#353535' }} />
+                  <div style={{ flex: 1, height: 1, background: 'var(--c-border)' }} />
+                  <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600 }}>o</span>
+                  <div style={{ flex: 1, height: 1, background: 'var(--c-border)' }} />
                 </div>
 
                 <button onClick={async () => {
@@ -423,8 +422,8 @@ export default function Login() {
 
           {/* Footer seguridad */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 20 }}>
-            <div style={{ fontSize: 11, color: '#ab8985' }}>Encriptación AES-256</div>
-            <div style={{ fontSize: 11, color: '#ab8985' }}>Soporte 24/7</div>
+            <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>Encriptación AES-256</div>
+            <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>Soporte 24/7</div>
           </div>
         </div>
       </div>

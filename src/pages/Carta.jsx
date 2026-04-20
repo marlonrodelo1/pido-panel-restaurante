@@ -17,7 +17,7 @@ export default function Carta() {
   // Crear/editar producto
   const [showAddProd, setShowAddProd] = useState(false)
   const [editProd, setEditProd] = useState(null)
-  const [prodForm, setProdForm] = useState({ nombre: '', descripcion: '', precio: '', categoria_id: '', imagen_url: '' })
+  const [prodForm, setProdForm] = useState({ nombre: '', descripcion: '', precio: '', precio_tienda_publica: '', categoria_id: '', imagen_url: '' })
   const [saving, setSaving] = useState(false)
   const [extrasAsignados, setExtrasAsignados] = useState([])
   const [tamanos, setTamanos] = useState([]) // [{id?, nombre, precio}] para el formulario
@@ -104,7 +104,7 @@ export default function Carta() {
 
   // --- Productos ---
   function abrirCrearProducto() {
-    setProdForm({ nombre: '', descripcion: '', precio: '', categoria_id: catFiltro || categoriasRest[0]?.id || '', imagen_url: '' })
+    setProdForm({ nombre: '', descripcion: '', precio: '', precio_tienda_publica: '', categoria_id: catFiltro || categoriasRest[0]?.id || '', imagen_url: '' })
     setEditProd(null)
     setExtrasAsignados([])
     setTamanos([])
@@ -112,7 +112,7 @@ export default function Carta() {
   }
 
   async function abrirEditarProducto(p) {
-    setProdForm({ nombre: p.nombre, descripcion: p.descripcion || '', precio: p.precio, categoria_id: p.categoria_id || '', imagen_url: p.imagen_url || '' })
+    setProdForm({ nombre: p.nombre, descripcion: p.descripcion || '', precio: p.precio, precio_tienda_publica: p.precio_tienda_publica ?? '', categoria_id: p.categoria_id || '', imagen_url: p.imagen_url || '' })
     setEditProd(p)
     // Cargar extras y tamaños asignados a este producto
     const { data } = await supabase.from('producto_extras').select('grupo_id').eq('producto_id', p.id)
@@ -135,6 +135,7 @@ export default function Carta() {
       nombre: prodForm.nombre.trim(),
       descripcion: prodForm.descripcion.trim() || null,
       precio: Number(prodForm.precio),
+      precio_tienda_publica: prodForm.precio_tienda_publica === '' || prodForm.precio_tienda_publica === null || prodForm.precio_tienda_publica === undefined ? null : Number(prodForm.precio_tienda_publica),
       categoria_id: prodForm.categoria_id || null,
       imagen_url: prodForm.imagen_url || null,
       establecimiento_id: restaurante.id,
@@ -291,7 +292,7 @@ export default function Carta() {
                 <button key={t.id} onClick={() => setGrupoForm({ ...grupoForm, tipo: t.id })} style={{
                   flex: 1, padding: '10px 0', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
                   border: grupoForm.tipo === t.id ? '2px solid var(--c-primary)' : '1px solid var(--c-border)',
-                  background: grupoForm.tipo === t.id ? 'rgba(185,28,28,0.12)' : 'var(--c-surface)',
+                  background: grupoForm.tipo === t.id ? 'var(--c-primary-light)' : 'var(--c-surface)',
                   color: grupoForm.tipo === t.id ? 'var(--c-primary)' : 'var(--c-text)',
                 }}>{t.l}</button>
               ))}
@@ -312,7 +313,7 @@ export default function Carta() {
             <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
               <input value={op.nombre} onChange={e => { const n = [...opcionesForm]; n[i].nombre = e.target.value; setOpcionesForm(n) }} placeholder="Nombre" style={{ ...s.formInput, flex: 2 }} />
               <input type="number" step="0.10" value={op.precio} onChange={e => { const n = [...opcionesForm]; n[i].precio = e.target.value; setOpcionesForm(n) }} placeholder="€" style={{ ...s.formInput, flex: 1 }} />
-              <button onClick={() => setOpcionesForm(prev => prev.filter((_, idx) => idx !== i))} style={{ width: 44, height: 44, borderRadius: 10, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#EF4444', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              <button onClick={() => setOpcionesForm(prev => prev.filter((_, idx) => idx !== i))} style={{ width: 44, height: 44, borderRadius: 10, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#DC2626', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
           ))}
           <button onClick={() => setOpcionesForm(prev => [...prev, { nombre: '', precio: '' }])} style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: '1px dashed var(--c-border)', background: 'transparent', color: 'var(--c-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>
@@ -344,7 +345,7 @@ export default function Carta() {
               <div style={{ fontWeight: 700, fontSize: 14 }}>{g.nombre}</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => abrirEditarGrupo(g)} style={s.miniBtn}>Editar</button>
-                <button onClick={() => eliminarGrupo(g.id)} style={{ ...s.miniBtn, color: '#EF4444' }}>Eliminar</button>
+                <button onClick={() => eliminarGrupo(g.id)} style={{ ...s.miniBtn, color: '#DC2626' }}>Eliminar</button>
               </div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 10 }}>{g.tipo === 'multiple' ? `Múltiple · máx. ${g.max_selecciones}` : 'Selección única'}</div>
@@ -377,7 +378,7 @@ export default function Carta() {
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{c.nombre}</div>
                 <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>{count} productos</div>
               </div>
-              <button onClick={() => removeCatRest(c.id)} style={{ ...s.miniBtn, color: '#EF4444' }}>Eliminar</button>
+              <button onClick={() => removeCatRest(c.id)} style={{ ...s.miniBtn, color: '#DC2626' }}>Eliminar</button>
             </div>
           )
         })}
@@ -439,7 +440,7 @@ export default function Carta() {
                 <span style={{ fontWeight: 700, fontSize: 14, cursor: 'pointer' }} onClick={() => abrirEditarProducto(p)}>{p.nombre}</span>
                 <button onClick={() => toggleDisponible(p.id, p.disponible)} style={{
                   width: 48, height: 28, borderRadius: 14, border: 'none',
-                  background: p.disponible ? '#16A34A' : 'rgba(255,255,255,0.15)',
+                  background: p.disponible ? '#16A34A' : 'rgba(0,0,0,0.15)',
                   cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
                   minHeight: 44, display: 'flex', alignItems: 'center', padding: 0,
                 }}>
@@ -456,7 +457,7 @@ export default function Carta() {
                 }
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button onClick={() => abrirEditarProducto(p)} style={s.miniBtn}>Editar</button>
-                  <button onClick={() => eliminarProducto(p.id)} style={{ ...s.miniBtn, color: '#EF4444' }}>Eliminar</button>
+                  <button onClick={() => eliminarProducto(p.id)} style={{ ...s.miniBtn, color: '#DC2626' }}>Eliminar</button>
                 </div>
               </div>
             </div>
@@ -481,10 +482,10 @@ export default function Carta() {
       {/* Modal crear/editar producto */}
       {showAddProd && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setShowAddProd(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#1A1A1A', borderRadius: '20px 20px 0 0', padding: '20px 16px', width: '100%', maxWidth: 600, maxHeight: '85vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', animation: 'slideUp 0.3s ease', border: '1px solid rgba(255,255,255,0.08)', borderBottom: 'none' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--c-surface)', borderRadius: '20px 20px 0 0', padding: '20px 16px', width: '100%', maxWidth: 600, maxHeight: '85vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', animation: 'slideUp 0.3s ease', border: '1px solid rgba(0,0,0,0.08)', borderBottom: 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#F5F5F5' }}>{editProd ? 'Editar producto' : 'Nuevo producto'}</h3>
-              <button onClick={() => setShowAddProd(false)} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', fontSize: 18, cursor: 'pointer', color: '#F5F5F5', width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--c-text)' }}>{editProd ? 'Editar producto' : 'Nuevo producto'}</h3>
+              <button onClick={() => setShowAddProd(false)} style={{ background: 'rgba(0,0,0,0.08)', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--c-text)', width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
 
             <div style={{ marginBottom: 12 }}>
@@ -501,6 +502,14 @@ export default function Carta() {
             <div style={{ marginBottom: 12 }}>
               <label style={s.label}>Precio (€) *</label>
               <input type="number" step="0.01" value={prodForm.precio} onChange={e => setProdForm({ ...prodForm, precio: e.target.value })} placeholder="9.50" style={s.formInput} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ ...s.label, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>Precio Tienda Pública (€)</span>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(255,107,44,0.15)', color: '#FF6B2C', letterSpacing: 0.3 }}>PLAN 39€</span>
+              </label>
+              <input type="number" step="0.01" value={prodForm.precio_tienda_publica} onChange={e => setProdForm({ ...prodForm, precio_tienda_publica: e.target.value })} placeholder="Igual que precio Pidoo" style={s.formInput} />
+              <p style={{ fontSize: 10, color: 'var(--c-muted)', margin: '4px 2px 0' }}>Solo activo con plan Tienda Pública 39€/mes. Si vacío, usa el precio Pidoo.</p>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={s.label}>Descripción</label>
@@ -526,11 +535,11 @@ export default function Carta() {
                     <button key={g.id} onClick={() => toggleExtraAsignado(g.id)} style={{
                       display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px',
                       borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', marginBottom: 6,
-                      border: activo ? '2px solid var(--c-primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: activo ? 'rgba(185,28,28,0.12)' : 'rgba(255,255,255,0.04)',
+                      border: activo ? '2px solid var(--c-primary)' : '1px solid rgba(0,0,0,0.1)',
+                      background: activo ? 'var(--c-primary-light)' : 'rgba(0,0,0,0.04)',
                     }}>
                       <div style={{
-                        width: 20, height: 20, borderRadius: 6, border: activo ? 'none' : '2px solid rgba(255,255,255,0.2)',
+                        width: 20, height: 20, borderRadius: 6, border: activo ? 'none' : '2px solid rgba(0,0,0,0.2)',
                         background: activo ? 'var(--c-primary)' : 'transparent',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                         fontSize: 12, color: '#fff',
@@ -538,7 +547,7 @@ export default function Carta() {
                         {activo && '✓'}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#F5F5F5' }}>{g.nombre}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--c-text)' }}>{g.nombre}</div>
                         <div style={{ fontSize: 10, color: 'var(--c-muted)' }}>
                           {g.tipo === 'single' ? 'Elige 1' : `Máx. ${g.max_selecciones}`} · {(g.extras_opciones || []).map(o => o.nombre).join(', ')}
                         </div>
@@ -553,7 +562,7 @@ export default function Carta() {
             <div style={{ marginBottom: 20 }}>
               <label style={s.label}>Tamaños</label>
               <p style={{ fontSize: 11, color: 'var(--c-muted)', margin: '0 0 10px' }}>
-                Si añades tamaños, el cliente <strong style={{ color: 'rgba(255,255,255,0.6)' }}>debe elegir uno</strong> obligatoriamente al pedir este producto.
+                Si añades tamaños, el cliente <strong style={{ color: 'rgba(0,0,0,0.6)' }}>debe elegir uno</strong> obligatoriamente al pedir este producto.
               </p>
               {tamanos.map((t, i) => (
                 <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -572,13 +581,13 @@ export default function Carta() {
                   />
                   <button
                     onClick={() => setTamanos(prev => prev.filter((_, idx) => idx !== i))}
-                    style={{ width: 44, height: 44, borderRadius: 10, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#EF4444', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: 44, height: 44, borderRadius: 10, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#DC2626', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >×</button>
                 </div>
               ))}
               <button
                 onClick={() => setTamanos(prev => [...prev, { nombre: '', precio: '' }])}
-                style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: '1px dashed rgba(255,255,255,0.18)', background: 'transparent', color: 'var(--c-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: '1px dashed rgba(0,0,0,0.18)', background: 'transparent', color: 'var(--c-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 + Añadir tamaño
               </button>
@@ -605,6 +614,6 @@ const s = {
   btnPrimary: { padding: '8px 14px', borderRadius: 10, border: 'none', background: 'var(--c-primary)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   catBtn: { padding: '7px 14px', borderRadius: 50, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   miniBtn: { padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: 'var(--c-surface2)', color: 'var(--c-primary)', minHeight: 32 },
-  formInput: { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', fontSize: 13, fontFamily: 'inherit', background: 'rgba(255,255,255,0.06)', color: '#F5F5F5', outline: 'none', boxSizing: 'border-box' },
-  label: { fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4, display: 'block' },
+  formInput: { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', fontSize: 13, fontFamily: 'inherit', background: 'rgba(0,0,0,0.06)', color: 'var(--c-text)', outline: 'none', boxSizing: 'border-box' },
+  label: { fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' },
 }

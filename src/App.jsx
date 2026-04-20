@@ -40,8 +40,8 @@ function AppContent() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
       StatusBar.setOverlaysWebView({ overlay: false })
-      StatusBar.setBackgroundColor({ color: '#0D0D0D' })
-      StatusBar.setStyle({ style: Style.Dark })
+      StatusBar.setBackgroundColor({ color: '#FAFAF7' })
+      StatusBar.setStyle({ style: Style.Light })
 
       CapApp.addListener('appUrlOpen', async ({ url }) => {
         if (url.includes('access_token') || url.includes('refresh_token') || url.includes('code=')) {
@@ -65,7 +65,7 @@ function AppContent() {
   if (loading) {
     return (
       <div style={{ ...shell, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div style={{ fontSize: 13, color: '#ab8985', fontWeight: 600 }}>Cargando...</div>
+        <div style={{ fontSize: 13, color: 'var(--c-muted)', fontWeight: 600 }}>Cargando...</div>
       </div>
     )
   }
@@ -142,17 +142,17 @@ function AppInner({ seccion, setSeccion, nav }) {
       <style>{css}</style>
 
       {/* Header */}
-      <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#131313', borderBottom: '1px solid #1e1e1e' }}>
+      <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: 'var(--c-surface)', borderBottom: '1px solid var(--c-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
             {restaurante.logo_url ? <img src={restaurante.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{restaurante.nombre?.[0]?.toUpperCase() || 'R'}</span>}
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: '#E5E2E1', letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--c-text)', letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {restaurante.nombre}
             </div>
-            <div style={{ fontSize: 10, color: restaurante.activo ? '#4ade80' : '#ab8985', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: restaurante.activo ? '#4ade80' : '#ab8985', display: 'inline-block' }} />
+            <div style={{ fontSize: 10, color: restaurante.activo ? '#16A34A' : 'var(--c-muted)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: restaurante.activo ? '#16A34A' : 'var(--c-muted)', display: 'inline-block' }} />
               {restaurante.activo ? 'Abierto' : 'Cerrado'}
             </div>
           </div>
@@ -161,8 +161,8 @@ function AppInner({ seccion, setSeccion, nav }) {
           {isNative && pedidosNuevos.length > 0 && seccion !== 'pedidos' && (
             <button onClick={() => setSeccion('pedidos')} style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px',
-              borderRadius: 10, border: 'none', background: '#FEF2F2',
-              fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: '#991B1B',
+              borderRadius: 10, border: 'none', background: 'var(--c-danger-soft)',
+              fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--c-danger)',
               animation: 'pulse 1s infinite',
             }}>
               {pedidosNuevos.length} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
@@ -171,9 +171,9 @@ function AppInner({ seccion, setSeccion, nav }) {
           {isNative ? (
             <button onClick={abrirPanelWeb} style={{
               padding: '7px 12px', borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.12)',
+              border: '1px solid var(--c-border)',
               background: 'var(--c-surface2)', fontSize: 11, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'inherit', color: 'var(--c-muted)',
+              cursor: 'pointer', fontFamily: 'inherit', color: 'var(--c-text-soft)',
             }}>
               Panel web
             </button>
@@ -198,10 +198,10 @@ function AppInner({ seccion, setSeccion, nav }) {
               {menuOpen && (
                 <div style={{
                   position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200,
-                  minWidth: 180, background: '#1A1A1A',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  minWidth: 180, background: 'var(--c-surface)',
+                  border: '1px solid var(--c-border)',
                   borderRadius: 12, padding: 6, display: 'flex', flexDirection: 'column',
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.45)',
+                  boxShadow: 'var(--c-shadow-lg)',
                 }}>
                   {extraOpciones.map(opt => {
                     const active = seccion === opt.id
@@ -238,11 +238,11 @@ function AppInner({ seccion, setSeccion, nav }) {
         <div style={{
           position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
           width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100,
-          background: 'linear-gradient(135deg, #B91C1C, #DC2626)',
+          background: 'linear-gradient(135deg, #FF6B2C, #E85A1F)',
           borderRadius: 14, padding: '12px 14px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: 10, fontFamily: 'inherit',
-          boxShadow: '0 8px 32px rgba(185,28,28,0.4)',
+          boxShadow: '0 8px 32px rgba(255,107,44,0.35)',
           animation: silenciada ? 'none' : 'pulse 1.5s ease-in-out infinite',
         }}>
           <div
@@ -303,7 +303,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', background: 'rgba(19,19,19,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-around', padding: '8px 0 12px', zIndex: 50 }}>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid var(--c-border)', display: 'flex', justifyContent: 'space-around', padding: '8px 0 12px', zIndex: 50 }}>
         {nav.map(n => (
           <button key={n.id} onClick={() => setSeccion(n.id)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
@@ -318,7 +318,7 @@ function AppInner({ seccion, setSeccion, nav }) {
               <span style={{
                 position: 'absolute', top: -2, right: 0,
                 width: 16, height: 16, borderRadius: 8,
-                background: '#EF4444', color: '#fff',
+                background: 'var(--c-danger)', color: '#fff',
                 fontSize: 9, fontWeight: 800,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 animation: 'pulse 1s infinite',
@@ -332,11 +332,8 @@ function AppInner({ seccion, setSeccion, nav }) {
 }
 
 const shell = {
-  '--c-primary': '#B91C1C', '--c-primary-light': 'rgba(185,28,28,0.15)', '--c-primary-soft': 'rgba(185,28,28,0.25)',
-  '--c-bg': '#0D0D0D', '--c-surface': '#1A1A1A', '--c-surface2': '#242424',
-  '--c-surface3': '#2a2a2a', '--c-border': '#353535',
-  '--c-text': '#E5E2E1', '--c-muted': '#ab8985', '--c-accent': '#ffb4ab',
-  '--c-btn-gradient': 'linear-gradient(135deg, #B91C1C 0%, #93000b 100%)',
+  '--c-accent': '#FF6B2C',
+  '--c-btn-gradient': 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
   fontFamily: "'Inter', system-ui, -apple-system, sans-serif", width: '100%',
   background: 'var(--c-bg)', color: 'var(--c-text)',
 }
@@ -348,7 +345,7 @@ const css = `
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 ::-webkit-scrollbar{display:none}
-body{background:#0D0D0D;margin:0}
+body{background:var(--c-bg);margin:0}
 input,select,textarea{font-size:16px !important}
 @media(min-width:600px){input,select,textarea{font-size:13px !important}}
 `
@@ -377,11 +374,11 @@ function ToastNotification() {
     <div style={{
       position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
       zIndex: 9998, maxWidth: 'calc(100% - 40px)', width: 'max-content',
-      background: isError ? '#7F1D1D' : '#14532D',
+      background: isError ? '#FEE2E2' : '#DCFCE7',
       border: `1px solid ${isError ? '#DC2626' : '#16A34A'}`,
-      color: '#fff', borderRadius: 12, padding: '12px 18px',
+      color: isError ? '#991B1B' : '#14532D', borderRadius: 12, padding: '12px 18px',
       fontSize: 13, fontWeight: 600, textAlign: 'center',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+      boxShadow: 'var(--c-shadow-lg)',
       animation: 'fadeIn 0.25s ease',
       fontFamily: "'Inter', system-ui, sans-serif",
     }}>
@@ -417,12 +414,12 @@ function ConfirmModal() {
   }
 
   return (
-    <div onClick={() => responder(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1A1A1A', borderRadius: 16, padding: '24px 20px', width: '100%', maxWidth: 340, border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#F5F5F5', marginBottom: 20, lineHeight: 1.5, textAlign: 'center' }}>{state.mensaje}</div>
+    <div onClick={() => responder(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--c-surface)', borderRadius: 16, padding: '24px 20px', width: '100%', maxWidth: 340, border: '1px solid var(--c-border)', boxShadow: 'var(--c-shadow-lg)' }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-text)', marginBottom: 20, lineHeight: 1.5, textAlign: 'center' }}>{state.mensaje}</div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => responder(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
-          <button onClick={() => responder(true)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: 'none', background: '#EF4444', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Confirmar</button>
+          <button onClick={() => responder(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+          <button onClick={() => responder(true)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: 'none', background: 'var(--c-danger)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Confirmar</button>
         </div>
       </div>
     </div>
@@ -437,9 +434,9 @@ class ErrorBoundary extends Component {
     return (
       <div style={{ ...shell, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
         <div style={{ textAlign: 'center', maxWidth: 340 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#F5F5F5', marginBottom: 8 }}>Algo salió mal</div>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 24, lineHeight: 1.5 }}>Ha ocurrido un error inesperado. Recarga la página para continuar.</div>
-          <button onClick={() => window.location.reload()} style={{ padding: '12px 32px', borderRadius: 12, border: 'none', background: '#B91C1C', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Recargar</button>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--c-text)', marginBottom: 8 }}>Algo salió mal</div>
+          <div style={{ fontSize: 13, color: 'var(--c-muted)', marginBottom: 24, lineHeight: 1.5 }}>Ha ocurrido un error inesperado. Recarga la página para continuar.</div>
+          <button onClick={() => window.location.reload()} style={{ padding: '12px 32px', borderRadius: 12, border: 'none', background: 'var(--c-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Recargar</button>
         </div>
       </div>
     )
