@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, BarChart3, Wallet, CreditCard } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, BarChart3, Wallet, CreditCard, Handshake } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -23,6 +23,7 @@ import MisRepartidores from './pages/MisRepartidores'
 import FinanzasRestaurante from './pages/FinanzasRestaurante'
 import Finanzas from './pages/Finanzas'
 import PlanTiendaPublica from './pages/PlanTiendaPublica'
+import Socios from './pages/Socios'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -114,7 +115,25 @@ function AppInner({ seccion, setSeccion, nav }) {
   const { restaurante } = useRest()
   const { pedidosNuevos, silenciada, silenciar } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sociosPendientes, setSociosPendientes] = useState(0)
   const menuRef = useRef(null)
+
+  // Contador de solicitudes de socios pendientes (para badge en el menú extras)
+  useEffect(() => {
+    if (!restaurante?.id || isNative) return
+    let cancel = false
+    async function fetchCount() {
+      const { count, error } = await supabase
+        .from('socio_establecimiento')
+        .select('id', { count: 'exact', head: true })
+        .eq('establecimiento_id', restaurante.id)
+        .eq('estado', 'pendiente')
+      if (!cancel && !error) setSociosPendientes(count || 0)
+    }
+    fetchCount()
+    const id = setInterval(fetchCount, 30000)
+    return () => { cancel = true; clearInterval(id) }
+  }, [restaurante?.id, seccion])
 
   async function abrirPanelWeb() {
     try {
@@ -137,6 +156,7 @@ function AppInner({ seccion, setSeccion, nav }) {
 
   const extraOpciones = [
     { id: 'repartidores', label: 'Repartidores', Icon: Truck },
+    { id: 'socios', label: 'Socios', Icon: Handshake, badge: sociosPendientes },
     { id: 'plan-tienda', label: 'Plan tienda', Icon: CreditCard },
     { id: 'finanzas', label: 'Finanzas', Icon: Wallet },
     { id: 'finanzas-resumen', label: 'Resumen ventas', Icon: BarChart3 },
@@ -197,11 +217,21 @@ function AppInner({ seccion, setSeccion, nav }) {
                   background: extraActive ? 'var(--c-primary)' : 'var(--c-surface2)',
                   fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                   color: extraActive ? '#fff' : 'var(--c-text)',
-                  whiteSpace: 'nowrap',
+                  whiteSpace: 'nowrap', position: 'relative',
                 }}
               >
                 {extraActive ? <extraActive.Icon size={14} strokeWidth={2.2} /> : <MoreHorizontal size={16} strokeWidth={2.2} />}
                 {extraActive ? extraActive.label : 'Más'}
+                {sociosPendientes > 0 && seccion !== 'socios' && (
+                  <span style={{
+                    position: 'absolute', top: -4, right: -4,
+                    minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8,
+                    background: '#FF6B2C', color: '#fff',
+                    fontSize: 9, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '2px solid var(--c-surface)',
+                  }}>{sociosPendientes}</span>
+                )}
               </button>
               {menuOpen && (
                 <div style={{
@@ -228,7 +258,15 @@ function AppInner({ seccion, setSeccion, nav }) {
                         }}
                       >
                         <opt.Icon size={15} strokeWidth={2} color={active ? 'var(--c-primary)' : 'var(--c-muted)'} />
-                        {opt.label}
+                        <span style={{ flex: 1 }}>{opt.label}</span>
+                        {opt.badge > 0 && (
+                          <span style={{
+                            minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9,
+                            background: '#FF6B2C', color: '#fff',
+                            fontSize: 10, fontWeight: 800,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>{opt.badge}</span>
+                        )}
                       </button>
                     )
                   })}
@@ -305,6 +343,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'soporte' && <Soporte />}
         {seccion === 'metricas' && <Metricas />}
         {seccion === 'repartidores' && <MisRepartidores />}
+        {seccion === 'socios' && <Socios />}
         {seccion === 'plan-tienda' && <PlanTiendaPublica />}
         {seccion === 'finanzas' && <Finanzas />}
         {seccion === 'finanzas-resumen' && <FinanzasRestaurante />}
