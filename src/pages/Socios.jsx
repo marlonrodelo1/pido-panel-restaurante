@@ -178,7 +178,7 @@ export default function Socios() {
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
     try {
-      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, motivo_rechazo, destacado, orden_destacado, socios(nombre_comercial, logo_url, slug, rating, descripcion)'
+      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, socios(nombre_comercial, logo_url, slug, rating, descripcion)'
 
       const { data: pend, error: e1 } = await supabase
         .from('socio_establecimiento')

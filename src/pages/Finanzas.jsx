@@ -138,9 +138,9 @@ export default function Finanzas({ onBack }) {
             <button onClick={onBack} style={{ ...ds.backBtn, marginBottom: 0 }}>← Volver</button>
           )}
           <div>
-            <h1 style={{ ...ds.h1, margin: 0 }}>Finanzas</h1>
+            <h1 style={{ ...ds.h1, margin: 0 }}>Finanzas con Pidoo</h1>
             <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4 }}>
-              Balance, liquidaciones y cuenta bancaria.
+              Cuenta bancaria, balance y facturas semanales con la plataforma.
             </div>
           </div>
         </div>

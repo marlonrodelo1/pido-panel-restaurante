@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, BarChart3, Wallet, CreditCard, Handshake } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, Wallet, CreditCard, Handshake, Bike } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -12,7 +12,6 @@ import CompletarRegistro from './pages/CompletarRegistro'
 import PedidosEnVivo from './pages/PedidosEnVivo'
 import Historial from './pages/Historial'
 import Carta from './pages/Carta'
-import Metricas from './pages/Metricas'
 import Ajustes from './pages/Ajustes'
 import Promociones from './pages/Promociones'
 import Soporte from './pages/Soporte'
@@ -20,7 +19,7 @@ import DisponibilidadProductos from './pages/DisponibilidadProductos'
 import ConfigImpresora from './pages/ConfigImpresora'
 import Activacion from './pages/Activacion'
 import MisRepartidores from './pages/MisRepartidores'
-import FinanzasRestaurante from './pages/FinanzasRestaurante'
+import FinanzasRiders from './pages/FinanzasRiders'
 import Finanzas from './pages/Finanzas'
 import PlanTiendaPublica from './pages/PlanTiendaPublica'
 import Socios from './pages/Socios'
@@ -158,9 +157,8 @@ function AppInner({ seccion, setSeccion, nav }) {
     { id: 'repartidores', label: 'Repartidores', Icon: Truck },
     { id: 'socios', label: 'Socios', Icon: Handshake, badge: sociosPendientes },
     { id: 'plan-tienda', label: 'Plan tienda', Icon: CreditCard },
-    { id: 'finanzas', label: 'Finanzas', Icon: Wallet },
-    { id: 'finanzas-resumen', label: 'Resumen ventas', Icon: BarChart3 },
-    { id: 'metricas', label: 'Métricas', Icon: BarChart3 },
+    { id: 'finanzas', label: 'Finanzas con Pidoo', Icon: Wallet },
+    { id: 'finanzas-riders', label: 'Finanzas con el repartidor', Icon: Bike },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
   const extraActive = extraOpciones.find(e => e.id === seccion)
@@ -341,12 +339,11 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'carta' && <Carta />}
         {seccion === 'promos' && <Promociones />}
         {seccion === 'soporte' && <Soporte />}
-        {seccion === 'metricas' && <Metricas />}
         {seccion === 'repartidores' && <MisRepartidores />}
         {seccion === 'socios' && <Socios />}
         {seccion === 'plan-tienda' && <PlanTiendaPublica />}
         {seccion === 'finanzas' && <Finanzas />}
-        {seccion === 'finanzas-resumen' && <FinanzasRestaurante />}
+        {seccion === 'finanzas-riders' && <FinanzasRiders />}
         {seccion === 'ajustes' && <Ajustes />}
       </div>
 
