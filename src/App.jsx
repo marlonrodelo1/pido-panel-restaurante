@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, Truck, MessageCircle, Wallet, CreditCard, Handshake, Bike } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, MessageCircle, Wallet, CreditCard, Handshake, Bike } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -18,11 +18,10 @@ import Soporte from './pages/Soporte'
 import DisponibilidadProductos from './pages/DisponibilidadProductos'
 import ConfigImpresora from './pages/ConfigImpresora'
 import Activacion from './pages/Activacion'
-import MisRepartidores from './pages/MisRepartidores'
+import SociosYRepartidores from './pages/SociosYRepartidores'
 import FinanzasRiders from './pages/FinanzasRiders'
 import Finanzas from './pages/Finanzas'
 import PlanTiendaPublica from './pages/PlanTiendaPublica'
-import Socios from './pages/Socios'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -154,8 +153,7 @@ function AppInner({ seccion, setSeccion, nav }) {
   const navIcons = isNative ? NAV_ICONS_NATIVE : NAV_ICONS_WEB
 
   const extraOpciones = [
-    { id: 'repartidores', label: 'Repartidores', Icon: Truck },
-    { id: 'socios', label: 'Socios', Icon: Handshake, badge: sociosPendientes },
+    { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
     { id: 'plan-tienda', label: 'Plan tienda', Icon: CreditCard },
     { id: 'finanzas', label: 'Finanzas con Pidoo', Icon: Wallet },
     { id: 'finanzas-riders', label: 'Finanzas con el repartidor', Icon: Bike },
@@ -220,7 +218,7 @@ function AppInner({ seccion, setSeccion, nav }) {
               >
                 {extraActive ? <extraActive.Icon size={14} strokeWidth={2.2} /> : <MoreHorizontal size={16} strokeWidth={2.2} />}
                 {extraActive ? extraActive.label : 'Más'}
-                {sociosPendientes > 0 && seccion !== 'socios' && (
+                {sociosPendientes > 0 && seccion !== 'socios-riders' && (
                   <span style={{
                     position: 'absolute', top: -4, right: -4,
                     minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8,
@@ -339,8 +337,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'carta' && <Carta />}
         {seccion === 'promos' && <Promociones />}
         {seccion === 'soporte' && <Soporte />}
-        {seccion === 'repartidores' && <MisRepartidores />}
-        {seccion === 'socios' && <Socios />}
+        {seccion === 'socios-riders' && <SociosYRepartidores />}
         {seccion === 'plan-tienda' && <PlanTiendaPublica />}
         {seccion === 'finanzas' && <Finanzas />}
         {seccion === 'finanzas-riders' && <FinanzasRiders />}
