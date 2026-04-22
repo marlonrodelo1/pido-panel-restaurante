@@ -67,7 +67,7 @@ export default function FinanzasRiders() {
   const [resenas, setResenas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [expandedRider, setExpandedRider] = useState(null)
+  const [expandedSocio, setExpandedSocio] = useState(null)
 
   const [desde, hasta] = useMemo(() => rangoFechas(rango), [rango])
 
@@ -94,11 +94,25 @@ export default function FinanzasRiders() {
 
       const { data: earnings } = await supabase
         .from('rider_earnings')
-        .select('*, rider_accounts(nombre)')
+        .select('*, rider_accounts(id, nombre, shipday_api_key)')
         .eq('establecimiento_id', restaurante.id)
         .gte('created_at', desde.toISOString())
         .lt('created_at', hasta.toISOString())
-      setRiderEarnings(earnings || [])
+
+      const apiKeys = [...new Set((earnings || []).map(e => e.rider_accounts?.shipday_api_key).filter(Boolean))]
+      let sociosByKey = {}
+      if (apiKeys.length > 0) {
+        const { data: socios } = await supabase
+          .from('socios')
+          .select('id, nombre_comercial, logo_url, slug, shipday_api_key')
+          .in('shipday_api_key', apiKeys)
+        ;(socios || []).forEach(s => { sociosByKey[s.shipday_api_key] = s })
+      }
+      const enriched = (earnings || []).map(e => ({
+        ...e,
+        socio: e.rider_accounts?.shipday_api_key ? sociosByKey[e.rider_accounts.shipday_api_key] || null : null,
+      }))
+      setRiderEarnings(enriched)
 
       const { data: resenasData } = await supabase
         .from('resenas').select('*')
@@ -131,17 +145,19 @@ export default function FinanzasRiders() {
     return { ventas, ventasTarjeta, ventasEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
   }, [entregados])
 
-  const riderRows = useMemo(() => {
+  const socioRows = useMemo(() => {
     const pedidoMap = {}
     for (const p of pedidos) pedidoMap[p.id] = p
 
     const grouped = {}
     for (const e of riderEarnings) {
-      const id = e.rider_account_id
-      if (!grouped[id]) {
-        grouped[id] = {
-          rider_id: id,
-          nombre: e.rider_accounts?.nombre || '—',
+      // Agrupamos por socio si existe; si no, usamos rider_account_id como fallback (riders legacy)
+      const key = e.socio?.id || `rider:${e.rider_account_id}`
+      if (!grouped[key]) {
+        grouped[key] = {
+          key,
+          socio: e.socio || null,
+          rider_nombre: e.rider_accounts?.nombre || '—',
           pedidos: 0,
           total_envios: 0,
           total_comision_rider: 0,
@@ -152,7 +168,7 @@ export default function FinanzasRiders() {
           pedidos_list: [],
         }
       }
-      const g = grouped[id]
+      const g = grouped[key]
       const ped = pedidoMap[e.pedido_id]
       g.pedidos += 1
       g.total_envios += Number(e.coste_envio || 0)
@@ -161,10 +177,7 @@ export default function FinanzasRiders() {
       g.total_neto += Number(e.neto_rider || 0)
       g.total_descuentos += Number(ped?.descuento || 0)
       if (e.estado_pago === 'pendiente') g.pendiente += Number(e.neto_rider || 0)
-      g.pedidos_list.push({
-        earning: e,
-        pedido: ped || null,
-      })
+      g.pedidos_list.push({ earning: e, pedido: ped || null })
     }
     for (const g of Object.values(grouped)) {
       g.pedidos_list.sort((a, b) => {
@@ -242,9 +255,9 @@ export default function FinanzasRiders() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-          <h1 style={{ ...ds.h1, margin: 0 }}>Finanzas con el repartidor</h1>
+          <h1 style={{ ...ds.h1, margin: 0 }}>Finanzas con el socio</h1>
           <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4, lineHeight: 1.4 }}>
-            Ventas, métricas y pagos a tus riders en el periodo elegido.
+            Ventas, métricas y pagos a tus socios repartidores en el periodo elegido.
           </div>
         </div>
         <button onClick={descargarCSV} disabled={entregados.length === 0} style={{ ...ds.primaryBtn, opacity: entregados.length === 0 ? 0.5 : 1 }}>
@@ -303,7 +316,7 @@ export default function FinanzasRiders() {
             <Stat label="Pedidos entregados" value={entregados.length} color={colors.text} />
             <Stat label="Ticket medio" value={fmtMoney(stats.ticketMedio)} color={colors.text} />
             <Stat label="Tiempo prep. medio" value={`${stats.tiempoMedio} min`} color={colors.text} />
-            <Stat label="Propinas a riders" value={fmtMoney(stats.propinas)} color={colors.stateOk} />
+            <Stat label="Propinas a socios" value={fmtMoney(stats.propinas)} color={colors.stateOk} />
             <Stat label="Cancelados" value={cancelados} color={cancelados > 0 ? colors.danger : colors.textMute} />
           </div>
 
@@ -345,30 +358,32 @@ export default function FinanzasRiders() {
             )}
           </div>
 
-          {/* Pagos a riders */}
+          {/* Pagos a socios */}
           <div style={{ marginBottom: 22 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-              <h2 style={{ ...ds.h2, margin: 0 }}>Pagos a repartidores</h2>
+              <h2 style={{ ...ds.h2, margin: 0 }}>Pagos a socios</h2>
               <span style={{ fontSize: type.xxs, color: colors.textMute }}>
-                {riderRows.length} rider{riderRows.length === 1 ? '' : 's'} con actividad
+                {socioRows.length} socio{socioRows.length === 1 ? '' : 's'} con actividad
               </span>
             </div>
-            {riderRows.length === 0 ? (
+            {socioRows.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 12, color: colors.textMute, fontSize: type.sm }}>
-                Sin pedidos entregados por riders en este periodo.
+                Sin pedidos entregados por socios en este periodo.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {riderRows.map(r => {
-                  const isOpen = expandedRider === r.rider_id
+                {socioRows.map(r => {
+                  const isOpen = expandedSocio === r.key
+                  const nombre = r.socio?.nombre_comercial || r.rider_nombre
+                  const logo = r.socio?.logo_url
                   return (
-                    <div key={r.rider_id} style={{ ...ds.card, padding: 0, overflow: 'hidden' }}>
+                    <div key={r.key} style={{ ...ds.card, padding: 0, overflow: 'hidden' }}>
                       {/* Cabecera clickable */}
                       <div
-                        onClick={() => setExpandedRider(isOpen ? null : r.rider_id)}
+                        onClick={() => setExpandedSocio(isOpen ? null : r.key)}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(120px, 1.6fr) repeat(5, minmax(70px, 1fr)) auto',
+                          gridTemplateColumns: 'minmax(140px, 1.6fr) repeat(5, minmax(70px, 1fr)) auto',
                           alignItems: 'center', gap: 10,
                           padding: '12px 14px',
                           cursor: 'pointer',
@@ -377,13 +392,29 @@ export default function FinanzasRiders() {
                           fontSize: type.sm, color: colors.text,
                         }}
                       >
-                        <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                          <div style={{
-                            width: 28, height: 28, borderRadius: 8, background: colors.primarySoft,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.primary,
-                            fontSize: type.xs, fontWeight: 800, flexShrink: 0,
-                          }}>{r.nombre?.[0]?.toUpperCase() || '?'}</div>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.nombre}</span>
+                        <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                          {logo ? (
+                            <img
+                              src={logo}
+                              alt=""
+                              style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'cover', flexShrink: 0, border: `1px solid ${colors.border}` }}
+                            />
+                          ) : (
+                            <div style={{
+                              width: 36, height: 36, borderRadius: 10,
+                              background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+                              fontSize: type.sm, fontWeight: 800, flexShrink: 0,
+                            }}>{nombre?.[0]?.toUpperCase() || '?'}</div>
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
+                            {r.socio && r.rider_nombre && r.rider_nombre !== nombre && (
+                              <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 500, marginTop: 1 }}>
+                                Rider: {r.rider_nombre}
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <MiniKv label="Pedidos" value={r.pedidos} />
                         <MiniKv label="Envíos" value={fmtMoney(r.total_envios)} />
@@ -420,7 +451,7 @@ export default function FinanzasRiders() {
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: type.xs, color: colors.text }}>
                                 <thead>
                                   <tr style={{ background: colors.surface2 }}>
-                                    {['Fecha', 'Código', 'Pago', 'Subtotal', 'Promo', 'Descuento', 'Envío', 'Propina', 'Total', 'Comisión rider', 'Neto rider', 'Estado'].map(h => (
+                                    {['Fecha', 'Código', 'Pago', 'Subtotal', 'Promo', 'Descuento', 'Envío', 'Propina', 'Total', 'Comisión socio', 'Neto socio', 'Estado'].map(h => (
                                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, color: colors.textMute, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
                                     ))}
                                   </tr>
@@ -580,7 +611,7 @@ export default function FinanzasRiders() {
           </div>
 
           <div style={{ fontSize: type.xs, color: colors.textMute, lineHeight: 1.5, padding: '12px 14px', borderRadius: 10, background: colors.surface, border: `1px solid ${colors.border}` }}>
-            ⓘ Recomendación Pidoo: paga al rider <strong style={{ color: colors.text }}>10% del subtotal + 100% del envío + propina</strong>. Puedes pactar otra cifra libremente con él.
+            ⓘ Recomendación Pidoo: paga al socio <strong style={{ color: colors.text }}>10% del subtotal + 100% del envío + propina</strong> por cada pedido entregado. Puedes pactar otra cifra libremente con él.
           </div>
         </>
       )}

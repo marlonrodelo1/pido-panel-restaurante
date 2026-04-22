@@ -156,7 +156,7 @@ function AppInner({ seccion, setSeccion, nav }) {
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
     { id: 'plan-tienda', label: 'Plan tienda', Icon: CreditCard },
     { id: 'finanzas', label: 'Finanzas con Pidoo', Icon: Wallet },
-    { id: 'finanzas-riders', label: 'Finanzas con el repartidor', Icon: Bike },
+    { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
   const extraActive = extraOpciones.find(e => e.id === seccion)
