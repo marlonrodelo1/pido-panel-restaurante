@@ -67,6 +67,7 @@ export default function FinanzasRiders() {
   const [resenas, setResenas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [expandedRider, setExpandedRider] = useState(null)
 
   const [desde, hasta] = useMemo(() => rangoFechas(rango), [rango])
 
@@ -82,7 +83,7 @@ export default function FinanzasRiders() {
     try {
       const { data: peds, error: e1 } = await supabase
         .from('pedidos')
-        .select('id, codigo, subtotal, coste_envio, propina, total, metodo_pago, estado, entregado_at, created_at, minutos_preparacion, canal, modo_entrega, rider_account_id')
+        .select('id, codigo, subtotal, coste_envio, propina, total, descuento, promo_titulo, metodo_pago, estado, entregado_at, created_at, minutos_preparacion, canal, modo_entrega, rider_account_id')
         .eq('establecimiento_id', restaurante.id)
         .eq('canal', 'pido')
         .gte('created_at', desde.toISOString())
@@ -131,6 +132,9 @@ export default function FinanzasRiders() {
   }, [entregados])
 
   const riderRows = useMemo(() => {
+    const pedidoMap = {}
+    for (const p of pedidos) pedidoMap[p.id] = p
+
     const grouped = {}
     for (const e of riderEarnings) {
       const id = e.rider_account_id
@@ -143,19 +147,34 @@ export default function FinanzasRiders() {
           total_comision_rider: 0,
           total_propinas: 0,
           total_neto: 0,
+          total_descuentos: 0,
           pendiente: 0,
+          pedidos_list: [],
         }
       }
       const g = grouped[id]
+      const ped = pedidoMap[e.pedido_id]
       g.pedidos += 1
       g.total_envios += Number(e.coste_envio || 0)
       g.total_comision_rider += Number(e.comision_rider_sobre_subtotal || 0)
       g.total_propinas += Number(e.propina || 0)
       g.total_neto += Number(e.neto_rider || 0)
+      g.total_descuentos += Number(ped?.descuento || 0)
       if (e.estado_pago === 'pendiente') g.pendiente += Number(e.neto_rider || 0)
+      g.pedidos_list.push({
+        earning: e,
+        pedido: ped || null,
+      })
+    }
+    for (const g of Object.values(grouped)) {
+      g.pedidos_list.sort((a, b) => {
+        const da = new Date(a.pedido?.entregado_at || a.pedido?.created_at || a.earning.created_at)
+        const db = new Date(b.pedido?.entregado_at || b.pedido?.created_at || b.earning.created_at)
+        return db - da
+      })
     }
     return Object.values(grouped).sort((a, b) => b.total_neto - a.total_neto)
-  }, [riderEarnings])
+  }, [riderEarnings, pedidos])
 
   const porDia = useMemo(() => {
     const map = new Map()
@@ -339,27 +358,41 @@ export default function FinanzasRiders() {
                 Sin pedidos entregados por riders en este periodo.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', ...ds.table }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: type.sm, color: colors.text }}>
-                  <thead>
-                    <tr style={{ background: colors.elev2 }}>
-                      {['Rider', 'Pedidos', 'Envíos', 'Comisión 10%', 'Propinas', 'Neto rider', 'Estado'].map(h => (
-                        <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: type.xxs, color: colors.textMute, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {riderRows.map(r => (
-                      <tr key={r.rider_id} style={{ borderTop: `1px solid ${colors.border}` }}>
-                        <td style={{ padding: '10px 12px', fontWeight: 700 }}>{r.nombre}</td>
-                        <td style={{ padding: '10px 12px' }}>{r.pedidos}</td>
-                        <td style={{ padding: '10px 12px' }}>{fmtMoney(r.total_envios)}</td>
-                        <td style={{ padding: '10px 12px' }}>{fmtMoney(r.total_comision_rider)}</td>
-                        <td style={{ padding: '10px 12px' }}>{fmtMoney(r.total_propinas)}</td>
-                        <td style={{ padding: '10px 12px', fontWeight: 800, color: colors.stateOk }}>{fmtMoney(r.total_neto)}</td>
-                        <td style={{ padding: '10px 12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {riderRows.map(r => {
+                  const isOpen = expandedRider === r.rider_id
+                  return (
+                    <div key={r.rider_id} style={{ ...ds.card, padding: 0, overflow: 'hidden' }}>
+                      {/* Cabecera clickable */}
+                      <div
+                        onClick={() => setExpandedRider(isOpen ? null : r.rider_id)}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(120px, 1.6fr) repeat(5, minmax(70px, 1fr)) auto',
+                          alignItems: 'center', gap: 10,
+                          padding: '12px 14px',
+                          cursor: 'pointer',
+                          background: isOpen ? colors.elev2 : 'transparent',
+                          transition: 'background 0.15s',
+                          fontSize: type.sm, color: colors.text,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 8, background: colors.primarySoft,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.primary,
+                            fontSize: type.xs, fontWeight: 800, flexShrink: 0,
+                          }}>{r.nombre?.[0]?.toUpperCase() || '?'}</div>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.nombre}</span>
+                        </div>
+                        <MiniKv label="Pedidos" value={r.pedidos} />
+                        <MiniKv label="Envíos" value={fmtMoney(r.total_envios)} />
+                        <MiniKv label="Comisión" value={fmtMoney(r.total_comision_rider)} />
+                        <MiniKv label="Propinas" value={fmtMoney(r.total_propinas)} />
+                        <MiniKv label="Neto" value={fmtMoney(r.total_neto)} color={colors.stateOk} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           {r.pendiente > 0 ? (
-                            <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
                               Pendiente {fmtMoney(r.pendiente)}
                             </span>
                           ) : (
@@ -367,11 +400,96 @@ export default function FinanzasRiders() {
                               Pagado
                             </span>
                           )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <span style={{
+                            fontSize: type.base, color: colors.textMute,
+                            transition: 'transform 0.2s',
+                            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                          }}>▾</span>
+                        </div>
+                      </div>
+
+                      {/* Desplegable */}
+                      {isOpen && (
+                        <div style={{ borderTop: `1px solid ${colors.border}`, background: colors.elev2 }}>
+                          {r.pedidos_list.length === 0 ? (
+                            <div style={{ padding: 20, textAlign: 'center', color: colors.textMute, fontSize: type.xs }}>
+                              Sin pedidos en este periodo.
+                            </div>
+                          ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: type.xs, color: colors.text }}>
+                                <thead>
+                                  <tr style={{ background: colors.surface2 }}>
+                                    {['Fecha', 'Código', 'Pago', 'Subtotal', 'Promo', 'Descuento', 'Envío', 'Propina', 'Total', 'Comisión rider', 'Neto rider', 'Estado'].map(h => (
+                                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, color: colors.textMute, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.pedidos_list.map(({ earning, pedido }) => {
+                                    const esTarjeta = pedido?.metodo_pago === 'tarjeta'
+                                    const descuento = Number(pedido?.descuento || 0)
+                                    const neto = Number(earning.neto_rider || 0)
+                                    const comision = Number(earning.comision_rider_sobre_subtotal || 0)
+                                    return (
+                                      <tr key={earning.id} style={{ borderTop: `1px solid ${colors.border}` }}>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: colors.textMute }}>{fmtFechaHora(pedido?.entregado_at || pedido?.created_at || earning.created_at)}</td>
+                                        <td style={{ padding: '8px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{pedido?.codigo || '—'}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                          <span style={{
+                                            padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700,
+                                            background: esTarjeta ? colors.infoSoft : colors.stateNeutralSoft,
+                                            color: esTarjeta ? colors.info : colors.stateNeutral,
+                                            textTransform: 'capitalize',
+                                          }}>{pedido?.metodo_pago || '—'}</span>
+                                        </td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(pedido?.subtotal || 0)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: pedido?.promo_titulo ? colors.primary : colors.textFaint, fontSize: 10 }}>
+                                          {pedido?.promo_titulo || '—'}
+                                        </td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: descuento > 0 ? colors.danger : colors.textMute }}>
+                                          {descuento > 0 ? `− ${fmtMoney(descuento)}` : '—'}
+                                        </td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(earning.coste_envio || 0)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(earning.propina || 0)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontWeight: 700 }}>{fmtMoney(pedido?.total || 0)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(comision)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontWeight: 800, color: colors.stateOk }}>{fmtMoney(neto)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                          {earning.estado_pago === 'pagado' ? (
+                                            <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, background: colors.stateOkSoft, color: colors.stateOk }}>Pagado</span>
+                                          ) : (
+                                            <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep }}>Pendiente</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                                <tfoot>
+                                  <tr style={{ background: colors.surface2, borderTop: `2px solid ${colors.border}` }}>
+                                    <td colSpan={5} style={{ padding: '8px 10px', fontSize: 10, fontWeight: 700, color: colors.textMute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                      Totales — {r.pedidos_list.length} pedido{r.pedidos_list.length === 1 ? '' : 's'}
+                                    </td>
+                                    <td style={{ padding: '8px 10px', fontWeight: 700, color: r.total_descuentos > 0 ? colors.danger : colors.textMute, fontSize: type.xs }}>
+                                      {r.total_descuentos > 0 ? `− ${fmtMoney(r.total_descuentos)}` : '—'}
+                                    </td>
+                                    <td style={{ padding: '8px 10px', fontWeight: 700 }}>{fmtMoney(r.total_envios)}</td>
+                                    <td style={{ padding: '8px 10px', fontWeight: 700 }}>{fmtMoney(r.total_propinas)}</td>
+                                    <td style={{ padding: '8px 10px' }}></td>
+                                    <td style={{ padding: '8px 10px', fontWeight: 700 }}>{fmtMoney(r.total_comision_rider)}</td>
+                                    <td style={{ padding: '8px 10px', fontWeight: 800, color: colors.stateOk }}>{fmtMoney(r.total_neto)}</td>
+                                    <td style={{ padding: '8px 10px' }}></td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -476,6 +594,15 @@ function Stat({ label, value, color: statColor, sub }) {
       <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
       <div style={{ fontSize: type.xl, fontWeight: 800, color: statColor, marginTop: 4, lineHeight: 1.1 }}>{value}</div>
       {sub && <div style={{ fontSize: type.xxs, color: colors.textMute, marginTop: 3 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function MiniKv({ label, value, color: valColor }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 10, color: colors.textMute, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ fontSize: type.xs, fontWeight: 700, color: valColor || colors.text, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
   )
 }
