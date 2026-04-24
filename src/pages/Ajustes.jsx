@@ -61,6 +61,12 @@ export default function Ajustes() {
   const [email, setEmail] = useState(restaurante?.email || '')
   const [telefono, setTelefono] = useState(restaurante?.telefono || '')
   const [radioCobertura, setRadioCobertura] = useState(restaurante?.radio_cobertura_km || 10)
+  const [razonSocial, setRazonSocial] = useState(restaurante?.razon_social || '')
+  const [nif, setNif] = useState(restaurante?.nif || '')
+  const [direccionFiscal, setDireccionFiscal] = useState(restaurante?.direccion_fiscal || '')
+  const [codigoPostalFiscal, setCodigoPostalFiscal] = useState(restaurante?.codigo_postal || '')
+  const [ciudadFiscal, setCiudadFiscal] = useState(restaurante?.ciudad_fiscal || '')
+  const [provinciaFiscal, setProvinciaFiscal] = useState(restaurante?.provincia_fiscal || '')
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
   const [catsGenerales, setCatsGenerales] = useState([]) // todas las categorias disponibles
@@ -291,6 +297,12 @@ export default function Ajustes() {
       telefono: telefono.trim() || null,
       radio_cobertura_km: radioCobertura,
       horario: horario,
+      razon_social: razonSocial.trim() || null,
+      nif: nif.trim() ? nif.trim().toUpperCase() : null,
+      direccion_fiscal: direccionFiscal.trim() || null,
+      codigo_postal: codigoPostalFiscal.trim() || null,
+      ciudad_fiscal: ciudadFiscal.trim() || null,
+      provincia_fiscal: provinciaFiscal.trim() || null,
     }
     if (direccion.trim() && direccion.trim() !== (restaurante?.direccion || '')) {
       try {
@@ -713,6 +725,54 @@ export default function Ajustes() {
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>Teléfono</label>
           <input type="tel" value={telefono} onChange={e => setTelefono(e.target.value)} style={inp} />
+        </div>
+      </div>
+
+      {/* Datos fiscales */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Datos fiscales</h3>
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+            background: (razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? 'rgba(34,197,94,0.14)' : 'rgba(245,158,11,0.18)',
+            color: (razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? '#16A34A' : '#D97706',
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+          }}>
+            {(razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? 'Completos' : 'Incompletos'}
+          </span>
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14, marginTop: 0 }}>
+          Estos datos aparecerán en las facturas que Pidoo emita a tu negocio y en las que tus socios de reparto te emitan.
+        </p>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>Razón social / nombre fiscal</label>
+          <input value={razonSocial} onChange={e => setRazonSocial(e.target.value)} placeholder="Ej. Restaurante La Cuchara S.L." style={inp} />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>CIF / NIF</label>
+          <input value={nif} onChange={e => setNif(e.target.value)} placeholder="B12345678" style={inp} />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>Dirección fiscal</label>
+          <input value={direccionFiscal} onChange={e => setDireccionFiscal(e.target.value)} placeholder="Calle, número, piso" style={inp} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>
+          <div>
+            <label style={lbl}>Código postal</label>
+            <input value={codigoPostalFiscal} onChange={e => setCodigoPostalFiscal(e.target.value)} placeholder="38001" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Ciudad</label>
+            <input value={ciudadFiscal} onChange={e => setCiudadFiscal(e.target.value)} placeholder="Santa Cruz de Tenerife" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Provincia</label>
+            <input value={provinciaFiscal} onChange={e => setProvinciaFiscal(e.target.value)} placeholder="Santa Cruz de Tenerife" style={inp} />
+          </div>
         </div>
       </div>
 
