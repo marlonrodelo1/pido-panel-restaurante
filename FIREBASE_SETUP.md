@@ -50,10 +50,8 @@ Para que las notificaciones push funcionen en iPhone necesitas configurar APNs e
 
 ## Verificar que las notificaciones web (VAPID) funcionan
 
-La clave VAPID ya está configurada en el código:
-```
-BCi6cNn5m6sQtE5c00relAV4Gy91ZaceufC-aqC4DjF0cU6WvX8qlOm1NjOrIEhk_x-y8sf67Z453XJopHlE7WY
-```
+La clave VAPID se configura vía variable de entorno `VITE_FIREBASE_VAPID_KEY` (ver `.env.example`).
+No se commitea al repositorio.
 
 Si necesitas regenerarla:
 1. Firebase Console → ⚙️ → **Cloud Messaging**

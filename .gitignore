@@ -25,3 +25,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase config con API keys — no commitear
+google-services.json
+android/app/google-services.json
+GoogleService-Info.plist
+ios/App/App/GoogleService-Info.plist
