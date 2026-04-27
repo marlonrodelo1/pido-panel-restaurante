@@ -63,4 +63,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Recibir notificaciones al iniciar el dispositivo -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Acceso al audio para reproducir sonido de notificación con la pantalla apagada -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Notificaciones a pantalla completa (heads-up con pantalla bloqueada). Requiere
+         declarar uso si se quiere usar setFullScreenIntent en futuras builds -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 </manifest>

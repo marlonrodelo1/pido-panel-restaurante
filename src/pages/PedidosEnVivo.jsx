@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { usePedidoAlert } from '../context/PedidoAlertContext'
@@ -6,6 +6,7 @@ import { stopAlarm, unlockAudio, startAlarm } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
+import { App as CapApp } from '@capacitor/app'
 import { toast } from '../App'
 import { Truck } from 'lucide-react'
 import { colors, type, ds, stateBadge } from '../lib/uiStyles'
@@ -66,10 +67,16 @@ export default function PedidosEnVivo() {
     if (!existe) setPedidoDetalleId(null)
   }, [entrantes, activos])
 
+  // ref a fetchPedidos para usarlo en listeners de foreground sin reset effect
+  const fetchPedidosRef = useRef(null)
+
   // ── Fetch inicial + Realtime UPDATE (los INSERT los maneja el contexto) ──
   useEffect(() => {
     if (!restaurante) return
     fetchPedidos()
+    // Pequeño retry: si la sesión Supabase aún no estaba lista al primer
+    // mount (caso de abrir la app desde un push), refrescamos a los 1500ms.
+    const retryT = setTimeout(() => fetchPedidos(), 1500)
 
     const channel = supabase.channel('pedidos-rest-page-' + restaurante.id)
       .on('postgres_changes', {
@@ -105,7 +112,49 @@ export default function PedidosEnVivo() {
       })
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      clearTimeout(retryT)
+      supabase.removeChannel(channel)
+    }
+  }, [restaurante?.id])
+
+  // ── Refetch al volver al foreground ─────────────────────────────────────
+  // Cuando la app entra en background y vuelve, el realtime puede haber
+  // perdido eventos. Refrescamos pedidos para que el restaurante vea de
+  // inmediato cualquier pedido recibido por push mientras la app dormía.
+  useEffect(() => { fetchPedidosRef.current = fetchPedidos })
+
+  useEffect(() => {
+    if (!restaurante) return
+
+    const refresh = () => { if (fetchPedidosRef.current) fetchPedidosRef.current() }
+
+    let appListenerHandle = null
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const p = CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) refresh()
+        })
+        if (p && typeof p.then === 'function') p.then(h => { appListenerHandle = h }).catch(() => {})
+        else appListenerHandle = p
+      } catch (_) {}
+    }
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      try {
+        if (appListenerHandle) {
+          if (typeof appListenerHandle.remove === 'function') appListenerHandle.remove()
+          else if (typeof appListenerHandle.then === 'function') appListenerHandle.then(h => h && h.remove && h.remove()).catch(() => {})
+        }
+      } catch (_) {}
+    }
   }, [restaurante?.id])
 
   // ── Sincronizar "entrantes" locales con pedidosNuevos del contexto ───────

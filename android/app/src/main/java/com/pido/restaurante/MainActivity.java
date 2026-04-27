@@ -2,6 +2,9 @@ package com.pido.restaurante;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -21,15 +24,45 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         // Crear canal de notificaciones para pedidos (Android 8+)
+        // IMPORTANTE: las propiedades del canal son inmutables tras crearlo.
+        // Si el canal "pedidos" se creó antes sin sonido, hay que borrarlo
+        // y recrearlo con sonido. Por eso usamos un id versionado: cuando
+        // queramos cambiar propiedades, basta con bumpear el sufijo y borrar
+        // el canal viejo. Backend (enviar_push) sigue mandando channel_id
+        // "pedidos" pero también respaldamos creando ambos por compatibilidad.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                "pedidos", "Pedidos", NotificationManager.IMPORTANCE_HIGH
-            );
-            channel.setDescription("Notificaciones de nuevos pedidos");
-            channel.enableVibration(true);
-            channel.setVibrationPattern(new long[]{300, 100, 300, 100, 300});
             NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) manager.createNotificationChannel(channel);
+            if (manager != null) {
+                // Borrar canal viejo sin sonido (si existe) para forzar recreación
+                // con sonido. Solo se borra si realmente no tiene sonido — los
+                // canales que ya tengan sonido configurado se respetan.
+                NotificationChannel existing = manager.getNotificationChannel("pedidos");
+                if (existing != null && existing.getSound() == null) {
+                    manager.deleteNotificationChannel("pedidos");
+                }
+
+                Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                    .build();
+
+                NotificationChannel channel = new NotificationChannel(
+                    "pedidos", "Pedidos", NotificationManager.IMPORTANCE_HIGH
+                );
+                channel.setDescription("Notificaciones de nuevos pedidos");
+                channel.enableVibration(true);
+                channel.setVibrationPattern(new long[]{300, 100, 300, 100, 300});
+                channel.setSound(soundUri, audioAttributes);
+                channel.enableLights(true);
+                channel.setLightColor(0xFFFF6B2C);
+                channel.setShowBadge(true);
+                channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    channel.setAllowBubbles(true);
+                }
+                manager.createNotificationChannel(channel);
+            }
         }
 
         // Status bar oscura con iconos blancos

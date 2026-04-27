@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
+import { App as CapApp } from '@capacitor/app'
 import { supabase } from '../lib/supabase'
 import { useRest } from './RestContext'
 import { startAlarm, stopAlarm, unlockAudio, requestNotificationPermission, notificarNuevoPedido } from '../lib/alarm'
@@ -48,7 +49,14 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
   useEffect(() => {
     if (!restaurante) return
     requestNotificationPermission()
+    // Pequeño retry: si la sesión Supabase aún no está completamente lista al
+    // arrancar la app (caso típico al abrir desde un push o recién logueado),
+    // el primer fetch puede devolver vacío. Reintentamos a los 1500ms si la
+    // suscripción realtime aún no había confirmado SUBSCRIBED.
+    let subscribed = false
+    let retryT = null
     fetchNuevos()
+    retryT = setTimeout(() => { if (!subscribed) fetchNuevos() }, 1500)
 
     const channel = supabase.channel('pedidos-rest-' + restaurante.id)
       .on('postgres_changes', {
@@ -83,9 +91,65 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
           })
         }
       })
-      .subscribe()
+      .subscribe(status => {
+        // Cuando la suscripción se confirma (SUBSCRIBED), refrescamos la lista
+        // por si llegó un INSERT entre el fetchNuevos inicial y la suscripción
+        // (race condition al abrir la app desde push).
+        if (status === 'SUBSCRIBED') {
+          subscribed = true
+          fetchNuevos()
+        }
+      })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      if (retryT) clearTimeout(retryT)
+      supabase.removeChannel(channel)
+    }
+  }, [restaurante?.id, fetchNuevos])
+
+  // Refetch al volver al foreground (Capacitor) o al recuperar visibilidad
+  // de la pestaña (web). Esto evita el bug clásico de "abro la app desde
+  // un push y los pedidos no aparecen": realtime puede haberse desconectado
+  // mientras la app estaba en background, y solo se reconecta cuando vuelve.
+  useEffect(() => {
+    if (!restaurante) return
+
+    const refresh = () => { fetchNuevos() }
+
+    let appListenerHandle = null
+    if (Capacitor.isNativePlatform()) {
+      // Capacitor App: dispara cada vez que la app vuelve al primer plano
+      try {
+        const p = CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) refresh()
+        })
+        // Algunas versiones de @capacitor/app retornan Promise<PluginListenerHandle>
+        if (p && typeof p.then === 'function') {
+          p.then(h => { appListenerHandle = h }).catch(() => {})
+        } else {
+          appListenerHandle = p
+        }
+      } catch (_) {}
+    }
+
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      try {
+        if (appListenerHandle) {
+          if (typeof appListenerHandle.remove === 'function') appListenerHandle.remove()
+          else if (typeof appListenerHandle.then === 'function') {
+            appListenerHandle.then(h => h && h.remove && h.remove()).catch(() => {})
+          }
+        }
+      } catch (_) {}
+    }
   }, [restaurante?.id, fetchNuevos])
 
   // Guardia: si hay pedidos nuevos y no está silenciada, la alarma debe estar

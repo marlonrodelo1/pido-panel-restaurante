@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Component } from 'react'
-import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, MessageCircle, Wallet, CreditCard, Handshake, Bike } from 'lucide-react'
+import { ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer, MoreHorizontal, MessageCircle, Wallet, CreditCard, Handshake, Bike, History } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
@@ -11,6 +11,7 @@ import Login from './pages/Login'
 import CompletarRegistro from './pages/CompletarRegistro'
 import PedidosEnVivo from './pages/PedidosEnVivo'
 import Historial from './pages/Historial'
+import HistorialMovil from './pages/HistorialMovil'
 import Carta from './pages/Carta'
 import Ajustes from './pages/Ajustes'
 import Promociones from './pages/Promociones'
@@ -27,7 +28,7 @@ const isNative = Capacitor.isNativePlatform()
 
 const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings }
 
-const NAV_ICONS_NATIVE = { pedidos: ClipboardList, disponibilidad: ToggleLeft, impresora: Printer }
+const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer }
 
 function AppContent() {
   const { user, restaurante, loading } = useRest()
@@ -92,6 +93,7 @@ function AppContent() {
   const nav = isNative
     ? [
         { id: 'pedidos', label: 'Pedidos' },
+        { id: 'historial-movil', label: 'Historial' },
         { id: 'disponibilidad', label: 'Carta' },
         { id: 'impresora', label: 'Config' },
       ]
@@ -330,6 +332,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       <div style={{ padding: 20, animation: 'fadeIn 0.3s ease' }}>
         {seccion === 'pedidos' && isNative && <PedidosEnVivo />}
         {/* Native-only */}
+        {seccion === 'historial-movil' && <HistorialMovil />}
         {seccion === 'disponibilidad' && <DisponibilidadProductos />}
         {seccion === 'impresora' && <ConfigImpresora />}
         {/* Web-only */}
