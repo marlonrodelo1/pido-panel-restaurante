@@ -328,6 +328,44 @@ function AppInner({ seccion, setSeccion, nav }) {
         </div>
       )}
 
+      {/* Banner: faltan datos fiscales (visible en todas las secciones excepto Ajustes) */}
+      {(() => {
+        const fiscalIncompleto = !restaurante.nif || !restaurante.razon_social || !restaurante.direccion_fiscal
+        if (!fiscalIncompleto) return null
+        if (seccion === 'ajustes') return null
+        return (
+          <div
+            onClick={() => setSeccion('ajustes')}
+            style={{
+              margin: '12px 16px 0',
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: 'rgba(245,158,11,0.14)',
+              border: '1px solid rgba(245,158,11,0.35)',
+              color: '#92400E',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 10, cursor: 'pointer', flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#92400E' }}>
+                Completa tus datos fiscales
+              </div>
+              <div style={{ fontSize: 11, color: '#B45309', marginTop: 2 }}>
+                El socio no puede emitir facturas hasta que rellenes razón social, CIF/NIF y dirección fiscal.
+              </div>
+            </div>
+            <span style={{
+              padding: '7px 12px', borderRadius: 8,
+              background: '#F59E0B', color: '#fff',
+              fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+            }}>
+              Ir a Ajustes
+            </span>
+          </div>
+        )
+      })()}
+
       {/* Contenido */}
       <div style={{ padding: 20, animation: 'fadeIn 0.3s ease' }}>
         {seccion === 'pedidos' && isNative && <PedidosEnVivo />}
