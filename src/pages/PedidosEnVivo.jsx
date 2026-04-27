@@ -277,17 +277,16 @@ export default function PedidosEnVivo() {
         const RETRY_DELAYS = [2000, 4000, 8000] // delay exponencial antes de los intentos 2, 3 y 4
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
-            // dispatch-order delega a create-shipday-order si establecimientos.usa_dispatcher_propio=false
             const { data, error } = await supabase.functions.invoke('dispatch-order', { body: { pedido_id: pedido.id } })
-            if (!error) { console.log(`[Shipday] Pedido ${pedido.codigo} enviado correctamente`, data); return }
+            if (!error) { console.log(`[Dispatcher] Pedido ${pedido.codigo} enviado correctamente`, data); return }
             throw error
           } catch (err) {
-            console.error(`[Shipday] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
+            console.error(`[Dispatcher] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
             if (attempt === MAX_RETRIES) {
-              toast(`No se pudo crear orden Shipday tras 4 intentos para ${pedido.codigo}. Super-admin avisado.`, 'error')
+              toast(`No se pudo asignar repartidor tras 4 intentos para ${pedido.codigo}. Super-admin avisado.`, 'error')
               try {
                 await supabase.from('pedidos').update({ shipday_status: 'error_crear_orden' }).eq('id', pedido.id)
-              } catch (e) { console.error('[Shipday] Error marcando pedido con error_crear_orden:', e) }
+              } catch (e) { console.error('[Dispatcher] Error marcando pedido con error_crear_orden:', e) }
               try {
                 const { data: admins } = await supabase.from('usuarios').select('id').eq('rol', 'superadmin')
                 for (const a of admins || []) {
@@ -295,12 +294,12 @@ export default function PedidosEnVivo() {
                     body: {
                       usuarioId: a.id,
                       titulo: 'Pedido con error delivery',
-                      cuerpo: `${restaurante.nombre} aceptó pedido ${pedido.codigo} pero Shipday falló 4 veces. Revisar manualmente.`,
+                      cuerpo: `${restaurante.nombre} aceptó pedido ${pedido.codigo} pero el dispatcher falló 4 veces. Revisar manualmente.`,
                       tipo: 'admin_alert',
                     },
                   })
                 }
-              } catch (e) { console.error('[Shipday] Error notificando superadmin:', e) }
+              } catch (e) { console.error('[Dispatcher] Error notificando superadmin:', e) }
               return
             }
             await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]))
@@ -848,7 +847,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, onVolver, o
       {/* LISTO: delivery */}
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
         <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#16A34A', marginBottom: 12, border: '1px solid rgba(74,222,128,0.2)' }}>
-          Esperando repartidor (Shipday)
+          Esperando repartidor
         </div>
       )}
 

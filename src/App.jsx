@@ -23,6 +23,7 @@ import SociosYRepartidores from './pages/SociosYRepartidores'
 import FinanzasRiders from './pages/FinanzasRiders'
 import Finanzas from './pages/Finanzas'
 import PlanTiendaPublica from './pages/PlanTiendaPublica'
+import EliminarCuenta from './pages/EliminarCuenta'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -36,6 +37,17 @@ function AppContent() {
 
   const handleNuevoPedido = useCallback(() => {
     setSeccion('pedidos')
+  }, [])
+
+  // Navegacion entre secciones via window event (usado por Ajustes para abrir
+  // /eliminar-cuenta sin pasar setSeccion por props).
+  useEffect(() => {
+    const handler = (e) => {
+      const target = e?.detail
+      if (typeof target === 'string') setSeccion(target)
+    }
+    window.addEventListener('pidoo:goto', handler)
+    return () => window.removeEventListener('pidoo:goto', handler)
   }, [])
 
   useEffect(() => {
@@ -383,6 +395,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         {seccion === 'finanzas' && <Finanzas />}
         {seccion === 'finanzas-riders' && <FinanzasRiders />}
         {seccion === 'ajustes' && <Ajustes />}
+        {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
       </div>
 
       {/* Bottom nav */}

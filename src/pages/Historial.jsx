@@ -222,7 +222,7 @@ export default function Historial() {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: type.xs, color: colors.textMute }}>
-              <span>Shipday</span>
+              <span>Pedido</span>
               <span style={{ fontWeight: 700, color: colors.text, fontSize: type.sm }}>{(p.total || 0).toFixed(2)} €</span>
             </div>
             <div style={{ fontSize: type.xxs, color: colors.textMute, marginTop: 4 }}>{new Date(p.created_at).toLocaleString('es')}</div>

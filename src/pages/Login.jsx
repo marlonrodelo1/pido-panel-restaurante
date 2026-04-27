@@ -176,6 +176,16 @@ export default function Login() {
     if (authError) { setError(authError); setAuthError(null) }
   }, [authError])
 
+  // Si venimos de eliminar cuenta, mostramos mensaje informativo
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('pidoo_cuenta_eliminada') === '1') {
+        setError('Tu cuenta ha sido eliminada correctamente.')
+        localStorage.removeItem('pidoo_cuenta_eliminada')
+      }
+    } catch (_) {}
+  }, [])
+
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
   const [legalSlug, setLegalSlug] = useState(null)
   const [showPassword, setShowPassword] = useState(false)

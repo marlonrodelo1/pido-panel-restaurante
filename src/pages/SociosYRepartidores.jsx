@@ -434,7 +434,7 @@ export default function SociosYRepartidores() {
         background: colors.infoSoft, border: `1px solid ${colors.border}`,
         fontSize: type.xxs, color: colors.textDim, lineHeight: 1.5,
       }}>
-        💡 Todos los repartidores de Pidoo son socios. Si alguien quiere repartir para ti, debe darse de alta en <strong style={{ color: colors.text }}>socio.pidoo.es</strong> con su cuenta Shipday y después solicitarte vinculación.
+        💡 Todos los repartidores de Pidoo son socios. Si alguien quiere repartir para ti, debe darse de alta en <strong style={{ color: colors.text }}>socio.pidoo.es</strong> y después solicitarte vinculación.
       </div>
 
       {modalRechazar && (

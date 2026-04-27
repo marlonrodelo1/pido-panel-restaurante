@@ -1448,6 +1448,27 @@ export default function Ajustes() {
       {/* Cerrar sesión */}
       <button onClick={logout} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#DC2626', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>Cerrar sesión</button>
 
+      {/* Zona peligrosa */}
+      <div style={{ marginTop: 24, padding: 16, border: '1px solid rgba(220,38,38,0.25)', borderRadius: 14, background: 'rgba(220,38,38,0.04)', marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#DC2626', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Zona peligrosa
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--c-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+          Borra tu cuenta y todos tus datos personales asociados. Esta acción es irreversible.
+        </div>
+        <button
+          onClick={() => { try { window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'eliminar-cuenta' })) } catch (_) {} }}
+          style={{
+            padding: '10px 16px', borderRadius: 10,
+            border: '1px solid #DC2626', background: 'transparent',
+            color: '#DC2626', fontSize: 13, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          Eliminar cuenta
+        </button>
+      </div>
+
       {/* Botón guardar cambios flotante */}
       {hayCambios && (
         <div style={{
