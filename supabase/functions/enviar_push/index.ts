@@ -9,7 +9,15 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { encode as base64url } from 'https://deno.land/std@0.177.0/encoding/base64url.ts'
-import { getCorsHeaders, handleCorsPreflightRequest } from '../_shared/cors.ts'
+
+// CORS inline (sin depender de _shared/cors.ts)
+const CORS_BASE: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-api-version',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+function getCorsHeaders(_req: Request) { return { ...CORS_BASE, 'Content-Type': 'application/json' } }
+function handleCorsPreflightRequest(_req: Request) { return new Response('ok', { headers: CORS_BASE }) }
 
 const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID') || 'pidoo-push'
 const FIREBASE_CLIENT_EMAIL = Deno.env.get('FIREBASE_CLIENT_EMAIL') || 'firebase-adminsdk-fbsvc@pidoo-push.iam.gserviceaccount.com'
