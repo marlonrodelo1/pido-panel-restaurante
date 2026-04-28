@@ -350,13 +350,34 @@ export default function PedidosEnVivo() {
   }
 
   async function marcarListo(id) {
+    const pedido = activos.find(p => p.id === id)
     await supabase.from('pedidos').update({ estado: 'listo' }).eq('id', id)
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'listo' } : p))
+    if (pedido?.usuario_id) {
+      const esRecogida = pedido.modo_entrega === 'recogida'
+      sendPush({
+        targetType: 'cliente',
+        targetId: pedido.usuario_id,
+        title: esRecogida ? 'Pedido listo para recoger' : 'Pedido listo',
+        body: esRecogida
+          ? `Tu pedido ${pedido.codigo} está listo. Pásate cuando puedas.`
+          : `Tu pedido ${pedido.codigo} está listo. El rider lo recogerá enseguida.`,
+      })
+    }
   }
 
   async function marcarRecogido(id) {
+    const pedido = activos.find(p => p.id === id)
     await supabase.from('pedidos').update({ estado: 'recogido', recogido_at: new Date().toISOString() }).eq('id', id)
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'recogido' } : p))
+    if (pedido?.usuario_id && pedido.modo_entrega !== 'recogida') {
+      sendPush({
+        targetType: 'cliente',
+        targetId: pedido.usuario_id,
+        title: 'Pedido en camino',
+        body: `El rider tiene tu pedido ${pedido.codigo} y va de camino.`,
+      })
+    }
   }
 
   async function marcarEntregado(id) {
