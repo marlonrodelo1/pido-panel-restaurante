@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { toast } from '../App'
 import { colors, type, ds } from '../lib/uiStyles'
+import { formatTarifa, compararTarifas, formatCuentaAtras, formatFechaCorta } from '../lib/tarifas'
 
 const SUPABASE_URL = 'https://rmrbxrabngdmpgpfmjbo.supabase.co'
 
@@ -92,7 +93,155 @@ function ModalMotivo({ titulo, textoBoton, onClose, onConfirm }) {
   )
 }
 
-function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onRechazar, onDesvincular }) {
+function ModalCambiarTarifa({ row, onClose, onPropuesta }) {
+  const tarifaActual = {
+    tarifa_base: row.tarifa_base,
+    tarifa_radio_base_km: row.tarifa_radio_base_km,
+    tarifa_precio_km: row.tarifa_precio_km,
+    tarifa_maxima: row.tarifa_maxima,
+  }
+  const pendiente = row.tarifa_pendiente || null
+  const inicial = pendiente && row.tarifa_pendiente_origen === 'restaurante' ? pendiente : tarifaActual
+
+  const [base, setBase] = useState(inicial?.tarifa_base ?? '')
+  const [radio, setRadio] = useState(inicial?.tarifa_radio_base_km ?? '')
+  const [precioKm, setPrecioKm] = useState(inicial?.tarifa_precio_km ?? '')
+  const [maxima, setMaxima] = useState(inicial?.tarifa_maxima ?? '')
+  const [motivo, setMotivo] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const propuesta = {
+    tarifa_base: base === '' ? null : Number(base),
+    tarifa_radio_base_km: radio === '' ? null : Number(radio),
+    tarifa_precio_km: precioKm === '' ? null : Number(precioKm),
+    tarifa_maxima: maxima === '' ? null : Number(maxima),
+  }
+  const diffs = compararTarifas(tarifaActual, propuesta)
+  const valid = [base, radio, precioKm, maxima].every(v => v !== '' && !Number.isNaN(Number(v)) && Number(v) >= 0)
+
+  const yaPendiente = !!pendiente
+
+  async function submit() {
+    if (!valid) {
+      toast('Rellena todos los campos numéricos', 'error')
+      return
+    }
+    setEnviando(true)
+    try {
+      await onPropuesta({
+        socio_establecimiento_id: row.id,
+        tarifa_base: Number(base),
+        tarifa_radio_base_km: Number(radio),
+        tarifa_precio_km: Number(precioKm),
+        tarifa_maxima: Number(maxima),
+        ...(motivo.trim() ? { motivo: motivo.trim() } : {}),
+      })
+      onClose()
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  function NumInput({ value, onChange, step }) {
+    return (
+      <input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        min={0}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{ ...ds.formInput, fontFamily: "'Inter', system-ui, sans-serif" }}
+      />
+    )
+  }
+
+  return (
+    <div style={ds.modal} onClick={onClose}>
+      <div style={{ ...ds.modalContent, maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+        <div style={{ ...ds.h2, marginBottom: 6 }}>Cambiar tarifa pactada</div>
+        <div style={{ fontSize: type.xs, color: colors.textMute, marginBottom: 14, lineHeight: 1.5 }}>
+          Cambios delicados: las bajadas son sensibles. El socio tendrá <strong style={{ color: colors.text }}>7 días</strong> para aceptar o rechazar; si no responde, se aplicará automáticamente.
+        </div>
+
+        {yaPendiente && (
+          <div style={{
+            padding: '10px 12px', borderRadius: 8, marginBottom: 14,
+            background: colors.statePrepSoft, border: `1px solid ${colors.statePrep}55`,
+            fontSize: type.xs, color: colors.statePrep, lineHeight: 1.4,
+          }}>
+            ⏳ Ya hay una propuesta pendiente expirando el {formatFechaCorta(row.tarifa_pendiente_expira_en)}. Al enviar esta, la sustituirá.
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tarifa base (€)</div>
+            <NumInput value={base} onChange={setBase} step="0.10" />
+          </div>
+          <div>
+            <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Radio base (km)</div>
+            <NumInput value={radio} onChange={setRadio} step="0.5" />
+          </div>
+          <div>
+            <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>€/km adicional</div>
+            <NumInput value={precioKm} onChange={setPrecioKm} step="0.10" />
+          </div>
+          <div>
+            <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tarifa máxima (€)</div>
+            <NumInput value={maxima} onChange={setMaxima} step="0.50" />
+          </div>
+        </div>
+
+        <div style={{
+          marginBottom: 14, padding: 10, borderRadius: 8,
+          background: colors.elev2, border: `1px solid ${colors.border}`,
+        }}>
+          <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Diferencia</div>
+          {diffs.map(d => {
+            const arrow = d.igual ? '=' : d.sube === true ? '▲' : d.sube === false ? '▼' : ''
+            const color = d.igual ? colors.textMute : d.sube === true ? colors.stateOk : d.sube === false ? colors.danger : colors.textDim
+            return (
+              <div key={d.campo} style={{ display: 'flex', justifyContent: 'space-between', fontSize: type.xs, padding: '3px 0' }}>
+                <span style={{ color: colors.textDim }}>{d.label}</span>
+                <span style={{ color, fontWeight: 600 }}>
+                  {d.actual ?? '—'} → {d.propuesta ?? '—'} <span style={{ marginLeft: 4 }}>{arrow}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Motivo del cambio (opcional)</div>
+          <textarea
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            placeholder="Ej. ajuste por subida de costes operativos"
+            rows={3}
+            style={{
+              ...ds.formInput, height: 'auto', padding: '10px 12px', resize: 'vertical',
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={ds.secondaryBtn} disabled={enviando}>Cancelar</button>
+          <button
+            onClick={submit}
+            disabled={enviando || !valid}
+            style={{ ...ds.primaryBtn, opacity: (enviando || !valid) ? 0.6 : 1 }}
+          >
+            {enviando ? 'Enviando...' : 'Proponer cambio'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onCambiarTarifa }) {
   const socio = row.socios || {}
   const estadoInfo = ESTADOS[row.estado] || ESTADOS.pendiente
   const online = riderStatus?.is_online
@@ -206,6 +355,53 @@ function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onR
             </div>
           )}
 
+          {/* Tarifa pactada */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: type.xxs, color: colors.textMute, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+              Tarifa pactada
+            </div>
+            <div style={{
+              padding: 12, borderRadius: 10,
+              background: colors.surface, border: `1px solid ${colors.border}`,
+            }}>
+              <div style={{ fontSize: type.sm, color: colors.text, fontWeight: 600 }}>
+                {formatTarifa(row) || <span style={{ color: colors.textMute, fontWeight: 500 }}>Por defecto de la plataforma</span>}
+              </div>
+              {row.tarifa_aceptada_en && formatTarifa(row) && (
+                <div style={{ fontSize: type.xxs, color: colors.textFaint, marginTop: 4 }}>
+                  Aceptada el {formatFechaCorta(row.tarifa_aceptada_en)}
+                </div>
+              )}
+
+              {row.tarifa_pendiente && (() => {
+                const expira = formatCuentaAtras(row.tarifa_pendiente_expira_en)
+                const propio = row.tarifa_pendiente_origen === 'restaurante'
+                const tooltipDiffs = compararTarifas(row, row.tarifa_pendiente)
+                  .map(d => `${d.label}: ${d.actual ?? '—'} → ${d.propuesta ?? '—'}`)
+                  .join('\n')
+                return (
+                  <div
+                    title={tooltipDiffs}
+                    style={{
+                      marginTop: 10, padding: '8px 10px', borderRadius: 8,
+                      background: colors.statePrepSoft, border: `1px solid ${colors.statePrep}55`,
+                      fontSize: type.xs, color: colors.statePrep, fontWeight: 600,
+                      cursor: 'help',
+                    }}
+                  >
+                    ⏳ {propio ? 'Propuesta enviada' : 'Propuesta del socio'} · expira en {expira}
+                  </div>
+                )
+              })()}
+
+              <div style={{ marginTop: 10 }}>
+                <button onClick={() => onCambiarTarifa(row)} style={ds.secondaryBtn}>
+                  Cambiar tarifa
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={() => onDesvincular(row.id)} style={{
               ...ds.secondaryBtn,
@@ -229,11 +425,12 @@ export default function SociosYRepartidores() {
   const [expanded, setExpanded] = useState({})
   const [modalRechazar, setModalRechazar] = useState(null)
   const [modalDesvincular, setModalDesvincular] = useState(null)
+  const [modalTarifa, setModalTarifa] = useState(null)
 
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
     try {
-      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, shipday_api_key)'
+      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, shipday_api_key)'
       const { data: rows, error } = await supabase
         .from('socio_establecimiento')
         .select(selectStr)
@@ -324,6 +521,27 @@ export default function SociosYRepartidores() {
       toast(err.message || 'Error al rechazar', 'error')
       throw err
     }
+  }
+
+  async function handleProponerTarifa(payload) {
+    const { data: sess } = await supabase.auth.getSession()
+    const token = sess?.session?.access_token
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/proponer-tarifa-socio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    })
+    const body = await resp.json().catch(() => ({}))
+    if (!resp.ok || !body?.ok) {
+      const msg = body?.error || 'Error al proponer la tarifa'
+      toast(msg, 'error')
+      throw new Error(msg)
+    }
+    toast('Propuesta enviada al socio', 'success')
+    cargar()
   }
 
   async function handleDesvincular(id, motivo) {
@@ -423,6 +641,7 @@ export default function SociosYRepartidores() {
               onAceptar={handleAceptar}
               onRechazar={(id) => setModalRechazar({ id })}
               onDesvincular={(id) => setModalDesvincular({ id })}
+              onCambiarTarifa={(rowSel) => setModalTarifa(rowSel)}
             />
           ))}
         </div>
@@ -452,6 +671,14 @@ export default function SociosYRepartidores() {
           textoBoton="Desvincular"
           onClose={() => setModalDesvincular(null)}
           onConfirm={(motivo) => handleDesvincular(modalDesvincular.id, motivo)}
+        />
+      )}
+
+      {modalTarifa && (
+        <ModalCambiarTarifa
+          row={modalTarifa}
+          onClose={() => setModalTarifa(null)}
+          onPropuesta={handleProponerTarifa}
         />
       )}
     </div>
