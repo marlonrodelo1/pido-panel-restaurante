@@ -277,7 +277,7 @@ export default function PedidosEnVivo() {
         const RETRY_DELAYS = [2000, 4000, 8000] // delay exponencial antes de los intentos 2, 3 y 4
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
-            const { data, error } = await supabase.functions.invoke('dispatch-order', { body: { pedido_id: pedido.id } })
+            const { data, error } = await supabase.functions.invoke('create-shipday-order', { body: { pedido_id: pedido.id } })
             if (!error) { console.log(`[Dispatcher] Pedido ${pedido.codigo} enviado correctamente`, data); return }
             throw error
           } catch (err) {
