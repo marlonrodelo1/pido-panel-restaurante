@@ -264,18 +264,13 @@ export default function Login() {
       }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
 
-          {/* Logo + título */}
+          {/* Logo Pidoo wordmark */}
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
-            <div style={{
-              width: 60, height: 60, borderRadius: 16,
-              background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px', boxShadow: '0 8px 24px rgba(255,107,44,0.30)',
-            }}>
-              <UtensilsIcon />
-            </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--c-text)', letterSpacing: '-0.02em', marginBottom: 2 }}>PIDO</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Panel Restaurante</div>
+            <img
+              src="/logo-pidoo.svg"
+              alt="Pidoo"
+              style={{ height: 56, display: 'block', margin: '0 auto' }}
+            />
           </div>
 
           {/* Card contenedor */}
