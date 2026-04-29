@@ -2,6 +2,8 @@ package com.pido.restaurante;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -11,7 +13,9 @@ import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebView;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.graphics.Insets;
 import com.getcapacitor.BridgeActivity;
 
@@ -65,10 +69,22 @@ public class MainActivity extends BridgeActivity {
             }
         }
 
-        // Status bar oscura con iconos blancos
-        getWindow().setStatusBarColor(0xFF0D0D0D);
-        getWindow().setNavigationBarColor(0xFF0D0D0D);
-        getWindow().getDecorView().setSystemUiVisibility(0); // iconos claros
+        // === Status bar / navigation bar LIGHT ===
+        // Force window background to match web app (#FAFAF7) so that during
+        // splash → web load there is no black flash on devices in dark system mode.
+        getWindow().setBackgroundDrawable(new ColorDrawable(0xFFFAFAF7));
+        getWindow().setStatusBarColor(0xFFFAFAF7);
+        getWindow().setNavigationBarColor(0xFFFAFAF7);
+
+        // Iconos OSCUROS sobre fondo claro (status bar + nav bar).
+        // Sin esto, en modo oscuro del sistema los iconos serían blancos
+        // sobre fondo blanco → invisibles. Este es el bug que reportaba Marlon.
+        WindowInsetsControllerCompat controller =
+            WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (controller != null) {
+            controller.setAppearanceLightStatusBars(true);
+            controller.setAppearanceLightNavigationBars(true);
+        }
 
         // Mantener pantalla encendida
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -76,10 +92,12 @@ public class MainActivity extends BridgeActivity {
         // Permitir audio sin interacción del usuario (para alarma de pedidos)
         WebView webView = getBridge().getWebView();
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        // WebView con fondo blanco para evitar parpadeo negro en arranque
+        webView.setBackgroundColor(Color.WHITE);
 
-        // Fondo oscuro + padding para que el contenido no se meta detrás de la status bar
+        // Fondo claro + padding para que el contenido no se meta detrás de la status bar
         View content = findViewById(android.R.id.content);
-        content.setBackgroundColor(0xFF0D0D0D);
+        content.setBackgroundColor(0xFFFAFAF7);
         ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             view.setPadding(systemBars.left, systemBars.top, systemBars.right, 0);

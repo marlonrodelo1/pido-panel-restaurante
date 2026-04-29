@@ -4,22 +4,23 @@
   "webDir": "dist",
   "plugins": {
     "SplashScreen": {
-      "launchShowDuration": 2000,
-      "backgroundColor": "#B91C1C",
+      "launchShowDuration": 1500,
+      "backgroundColor": "#FAFAF7",
       "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": true
     },
     "StatusBar": {
-      "style": "LIGHT",
-      "backgroundColor": "#B91C1C"
+      "style": "DARK",
+      "backgroundColor": "#FAFAF7",
+      "overlaysWebView": false
     },
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]
     },
     "LocalNotifications": {
       "smallIcon": "ic_stat_icon",
-      "iconColor": "#B91C1C",
+      "iconColor": "#FF6B2C",
       "sound": "alarm.wav"
     }
   },
