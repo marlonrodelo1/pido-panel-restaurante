@@ -33,11 +33,11 @@
   "related_applications": [
     {
       "platform": "play",
-      "id": "com.pido.restaurante"
+      "id": "com.pidoo.order"
     },
     {
       "platform": "itunes",
-      "id": "com.pido.restaurante"
+      "id": "com.pidoo.order"
     }
   ],
   "prefer_related_applications": false

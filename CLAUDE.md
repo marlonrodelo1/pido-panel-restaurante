@@ -5,7 +5,7 @@ App de gestion para restaurantes de la plataforma PIDOO. Funciona como **APP nat
 
 **Stack:** React 19.2 + Vite 8 + Capacitor 8 (Android/iOS) + Supabase 2.100
 **Theme:** Dark mode, color primario #B91C1C, tipografia DM Sans
-**App ID Android:** com.pido.restaurante · versionCode 9 · versionName 1.7
+**App ID Android:** com.pidoo.order · versionCode 9 · versionName 1.7
 **Puerto impresora:** TCP 9100 (ESC/POS 80mm)
 **Web:** https://partner.pidoo.es (Dokploy auto-deploy)
 **Supabase proyecto:** `rmrbxrabngdmpgpfmjbo`
@@ -68,7 +68,7 @@ panel-restaurante/
 ├── android/                   # Proyecto Android nativo (Capacitor)
 │   └── app/
 │       ├── build.gradle       # minifyEnabled true, versionCode 9, versionName 1.7
-│       └── src/main/java/com/pido/restaurante/
+│       └── src/main/java/com/pidoo/order/
 │           ├── MainActivity.java
 │           └── ThermalPrinterPlugin.java  # Plugin nativo TCP socket
 ├── capacitor.config.json

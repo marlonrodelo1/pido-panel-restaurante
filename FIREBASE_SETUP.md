@@ -10,7 +10,7 @@ Tu proyecto Firebase ya existe: **pidoo-push** (ID: `797553895667`)
 2. Haz clic en el engranaje ⚙️ → **Configuración del proyecto**
 3. En la pestaña **General**, baja hasta "Tus apps"
 4. Si no existe la app Android, haz clic en **"Añadir app"** → Android:
-   - Package name: `com.pido.restaurante`
+   - Package name: `com.pidoo.order`
    - Nombre (opcional): `PIDO Restaurante`
 5. Descarga el archivo **`google-services.json`**
 6. Colócalo en: `panel-restaurante/android/app/google-services.json`
@@ -21,7 +21,7 @@ Tu proyecto Firebase ya existe: **pidoo-push** (ID: `797553895667`)
 
 1. En la misma pantalla de Firebase Console → **"Tus apps"**
 2. Haz clic en **"Añadir app"** → iOS:
-   - Bundle ID: `com.pido.restaurante`
+   - Bundle ID: `com.pidoo.order`
    - Nombre (opcional): `PIDO Restaurante`
 3. Descarga el archivo **`GoogleService-Info.plist`**
 4. Colócalo en: `panel-restaurante/ios/App/App/GoogleService-Info.plist`

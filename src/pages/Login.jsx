@@ -417,7 +417,7 @@ export default function Login() {
                   if (Capacitor.isNativePlatform()) {
                     const { data } = await supabase.auth.signInWithOAuth({
                       provider: 'google',
-                      options: { redirectTo: 'com.pido.restaurante://login', skipBrowserRedirect: true },
+                      options: { redirectTo: 'com.pidoo.order://login', skipBrowserRedirect: true },
                     })
                     if (data?.url) await Browser.open({ url: data.url })
                   } else {

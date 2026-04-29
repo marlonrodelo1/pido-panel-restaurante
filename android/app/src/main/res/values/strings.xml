@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Pidoo Partner</string>
     <string name="title_activity_main">Pidoo Partner</string>
-    <string name="package_name">com.pido.restaurante</string>
-    <string name="custom_url_scheme">com.pido.restaurante</string>
+    <string name="package_name">com.pidoo.order</string>
+    <string name="custom_url_scheme">com.pidoo.order</string>
 </resources>
