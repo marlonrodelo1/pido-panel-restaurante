@@ -264,12 +264,12 @@ export default function Login() {
       }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
 
-          {/* Logo Pidoo wordmark */}
+          {/* Logo Pidoo (icon-only) */}
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <img
-              src="/logo-pidoo.svg"
+              src="/logo-pidoo.png"
               alt="Pidoo"
-              style={{ height: 56, display: 'block', margin: '0 auto' }}
+              style={{ width: 96, height: 96, display: 'block', margin: '0 auto', borderRadius: 20 }}
             />
           </div>
 
