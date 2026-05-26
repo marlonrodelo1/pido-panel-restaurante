@@ -247,12 +247,6 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
       height: '100vh', position: 'sticky', top: 0,
       overflow: 'hidden',
     }}>
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px', marginBottom: 20 }}>
-        <PidooMark size={32} />
-        <PidooWordmark size={18} />
-      </div>
-
       {/* Tarjeta NEGOCIO con logo del restaurante */}
       <div style={{
         padding: '10px 12px', background: colors.cream2, borderRadius: 10,
