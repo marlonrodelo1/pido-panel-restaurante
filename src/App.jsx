@@ -42,7 +42,7 @@ const SECCION_LABELS = {
   ajustes: 'Ajustes',
   soporte: 'Soporte',
   'socios-riders': 'Socios y repartidores',
-  'plan-saas': 'Plan Pidoo SaaS',
+  'plan-saas': 'Suscripción',
   'finanzas-riders': 'Finanzas con el socio',
   'eliminar-cuenta': 'Eliminar cuenta',
   pedidos: 'Pedidos',
@@ -230,7 +230,7 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
   ]
   const more = [
     { id: 'socios-riders', Icon: Users, label: 'Socios y repartidores', badge: sociosPendientes },
-    { id: 'plan-saas', Icon: CreditCard, label: 'Plan SaaS' },
+    { id: 'plan-saas', Icon: CreditCard, label: 'Suscripción' },
     { id: 'finanzas-riders', Icon: Wallet, label: 'Finanzas con el socio' },
     { id: 'soporte', Icon: LifeBuoy, label: 'Soporte' },
   ]
@@ -455,7 +455,7 @@ function AppInner({ seccion, setSeccion, nav }) {
 
   const extraOpciones = [
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
-    { id: 'plan-saas', label: 'Plan Pidoo SaaS', Icon: CreditCard },
+    { id: 'plan-saas', label: 'Suscripción', Icon: CreditCard },
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
