@@ -253,29 +253,54 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
         <PidooWordmark size={18} />
       </div>
 
-      {/* Tarjeta NEGOCIO */}
-      <div style={{ padding: '10px 12px', background: colors.cream2, borderRadius: 10, marginBottom: 16 }}>
-        <div style={{ fontSize: 10, color: colors.stone, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          Negocio
-        </div>
+      {/* Tarjeta NEGOCIO con logo del restaurante */}
+      <div style={{
+        padding: '10px 12px', background: colors.cream2, borderRadius: 10,
+        marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+      }}>
         <div style={{
-          fontSize: 14, fontWeight: 700, color: colors.ink, marginTop: 3,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+          background: '#fff', overflow: 'hidden',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px solid ${colors.border}`,
         }}>
-          {restaurante?.nombre || 'Mi restaurante'}
+          {restaurante?.logo_url ? (
+            <img
+              src={restaurante.logo_url} alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <span style={{ fontSize: 14, fontWeight: 800, color: colors.terracotta }}>
+              {restaurante?.nombre?.[0]?.toUpperCase() || 'R'}
+            </span>
+          )}
         </div>
-        <div style={{
-          marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5,
-          padding: '2px 8px', borderRadius: 999,
-          background: restaurante?.activo ? colors.sageSoft : colors.cream,
-          color: restaurante?.activo ? colors.sage2 : colors.stone,
-          fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: restaurante?.activo ? colors.sage : colors.stone2,
-          }} />
-          {restaurante?.activo ? 'ABIERTO' : 'CERRADO'}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontSize: 10, color: colors.stone, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>
+            Negocio
+          </div>
+          <div style={{
+            fontSize: 13, fontWeight: 700, color: colors.ink, marginTop: 2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {restaurante?.nombre || 'Mi restaurante'}
+          </div>
+          <div style={{
+            marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '2px 7px', borderRadius: 999,
+            background: restaurante?.activo ? colors.sageSoft : colors.cream,
+            color: restaurante?.activo ? colors.sage2 : colors.stone,
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.04em',
+          }}>
+            <span style={{
+              width: 5, height: 5, borderRadius: '50%',
+              background: restaurante?.activo ? colors.sage : colors.stone2,
+            }} />
+            {restaurante?.activo ? 'ABIERTO' : 'CERRADO'}
+          </div>
         </div>
       </div>
 
@@ -323,10 +348,19 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
       }}>
         <div style={{
           width: 32, height: 32, borderRadius: '50%',
-          background: colors.terracotta, color: '#fff',
+          background: restaurante?.logo_url ? '#fff' : colors.terracotta,
+          color: '#fff', overflow: 'hidden',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontWeight: 800, fontSize: 13, flexShrink: 0,
-        }}>{initial}</div>
+          border: restaurante?.logo_url ? `1px solid ${colors.border}` : 'none',
+        }}>
+          {restaurante?.logo_url ? (
+            <img
+              src={restaurante.logo_url} alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : initial}
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 13, fontWeight: 700, color: colors.ink,
