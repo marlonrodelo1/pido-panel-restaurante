@@ -131,8 +131,14 @@ export default function HistorialMovil() {
         </button>
       </div>
 
-      {/* Tabs rango */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+      {/* Pills rango — estilo bundle PillTabs (terracotta activa) */}
+      <div style={{
+        display: 'flex', gap: 4,
+        padding: 4,
+        background: colors.cream2,
+        borderRadius: 999,
+        marginBottom: 16,
+      }}>
         {RANGOS.map(r => {
           const activo = rango === r.id
           return (
@@ -141,15 +147,17 @@ export default function HistorialMovil() {
               onClick={() => setRango(r.id)}
               style={{
                 flex: 1,
-                padding: '9px 12px',
-                borderRadius: 10,
-                border: `1px solid ${activo ? colors.primary : colors.border}`,
-                background: activo ? colors.primary : colors.surface,
-                color: activo ? '#fff' : colors.textDim,
+                padding: '8px 14px',
+                borderRadius: 999,
+                border: 'none',
+                background: activo ? colors.primary : 'transparent',
+                color: activo ? '#fff' : colors.stone,
                 fontSize: type.sm,
                 fontWeight: 700,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                transition: 'background 0.15s, color 0.15s',
+                letterSpacing: '0.01em',
               }}
             >
               {r.label}
@@ -237,15 +245,29 @@ function PedidoCard({ pedido, onClick }) {
   const isDelivery = pedido.modo_entrega === 'delivery'
   const rider = pedido.rider_accounts
 
+  // Border-left por estado (matches bundle s1-apk LineaPedido).
+  const accentMap = {
+    entregado:  colors.sage,
+    cancelado:  colors.stone2,
+    fallido:    colors.stone2,
+    listo:      colors.sage,
+    recogido:   colors.info,
+    en_camino:  colors.info,
+    preparando: colors.statePrep,
+    aceptado:   colors.statePrep,
+    nuevo:      colors.stateNew,
+  }
+  const accent = accentMap[pedido.estado] || colors.stone2
+
   return (
     <button
       onClick={onClick}
       style={{
         width: '100%',
         textAlign: 'left',
-        background: colors.surface,
+        background: colors.paper,
         border: `1px solid ${colors.border}`,
-        borderLeft: `2px solid ${sbStyle.color}`,
+        borderLeft: `3px solid ${accent}`,
         borderRadius: 12,
         padding: '12px 14px',
         marginBottom: 8,

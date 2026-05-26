@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { Search, Package } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
+import { colors, type, ds } from '../lib/uiStyles'
+import { FoodChip } from '../lib/food'
 
 export default function DisponibilidadProductos() {
   const { restaurante } = useRest()
   const [productos, setProductos] = useState([])
   const [categorias, setCategorias] = useState([])
   const [loading, setLoading] = useState(true)
+  const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
     if (restaurante?.id) fetchProductos()
@@ -31,131 +35,224 @@ export default function DisponibilidadProductos() {
     setProductos(prev => prev.map(p => p.id === id ? { ...p, disponible: !current } : p))
   }
 
-  const disponibles = productos.filter(p => p.disponible).length
-  const noDisponibles = productos.length - disponibles
+  // Filtro por búsqueda (case-insensitive).
+  const productosFiltrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    if (!q) return productos
+    return productos.filter(p => p.nombre?.toLowerCase().includes(q))
+  }, [productos, busqueda])
 
-  // Agrupar por categoría
-  const catsConProductos = categorias.filter(c => productos.some(p => p.categoria_id === c.id))
-  const sinCategoria = productos.filter(p => !p.categoria_id)
+  const disponibles = productosFiltrados.filter(p => p.disponible).length
+  const noDisponibles = productosFiltrados.length - disponibles
+
+  // Agrupar por categoría (sobre la lista filtrada).
+  const catsConProductos = categorias.filter(c => productosFiltrados.some(p => p.categoria_id === c.id))
+  const sinCategoria = productosFiltrados.filter(p => !p.categoria_id)
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: 60, color: 'var(--c-muted)' }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>🍽️</div>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Cargando productos...</div>
+      <div style={{ textAlign: 'center', padding: 60, color: colors.textMute }}>
+        <div style={{ fontSize: type.sm, fontWeight: 600 }}>Cargando productos…</div>
       </div>
     )
   }
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 6px' }}>Disponibilidad</h2>
-      <p style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 16 }}>
-        Activa o desactiva productos para los clientes en tiempo real.
-      </p>
+      {/* Header */}
+      <div style={{ marginBottom: 18 }}>
+        <h2 style={{ ...ds.h1, margin: 0 }}>Disponibilidad</h2>
+        <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 4 }}>
+          Activa o desactiva productos sin tocar la carta.
+        </div>
+      </div>
 
-      {/* Stats */}
+      {/* Buscador */}
       {productos.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <div style={{ position: 'relative', marginBottom: 16 }}>
+          <Search
+            size={15} strokeWidth={2.2} color={colors.stone}
+            style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+          />
+          <input
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar producto…"
+            style={{
+              ...ds.input, height: 40, paddingLeft: 36, fontSize: type.sm,
+            }}
+          />
+        </div>
+      )}
+
+      {/* Stats (sage / danger según bundle s1-apk) */}
+      {productosFiltrados.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
           <div style={{
-            flex: 1, background: 'rgba(34,197,94,0.1)', borderRadius: 12,
-            padding: '12px 14px', border: '1px solid rgba(34,197,94,0.2)',
+            background: colors.sageSoft,
+            borderRadius: 12,
+            padding: '14px 16px',
           }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#16A34A' }}>{disponibles}</div>
-            <div style={{ fontSize: 11, color: 'rgba(74,222,128,0.8)', fontWeight: 600 }}>Disponibles</div>
+            <div style={{
+              fontSize: type.xxs, color: colors.sage2, fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>
+              Disponibles
+            </div>
+            <div style={{
+              fontSize: 32, color: colors.sage2, marginTop: 4,
+              fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '-0.02em',
+            }}>
+              {disponibles}
+            </div>
           </div>
           <div style={{
-            flex: 1, background: 'rgba(239,68,68,0.1)', borderRadius: 12,
-            padding: '12px 14px', border: '1px solid rgba(239,68,68,0.2)',
+            background: colors.dangerSoft,
+            borderRadius: 12,
+            padding: '14px 16px',
           }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#DC2626' }}>{noDisponibles}</div>
-            <div style={{ fontSize: 11, color: 'rgba(239,68,68,0.8)', fontWeight: 600 }}>No disponibles</div>
+            <div style={{
+              fontSize: type.xxs, color: colors.danger, fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>
+              No disponibles
+            </div>
+            <div style={{
+              fontSize: 32, color: colors.danger, marginTop: 4,
+              fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '-0.02em',
+            }}>
+              {noDisponibles}
+            </div>
           </div>
         </div>
       )}
 
       {productos.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--c-muted)' }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>No hay productos en la carta</div>
-          <div style={{ fontSize: 11, marginTop: 4 }}>Añade productos desde el panel web</div>
+        <div style={{ textAlign: 'center', padding: '50px 16px' }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 16,
+            background: colors.cream2, color: colors.stone2,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 12,
+          }}>
+            <Package size={28} strokeWidth={1.8} />
+          </div>
+          <div style={{ fontSize: type.base, fontWeight: 700, color: colors.ink, marginBottom: 4 }}>
+            Sin productos en la carta
+          </div>
+          <div style={{ fontSize: type.xs, color: colors.textMute }}>
+            Añade productos desde el panel web.
+          </div>
         </div>
       )}
 
-      {/* Por categoría */}
+      {productos.length > 0 && productosFiltrados.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px 16px', color: colors.textMute, fontSize: type.sm }}>
+          Sin resultados para «{busqueda}».
+        </div>
+      )}
+
+      {/* Categorías */}
       {catsConProductos.map(cat => (
-        <div key={cat.id} style={{ marginBottom: 18 }}>
+        <div key={cat.id} style={{ marginBottom: 22 }}>
           <div style={{
-            fontSize: 11, fontWeight: 700, color: 'var(--c-muted)',
-            marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5,
+            fontSize: type.xxs, fontWeight: 700, color: colors.textMute,
+            marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.07em',
           }}>
             {cat.nombre}
           </div>
-          {productos.filter(p => p.categoria_id === cat.id).map(p => (
-            <ProductoRow key={p.id} p={p} toggle={toggleDisponible} />
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {productosFiltrados.filter(p => p.categoria_id === cat.id).map(p => (
+              <ProductoRow key={p.id} p={p} cat={cat.nombre} toggle={toggleDisponible} />
+            ))}
+          </div>
         </div>
       ))}
 
       {/* Sin categoría */}
       {sinCategoria.length > 0 && (
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 22 }}>
           <div style={{
-            fontSize: 11, fontWeight: 700, color: 'var(--c-muted)',
-            marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5,
+            fontSize: type.xxs, fontWeight: 700, color: colors.textMute,
+            marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.07em',
           }}>
             Sin categoría
           </div>
-          {sinCategoria.map(p => (
-            <ProductoRow key={p.id} p={p} toggle={toggleDisponible} />
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {sinCategoria.map(p => (
+              <ProductoRow key={p.id} p={p} cat={null} toggle={toggleDisponible} />
+            ))}
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function ProductoRow({ p, toggle }) {
+function ProductoRow({ p, cat, toggle }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      background: 'var(--c-surface)', borderRadius: 12,
-      padding: '12px 14px', marginBottom: 8,
-      border: '1px solid var(--c-border)',
-      opacity: p.disponible ? 1 : 0.5,
+      display: 'flex', alignItems: 'center', gap: 14,
+      background: colors.paper,
+      borderRadius: 12,
+      padding: 12,
+      border: `1px solid ${colors.border}`,
+      opacity: p.disponible ? 1 : 0.6,
       transition: 'opacity 0.2s',
     }}>
-      <div style={{
-        width: 44, height: 44, borderRadius: 8, flexShrink: 0,
-        background: 'var(--c-surface2)', overflow: 'hidden',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-      }}>
-        {p.imagen_url
-          ? <img src={p.imagen_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : '🍽️'}
-      </div>
+      {/* Thumbnail: imagen real si hay, sino FoodChip ilustración */}
+      {p.imagen_url ? (
+        <div style={{
+          width: 56, height: 56, borderRadius: 10, flexShrink: 0,
+          background: colors.cream2, overflow: 'hidden',
+        }}>
+          <img src={p.imagen_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        </div>
+      ) : (
+        <FoodChip cat={cat || 'general'} size={56} />
+      )}
+
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{
+          fontWeight: 700, color: colors.ink, fontSize: type.sm,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
           {p.nombre}
         </div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: p.disponible ? '#16A34A' : 'var(--c-muted)', marginTop: 2 }}>
+        <div style={{
+          fontSize: type.xxs, fontWeight: 600,
+          color: p.disponible ? colors.sage2 : colors.textMute,
+          marginTop: 2, display: 'inline-flex', alignItems: 'center', gap: 5,
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: p.disponible ? colors.sage : colors.stone2,
+          }} />
           {p.disponible ? 'Disponible' : 'No disponible'}
         </div>
       </div>
+
+      {/* Toggle 48×28 estilo cream world (track sage cuando on) */}
       <button
         onClick={() => toggle(p.id, p.disponible)}
+        aria-label={p.disponible ? 'Marcar no disponible' : 'Marcar disponible'}
         style={{
           width: 48, height: 28, borderRadius: 14, border: 'none',
-          background: p.disponible ? '#16A34A' : 'rgba(0,0,0,0.15)',
-          cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
-          minHeight: 44, minWidth: 48, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
+          background: p.disponible ? colors.sage : colors.cream2,
+          cursor: 'pointer', position: 'relative',
+          transition: 'background 0.2s',
+          minHeight: 44, minWidth: 48,
+          display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
         }}
       >
         <span style={{
           position: 'absolute', top: 3, left: p.disponible ? 23 : 3,
           width: 22, height: 22, borderRadius: 11,
-          background: '#fff', transition: 'left 0.2s',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+          background: '#fff',
+          transition: 'left 0.2s',
+          boxShadow: '0 1px 3px rgba(26,24,21,0.2)',
         }} />
       </button>
     </div>

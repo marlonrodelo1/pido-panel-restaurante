@@ -8,7 +8,7 @@ import { toast } from '../App'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
-  // --- F2: URL propia tienda pública ---
+  // --- F2: URL propia (Plan Pidoo SaaS) ---
   const [slugDraft, setSlugDraft] = useState('')
   const [slugSaving, setSlugSaving] = useState(false)
   const [slugError, setSlugError] = useState(null)
@@ -102,7 +102,7 @@ export default function Ajustes() {
   })
   const [guardandoDelivery, setGuardandoDelivery] = useState(false)
 
-  // F4: tarifa envío fija tienda pública (plan pro)
+  // F4: tarifa envío fija (Plan Pidoo SaaS)
   const [tarifaEnvioFija, setTarifaEnvioFija] = useState(restaurante?.tarifa_envio_fija ?? '')
   const [guardandoTarifaFija, setGuardandoTarifaFija] = useState(false)
   useEffect(() => {
@@ -477,24 +477,27 @@ export default function Ajustes() {
 
   return (
     <div style={{ paddingBottom: hayCambios ? 90 : 0 }}>
-      <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 20px' }}>Ajustes</h2>
+      <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--c-text)', letterSpacing: '-0.02em', margin: 0 }}>Ajustes</h2>
+      <div style={{ fontSize: 14, color: 'var(--c-muted)', marginBottom: 22, marginTop: 4 }}>
+        Configuración de tu negocio
+      </div>
 
-      {/* ── F2: URL propia tienda pública (solo plan pro) ── */}
+      {/* ── F2: URL propia (solo Plan Pidoo SaaS) ── */}
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Mi URL propia</h3>
           {!restaurante?.plan_pro && (
             <span style={{
-              fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999,
-              background: 'rgba(251,191,36,0.15)', color: '#FBBF24',
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-            }}>Plan Pro</span>
+              fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
+              background: '#F0E1C8', color: '#8B6126',
+              letterSpacing: '0.02em', border: '1px solid #F0E1C8',
+            }}>Plan SaaS</span>
           )}
         </div>
         <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
           {restaurante?.plan_pro
-            ? 'Tu restaurante sigue apareciendo en pidoo.es. Esta URL es adicional.'
-            : 'Activa el plan Tienda Pública (39€/mes) para tener tu propia URL pidoo.es/<tu-slug> donde los clientes pueden pedir solo a ti, sin comisión Pidoo.'}
+            ? 'Tu tienda está activa en pidoo.es/<tu-slug> con el Plan Pidoo SaaS.'
+            : 'Activa el Plan Pidoo SaaS (39€/mes, 0% comisión) para tener tu propia URL pidoo.es/<tu-slug>.'}
         </div>
         {!restaurante?.plan_pro ? (
           <div style={{
@@ -502,7 +505,7 @@ export default function Ajustes() {
             background: 'var(--c-primary-light)', border: '1px solid rgba(185,28,28,0.25)',
             fontSize: 12, color: 'var(--c-text)', lineHeight: 1.5,
           }}>
-            Ve al menú <strong>Más → Plan tienda</strong> para activarlo.
+            Ve al menú <strong>Más → Plan Pidoo SaaS</strong> para activarlo.
           </div>
         ) : restaurante?.slug ? (
           <>
@@ -562,7 +565,7 @@ export default function Ajustes() {
               />
             </div>
             {slugError && (
-              <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 12, color: '#B5564A', marginBottom: 8, fontWeight: 600 }}>
                 {slugError}
               </div>
             )}
@@ -583,12 +586,12 @@ export default function Ajustes() {
         )}
       </div>
 
-      {/* ── F4: Envío tienda pública (solo plan pro) ── */}
+      {/* ── F4: Tarifa de envío (solo plan SaaS) ── */}
       {restaurante?.plan_pro && (
         <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Envío tienda pública</h3>
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Tarifa de envío</h3>
           <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-            Este importe es el que paga el cliente y el que recibe el rider en los pedidos que entren por <span style={{ fontFamily: 'monospace' }}>pidoo.es/{restaurante.slug || 'tu-tienda'}</span>.
+            Tarifas de envío que cobras al cliente final en <span style={{ fontFamily: 'monospace' }}>pidoo.es/{restaurante.slug || 'tu-tienda'}</span>.
             Si lo dejas vacío, se aplica la tarifa global por distancia.
           </div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' }}>
@@ -629,10 +632,10 @@ export default function Ajustes() {
       {/* Estado abierto/cerrado — inmediato */}
       <div style={{ background: activo ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: activo ? '#16A34A' : '#DC2626' }}>{activo ? 'Abierto' : 'Cerrado'}</div>
-          <div style={{ fontSize: 12, color: activo ? '#22C55E' : '#DC2626', marginTop: 2 }}>{activo ? 'Recibiendo pedidos' : 'No se reciben pedidos'}</div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: activo ? '#8B9D7A' : '#B5564A' }}>{activo ? 'Abierto' : 'Cerrado'}</div>
+          <div style={{ fontSize: 12, color: activo ? '#22C55E' : '#B5564A', marginTop: 2 }}>{activo ? 'Recibiendo pedidos' : 'No se reciben pedidos'}</div>
         </div>
-        <button onClick={toggleActivo} style={{ width: 52, height: 28, borderRadius: 14, border: 'none', background: activo ? '#16A34A' : 'rgba(0,0,0,0.2)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0 }}>
+        <button onClick={toggleActivo} style={{ width: 52, height: 28, borderRadius: 14, border: 'none', background: activo ? '#8B9D7A' : 'rgba(0,0,0,0.2)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0 }}>
           <span style={{ position: 'absolute', top: 3, left: activo ? 27 : 3, width: 22, height: 22, borderRadius: 11, background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
         </button>
       </div>
@@ -707,7 +710,7 @@ export default function Ajustes() {
             }} disabled={obteniendoUbi} style={{
               flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid var(--c-border)',
               background: ubiOk ? 'rgba(34,197,94,0.12)' : 'var(--c-surface2)',
-              color: ubiOk ? '#16A34A' : 'var(--c-text)',
+              color: ubiOk ? '#8B9D7A' : 'var(--c-text)',
               fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>
               {obteniendoUbi ? 'Obteniendo...' : ubiOk ? '✅ Ubicación guardada' : '📍 Obtener ubicación actual'}
@@ -735,7 +738,7 @@ export default function Ajustes() {
           <span style={{
             fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
             background: (razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? 'rgba(34,197,94,0.14)' : 'rgba(245,158,11,0.18)',
-            color: (razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? '#16A34A' : '#D97706',
+            color: (razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? '#8B9D7A' : '#C99551',
             letterSpacing: '0.06em', textTransform: 'uppercase',
           }}>
             {(razonSocial && nif && direccionFiscal && codigoPostalFiscal && ciudadFiscal) ? 'Completos' : 'Incompletos'}
@@ -796,7 +799,7 @@ export default function Ajustes() {
               <span style={{
                 fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 50,
                 background: estado.abierto ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                color: estado.abierto ? '#16A34A' : '#DC2626',
+                color: estado.abierto ? '#8B9D7A' : '#B5564A',
               }}>
                 {estado.abierto ? 'Abierto ahora' : 'Cerrado'}
               </span>
@@ -855,7 +858,7 @@ export default function Ajustes() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <button onClick={() => toggleDia(dia)} style={{
                         width: 48, height: 28, borderRadius: 14, border: 'none',
-                        background: abierto ? '#16A34A' : 'rgba(0,0,0,0.15)',
+                        background: abierto ? '#8B9D7A' : 'rgba(0,0,0,0.15)',
                         cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
                         minHeight: 44, minWidth: 48, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
                       }}>
@@ -910,7 +913,7 @@ export default function Ajustes() {
                           />
                           {turnos.length > 1 && (
                             <button onClick={() => removeTurno(dia, idx)} style={{
-                              background: 'rgba(239,68,68,0.1)', border: 'none', color: '#DC2626',
+                              background: 'rgba(239,68,68,0.1)', border: 'none', color: '#B5564A',
                               fontSize: 16, cursor: 'pointer', padding: 0,
                               width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>×</button>
@@ -936,13 +939,13 @@ export default function Ajustes() {
             })}
 
             {/* Error horario */}
-            {horarioError && <div style={{ color: '#DC2626', fontSize: 11, fontWeight: 600, padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 8, marginTop: 8 }}>{horarioError}</div>}
+            {horarioError && <div style={{ color: '#B5564A', fontSize: 11, fontWeight: 600, padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 8, marginTop: 8 }}>{horarioError}</div>}
 
             {/* Quitar horario */}
             <button onClick={() => { setHorario(null); setHorarioError(null) }} style={{
               width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 10,
               border: '1px solid rgba(239,68,68,0.2)', background: 'transparent',
-              color: '#DC2626', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              color: '#B5564A', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
             }}>
               Quitar horario (usar solo toggle abierto/cerrado)
             </button>
@@ -1119,16 +1122,16 @@ export default function Ajustes() {
                 <div key={catId} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   background: 'rgba(255,107,44,0.12)',
-                  border: '1px solid #FF6B2C',
+                  border: '1px solid #C5562C',
                   borderRadius: 50, padding: '6px 10px 6px 14px',
                 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#FF6B2C', minWidth: 18 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#C5562C', minWidth: 18 }}>
                     {idx + 1}.
                   </span>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#FF6B2C' }}>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#C5562C' }}>
                     {cat.emoji} {cat.nombre}
                     {idx === 0 && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#FF6B2C', opacity: 0.7 }}>· principal</span>
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#C5562C', opacity: 0.7 }}>· principal</span>
                     )}
                   </span>
                   <button
@@ -1162,7 +1165,7 @@ export default function Ajustes() {
                     onClick={() => quitarCat(catId)}
                     style={{
                       width: 26, height: 26, borderRadius: '50%', border: 'none',
-                      background: 'rgba(239,68,68,0.15)', color: '#DC2626',
+                      background: 'rgba(239,68,68,0.15)', color: '#B5564A',
                       cursor: 'pointer', fontFamily: 'inherit',
                       fontSize: 14, fontWeight: 800, lineHeight: 1,
                     }}
@@ -1206,7 +1209,7 @@ export default function Ajustes() {
             ))}
         </select>
 
-        <div style={{ fontSize: 11, color: catsSeleccionadas.length >= 3 ? '#FF6B2C' : 'var(--c-muted)', marginTop: 8, fontWeight: 600 }}>
+        <div style={{ fontSize: 11, color: catsSeleccionadas.length >= 3 ? '#C5562C' : 'var(--c-muted)', marginTop: 8, fontWeight: 600 }}>
           {catsSeleccionadas.length}/3 seleccionadas
         </div>
       </div>
@@ -1228,8 +1231,8 @@ export default function Ajustes() {
             {/* Impresora conectada */}
             <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: 12, padding: 16, marginBottom: 14, border: '1px solid rgba(34,197,94,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#16A34A', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#16A34A' }}>Conectada</span>
+                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#8B9D7A', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#8B9D7A' }}>Conectada</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 18 }}>🖨️</span>
@@ -1260,7 +1263,7 @@ export default function Ajustes() {
                 onClick={handleDisconnect}
                 style={{
                   flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid rgba(239,68,68,0.3)',
-                  background: 'rgba(239,68,68,0.08)', color: '#DC2626',
+                  background: 'rgba(239,68,68,0.08)', color: '#B5564A',
                   fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
@@ -1273,7 +1276,7 @@ export default function Ajustes() {
               <div style={{
                 marginTop: 10, padding: '10px 14px', borderRadius: 8,
                 background: connectResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: connectResult.ok ? '#16A34A' : '#DC2626',
+                color: connectResult.ok ? '#8B9D7A' : '#B5564A',
                 fontSize: 12, fontWeight: 600, textAlign: 'center',
               }}>
                 {connectResult.ok ? 'Ticket de prueba enviado!' : 'Error al imprimir. Verifica que la impresora este encendida.'}
@@ -1374,7 +1377,7 @@ export default function Ajustes() {
                       disabled={connecting === p.ip}
                       style={{
                         padding: '8px 16px', borderRadius: 8, border: 'none',
-                        background: connecting === p.ip ? 'rgba(0,0,0,0.1)' : '#16A34A',
+                        background: connecting === p.ip ? 'rgba(0,0,0,0.1)' : '#8B9D7A',
                         color: '#fff', fontSize: 12, fontWeight: 700,
                         cursor: connecting === p.ip ? 'default' : 'pointer', fontFamily: 'inherit',
                       }}
@@ -1391,7 +1394,7 @@ export default function Ajustes() {
               <div style={{
                 marginBottom: 14, padding: '10px 14px', borderRadius: 8,
                 background: connectResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: connectResult.ok ? '#16A34A' : '#DC2626',
+                color: connectResult.ok ? '#8B9D7A' : '#B5564A',
                 fontSize: 12, fontWeight: 600, textAlign: 'center',
               }}>
                 {connectResult.ok
@@ -1446,27 +1449,33 @@ export default function Ajustes() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Cerrar sesión */}
-      <button onClick={logout} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#DC2626', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>Cerrar sesión</button>
+      <button onClick={logout} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#B5564A', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>Cerrar sesión</button>
 
-      {/* Zona peligrosa */}
-      <div style={{ marginTop: 24, padding: 16, border: '1px solid rgba(220,38,38,0.25)', borderRadius: 14, background: 'rgba(220,38,38,0.04)', marginBottom: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: '#DC2626', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      {/* Zona peligrosa — danger-soft */}
+      <div style={{
+        marginTop: 24, marginBottom: 20,
+        padding: 20, borderRadius: 12,
+        background: '#F1D0CB', border: 'none',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#B5564A', textTransform: 'uppercase', marginBottom: 6 }}>
           Zona peligrosa
         </div>
-        <div style={{ fontSize: 12, color: 'var(--c-muted)', lineHeight: 1.5, marginBottom: 12 }}>
-          Borra tu cuenta y todos tus datos personales asociados. Esta acción es irreversible.
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, color: '#B5564A', flex: 1 }}>
+            Esto borrará tu cuenta y todos los datos. No tiene vuelta atrás.
+          </div>
+          <button
+            onClick={() => { try { window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'eliminar-cuenta' })) } catch (_) {} }}
+            style={{
+              padding: '8px 16px', borderRadius: 8,
+              border: '1px solid rgba(181,86,74,0.35)', background: 'transparent',
+              color: '#B5564A', fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            Eliminar cuenta
+          </button>
         </div>
-        <button
-          onClick={() => { try { window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'eliminar-cuenta' })) } catch (_) {} }}
-          style={{
-            padding: '10px 16px', borderRadius: 10,
-            border: '1px solid #DC2626', background: 'transparent',
-            color: '#DC2626', fontSize: 13, fontWeight: 700,
-            cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          Eliminar cuenta
-        </button>
       </div>
 
       {/* Botón guardar cambios flotante */}
@@ -1492,7 +1501,7 @@ export default function Ajustes() {
       {guardado && (
         <div style={{
           position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
-          background: '#16A34A', color: '#fff', padding: '12px 24px', borderRadius: 12,
+          background: '#8B9D7A', color: '#fff', padding: '12px 24px', borderRadius: 12,
           fontSize: 13, fontWeight: 700, zIndex: 200,
           boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
           animation: 'fadeIn 0.3s ease',

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { Send, MessageCircle, AlertCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
+import { colors, type, ds } from '../lib/uiStyles'
 
 export default function Soporte() {
   const { restaurante } = useRest()
@@ -87,47 +89,114 @@ export default function Soporte() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)' }}>
-      <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 16px' }}>Soporte PIDO</h2>
-
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-        {mensajes.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--c-muted)' }}>
-            <div style={{ fontSize: 24, marginBottom: 8 }}>💬</div>
-            <div style={{ fontSize: 13 }}>Escribe tu mensaje para contactar con soporte</div>
-          </div>
-        )}
-        {mensajes.map((m) => (
-          <div key={m.id || m.created_at} style={{ alignSelf: m.de === 'restaurante' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-            <div style={{
-              background: m.de === 'restaurante' ? 'var(--c-primary)' : 'var(--c-surface)',
-              color: m.de === 'restaurante' ? '#fff' : 'var(--c-text)',
-              borderRadius: 14,
-              borderBottomRightRadius: m.de === 'restaurante' ? 4 : 14,
-              borderBottomLeftRadius: m.de === 'soporte' ? 4 : 14,
-              padding: '10px 14px', fontSize: 13, lineHeight: 1.5,
-              border: m.de === 'soporte' ? '1px solid var(--c-border)' : 'none',
-            }}>{m.texto}</div>
-            <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4, textAlign: m.de === 'restaurante' ? 'right' : 'left' }}>
-              {formatHora(m.created_at)}
-            </div>
-          </div>
-        ))}
-        <div ref={endRef} />
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <h2 style={{ ...ds.h1, marginBottom: 4 }}>Soporte Pidoo</h2>
+      <div style={{ fontSize: type.sm, color: colors.stone, marginBottom: 18 }}>
+        Respuesta media en 12 minutos
       </div>
 
-      {errorEnvio && (
-        <div style={{ color: '#DC2626', fontSize: 12, fontWeight: 600, marginBottom: 8, padding: '8px 12px', background: 'rgba(220,38,38,0.1)', borderRadius: 8 }}>
-          ⚠️ {errorEnvio}
+      {/* Card chat */}
+      <div style={{
+        ...ds.card,
+        padding: 0,
+        height: 580,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+        {/* Mensajes scrollables */}
+        <div style={{
+          flex: 1, padding: 22, overflowY: 'auto',
+          display: 'flex', flexDirection: 'column', gap: 12,
+        }}>
+          {mensajes.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: colors.stone }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 16,
+                background: colors.cream2, color: colors.stone2,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: 12,
+              }}>
+                <MessageCircle size={26} strokeWidth={1.7} />
+              </div>
+              <div style={{ fontSize: type.sm, color: colors.stone }}>
+                Escribe tu mensaje para contactar con soporte
+              </div>
+            </div>
+          )}
+          {mensajes.map((m) => {
+            const isRest = m.de === 'restaurante'
+            return (
+              <div key={m.id || m.created_at} style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: isRest ? 'flex-end' : 'flex-start',
+              }}>
+                <div style={{
+                  maxWidth: '70%',
+                  padding: '10px 14px',
+                  borderRadius: 14,
+                  borderBottomRightRadius: isRest ? 4 : 14,
+                  borderBottomLeftRadius: isRest ? 14 : 4,
+                  background: isRest ? colors.terracotta : colors.paper,
+                  color: isRest ? '#fff' : colors.ink,
+                  border: isRest ? 'none' : `1px solid ${colors.border}`,
+                  fontSize: type.sm,
+                  lineHeight: 1.5,
+                }}>
+                  {m.texto}
+                </div>
+                <div style={{ fontSize: 10, color: colors.stone2, marginTop: 4 }}>
+                  {formatHora(m.created_at)}
+                </div>
+              </div>
+            )
+          })}
+          <div ref={endRef} />
         </div>
-      )}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !enviando && enviar()}
-          placeholder="Escribe tu mensaje..."
-          style={{ flex: 1, padding: '12px 16px', borderRadius: 12, border: '1px solid var(--c-border)', fontSize: 13, fontFamily: 'inherit', background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none' }} />
-        <button onClick={enviar} disabled={enviando || !input.trim()} style={{ width: 44, height: 44, borderRadius: 12, border: 'none', background: enviando || !input.trim() ? 'rgba(0,0,0,0.1)' : 'var(--c-primary)', color: '#fff', cursor: enviando || !input.trim() ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
+
+        {/* Input bar + botón circular ink glossy */}
+        <div style={{
+          borderTop: `1px solid ${colors.border}`,
+          padding: 14, display: 'flex', gap: 10, alignItems: 'center',
+          background: colors.paper,
+        }}>
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !enviando && enviar()}
+            placeholder="Escribe tu mensaje…"
+            style={{ ...ds.formInput, flex: 1 }}
+          />
+          <button
+            onClick={enviar}
+            disabled={enviando || !input.trim()}
+            style={{
+              width: 48, height: 48, borderRadius: '50%',
+              background: `linear-gradient(180deg, ${colors.ink2} 0%, ${colors.ink} 100%)`,
+              color: colors.cream,
+              border: '1px solid rgba(0,0,0,0.4)',
+              cursor: enviando || !input.trim() ? 'default' : 'pointer',
+              opacity: enviando || !input.trim() ? 0.5 : 1,
+              boxShadow: colors.shadowGlossy,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Send size={18} strokeWidth={2} />
+          </button>
+        </div>
+
+        {errorEnvio && (
+          <div style={{
+            background: colors.dangerSoft, color: colors.danger,
+            padding: '10px 14px', fontSize: type.xs, fontWeight: 600,
+            borderTop: `1px solid ${colors.border}`,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <AlertCircle size={14} /> {errorEnvio}
+          </div>
+        )}
       </div>
     </div>
   )

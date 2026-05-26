@@ -32,7 +32,7 @@ function Avatar({ logo, nombre, size = 52 }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: 12, flexShrink: 0,
-      background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
+      background: 'linear-gradient(135deg, #C5562C 0%, #A8451F 100%)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       color: '#fff', fontWeight: 800, fontSize: size * 0.38,
     }}>{letra}</div>
@@ -70,7 +70,7 @@ function ModalMotivo({ titulo, textoBoton, onClose, onConfirm }) {
             height: 'auto',
             padding: '10px 12px',
             resize: 'vertical',
-            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+            fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
           }}
         />
         <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
@@ -151,7 +151,7 @@ function ModalCambiarTarifa({ row, onClose, onPropuesta }) {
         min={0}
         value={value}
         onChange={e => onChange(e.target.value)}
-        style={{ ...ds.formInput, fontFamily: "'Inter', system-ui, sans-serif" }}
+        style={{ ...ds.formInput, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
       />
     )
   }
@@ -221,7 +221,7 @@ function ModalCambiarTarifa({ row, onClose, onPropuesta }) {
             rows={3}
             style={{
               ...ds.formInput, height: 'auto', padding: '10px 12px', resize: 'vertical',
-              fontFamily: "'Inter', system-ui, sans-serif",
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             }}
           />
         </div>
@@ -566,25 +566,25 @@ export default function SociosYRepartidores() {
     : vincs
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div>
       {/* Header */}
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ ...ds.h1, margin: 0 }}>Socios y repartidores</h1>
-        <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4, lineHeight: 1.5 }}>
-          Los repartidores que reciben tus pedidos de delivery son los riders de tus socios. Cada socio gestiona su rider desde <span style={{ fontFamily: 'monospace', color: colors.textDim }}>socio.pidoo.es</span>.
+        <div style={{ fontSize: type.sm, color: colors.stone, marginTop: 4, lineHeight: 1.5, maxWidth: 720 }}>
+          Los repartidores que reciben tus pedidos de delivery son los riders de tus socios. Cada socio gestiona su rider desde <span style={{ fontFamily: 'ui-monospace, monospace', color: colors.ink2 }}>socio.pidoo.es</span>.
         </div>
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18 }}>
         <Stat label="Activos" value={activos.length} color={colors.stateOk} />
         <Stat label="Online ahora" value={onlineCount} color={colors.stateOk} sub={`${activos.length > 0 ? Math.round(onlineCount / activos.length * 100) : 0}% disponibles`} />
         <Stat label="Pendientes" value={pendientes.length} color={colors.statePrep} />
         <Stat label="Rechazados" value={rechazados.length} color={colors.danger} />
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', borderBottom: `1px solid ${colors.border}`, paddingBottom: 2 }}>
+      {/* Tabs estilo Linear */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap', borderBottom: `1px solid ${colors.border}` }}>
         {[
           { id: 'todos', label: `Todos (${vincs.length})` },
           { id: 'activos', label: `Activos (${activos.length})` },
@@ -597,16 +597,17 @@ export default function SociosYRepartidores() {
               key={t.id}
               onClick={() => setTab(t.id)}
               style={{
-                padding: '8px 14px',
+                padding: '10px 14px',
                 border: 'none',
                 background: 'transparent',
-                color: active ? colors.primary : colors.textMute,
-                fontSize: type.xs,
-                fontWeight: 700,
+                color: active ? colors.ink : colors.stone,
+                fontSize: type.sm,
+                fontWeight: 600,
                 cursor: 'pointer',
-                fontFamily: "'Inter', system-ui, sans-serif",
-                borderBottom: `2px solid ${active ? colors.primary : 'transparent'}`,
-                marginBottom: -2,
+                fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+                borderBottom: `2px solid ${active ? colors.terracotta : 'transparent'}`,
+                marginBottom: -1,
+                display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
               {t.label}
@@ -649,11 +650,15 @@ export default function SociosYRepartidores() {
 
       {/* Info box */}
       <div style={{
-        marginTop: 20, padding: '12px 14px', borderRadius: 10,
-        background: colors.infoSoft, border: `1px solid ${colors.border}`,
-        fontSize: type.xxs, color: colors.textDim, lineHeight: 1.5,
+        marginTop: 20, padding: 16, borderRadius: 12,
+        background: colors.infoSoft, border: 'none',
+        fontSize: type.sm, color: '#4A6480', lineHeight: 1.55,
+        display: 'flex', alignItems: 'flex-start', gap: 12,
       }}>
-        💡 Todos los repartidores de Pidoo son socios. Si alguien quiere repartir para ti, debe darse de alta en <strong style={{ color: colors.text }}>socio.pidoo.es</strong> y después solicitarte vinculación.
+        <span style={{ fontSize: 16, marginTop: 1 }}>💡</span>
+        <div>
+          Todos los repartidores de Pidoo son <b>socios autónomos</b>. Si alguien quiere repartir para ti, debe darse de alta en <strong style={{ color: '#2D4A66', fontFamily: 'ui-monospace, monospace' }}>socio.pidoo.es</strong> y después solicitarte vinculación.
+        </div>
       </div>
 
       {modalRechazar && (

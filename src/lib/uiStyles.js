@@ -1,69 +1,106 @@
 // Estilos compartidos panel-restaurante
-// Design system: Inter + naranja Pidoo #FF6B2C, light mode estilo Claude (off-white cálido)
-// Inspirado en pido-super-admin/src/lib/darkStyles.js
+// Design system: Plus Jakarta Sans + paleta cream/terracotta/sage
+// Pivote SaaS — paleta artesanal cálida (mayo 2026)
+//
+// API: mantenemos nombres de tokens existentes (colors.bg, colors.primary, etc.)
+// para no romper imports. Solo cambian los valores hex.
+// Tokens nuevos añadidos: cream, paper, ink, stone, terracotta, sage + variantes.
+
+const FONT = "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
 
 export const colors = {
-  // Superficies (light, cálidas)
-  bg: '#FAFAF7',
-  surface: '#FFFFFF',
-  surface2: '#F4F2EC',
-  elev: '#FFFFFF',
-  elev2: '#F8F6F1',
-  border: '#E8E6E0',
-  borderStrong: '#D4D2CC',
+  // === Bases (cream world) ===
+  cream:    '#F7F3EC',   // fondo principal
+  cream2:   '#EFE9DD',   // filas/secciones secundarias
+  paper:    '#FBF8F2',   // cards, inputs
+
+  // === Tinta ===
+  ink:      '#1A1815',
+  ink2:     '#2B2823',
+  stone:    '#6B6356',
+  stone2:   '#8A8174',
+
+  // === Acentos ===
+  terracotta:      '#C5562C',
+  terracotta2:     '#A8451F',
+  terracottaSoft:  '#F1D9CC',
+
+  sage:      '#8B9D7A',
+  sage2:     '#6F8460',
+  sageSoft:  '#DDE3D3',
+
+  // === Funcionales ===
+  info:        '#7B8FA8',
+  infoSoft:    '#DBE0E8',
+  danger:      '#B5564A',
+  dangerSoft:  '#F1D0CB',
+  warning:     '#C99551',
+  warningSoft: '#F0E1C8',
+
+  // === Compatibilidad hacia atrás (alias a la nueva paleta) ===
+  // Superficies
+  bg:           '#F7F3EC',  // alias cream
+  surface:      '#FBF8F2',  // alias paper
+  surface2:     '#EFE9DD',  // alias cream2
+  elev:         '#FBF8F2',  // alias paper
+  elev2:        '#EFE9DD',  // alias cream2
+  border:       '#E8E1D3',
+  borderStrong: '#D8CDB8',
 
   // Tipografía
-  text: '#1F1F1E',
-  textDim: '#3D3D3B',
-  textMute: '#6B6B68',
-  textFaint: '#A8A6A0',
+  text:      '#1A1815',  // alias ink
+  textDim:   '#2B2823',  // alias ink2
+  textMute:  '#6B6356',  // alias stone
+  textFaint: '#8A8174',  // alias stone2
 
-  // Primario (naranja Pidoo, marca oficial)
-  primary: '#FF6B2C',
-  primaryDark: '#E85A1F',
-  primarySoft: 'rgba(255,107,44,0.10)',
-  primaryBorder: 'rgba(255,107,44,0.32)',
+  // Primario (antes naranja Pidoo #FF6B2C → ahora terracotta)
+  primary:       '#C5562C',
+  primaryDark:   '#A8451F',
+  primarySoft:   '#F1D9CC',
+  primaryBorder: 'rgba(197,86,44,0.32)',
 
-  // Paleta 4 estados
-  stateNew: '#DC2626',
-  stateNewSoft: 'rgba(220,38,38,0.10)',
-  statePrep: '#D97706',
-  statePrepSoft: 'rgba(217,119,6,0.12)',
-  stateOk: '#16A34A',
-  stateOkSoft: 'rgba(22,163,74,0.10)',
-  stateNeutral: '#6B6B68',
-  stateNeutralSoft: 'rgba(107,107,104,0.10)',
+  // Estados (mapeados a paleta nueva)
+  stateNew:        '#B5564A',  // danger
+  stateNewSoft:    '#F1D0CB',
+  statePrep:       '#C99551',  // warning
+  statePrepSoft:   '#F0E1C8',
+  stateOk:         '#8B9D7A',  // sage
+  stateOkSoft:     '#DDE3D3',
+  stateNeutral:    '#6B6356',  // stone
+  stateNeutralSoft:'#EFE9DD',
 
-  // Accesorios
-  danger: '#DC2626',
-  dangerSoft: 'rgba(220,38,38,0.10)',
-  dangerText: '#991B1B',
-  info: '#2563EB',
-  infoSoft: 'rgba(37,99,235,0.10)',
+  // Otros
+  dangerText: '#A8451F',
 
-  // Sombras
-  shadow: '0 1px 2px rgba(15,15,15,0.04), 0 1px 3px rgba(15,15,15,0.06)',
-  shadowMd: '0 4px 12px rgba(15,15,15,0.08)',
-  shadowLg: '0 12px 30px rgba(15,15,15,0.12)',
+  // === Sombras ===
+  shadow:   '0 1px 3px rgba(26,24,21,0.05), 0 1px 1px rgba(26,24,21,0.03)',
+  shadowMd: '0 4px 12px rgba(26,24,21,0.06), 0 1px 3px rgba(26,24,21,0.04)',
+  shadowLg: '0 14px 40px rgba(26,24,21,0.10), 0 4px 12px rgba(26,24,21,0.06)',
+  shadowGlossy: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 1px 2px rgba(26,24,21,0.20)',
 }
 
-// Escala tipográfica fija (6 tamaños)
+// Escala tipográfica fija (6 tamaños) — mantiene API existente
 export const type = {
   xxs: 11,
-  xs: 12,
-  sm: 13,
-  base: 15,
-  lg: 18,
-  xl: 22,
+  xs:  12,
+  sm:  13,
+  base:15,
+  lg:  18,
+  xl:  22,
+
+  // Familia tipográfica (nuevo)
+  family: FONT,
+  mono:   'ui-monospace, SFMono-Regular, "JetBrains Mono", monospace',
 }
 
-const FONT = "'Inter', system-ui, -apple-system, sans-serif"
+// === Radios ===
+export const radius = { sm: 8, md: 12, lg: 16, xl: 20, full: 999 }
 
 export const ds = {
   // Surfaces
   card: {
-    background: colors.surface,
-    borderRadius: 12,
+    background: colors.paper,
+    borderRadius: radius.md,
     padding: '16px 18px',
     border: `1px solid ${colors.border}`,
     boxShadow: colors.shadow,
@@ -71,8 +108,8 @@ export const ds = {
 
   // Tables (flex-based)
   table: {
-    background: colors.surface,
-    borderRadius: 12,
+    background: colors.paper,
+    borderRadius: radius.md,
     overflow: 'hidden',
     border: `1px solid ${colors.border}`,
     boxShadow: colors.shadow,
@@ -101,24 +138,24 @@ export const ds = {
 
   // Inputs
   input: {
-    padding: '0 12px', height: 36, borderRadius: 8,
+    padding: '0 12px', height: 36, borderRadius: radius.sm,
     border: `1px solid ${colors.border}`, fontSize: type.sm,
     fontFamily: FONT, width: '100%', outline: 'none',
-    background: colors.surface, color: colors.text, boxSizing: 'border-box',
+    background: colors.paper, color: colors.text, boxSizing: 'border-box',
   },
   formInput: {
-    width: '100%', padding: '0 12px', height: 38, borderRadius: 8,
+    width: '100%', padding: '0 12px', height: 38, borderRadius: radius.sm,
     border: `1px solid ${colors.border}`, fontSize: type.sm,
-    fontFamily: FONT, background: colors.surface,
+    fontFamily: FONT, background: colors.paper,
     color: colors.text, outline: 'none', boxSizing: 'border-box',
   },
   select: {
-    width: '100%', padding: '0 36px 0 12px', height: 38, borderRadius: 8,
+    width: '100%', padding: '0 36px 0 12px', height: 38, borderRadius: radius.sm,
     border: `1px solid ${colors.border}`, fontSize: type.sm,
-    fontFamily: FONT, background: colors.surface,
+    fontFamily: FONT, background: colors.paper,
     color: colors.text, outline: 'none', boxSizing: 'border-box',
     appearance: 'none', WebkitAppearance: 'none',
-    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B6B68" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>')}")`,
+    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B6356" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>')}")`,
     backgroundRepeat: 'no-repeat',
     backgroundPosition: 'right 12px center',
     cursor: 'pointer',
@@ -131,17 +168,17 @@ export const ds = {
 
   // Buttons
   filterBtn: {
-    padding: '0 12px', height: 30, borderRadius: 8,
+    padding: '0 12px', height: 30, borderRadius: radius.sm,
     border: `1px solid ${colors.border}`,
     fontSize: type.xs, fontWeight: 600, cursor: 'pointer',
-    fontFamily: FONT, background: colors.surface, color: colors.textDim,
+    fontFamily: FONT, background: colors.paper, color: colors.textDim,
     display: 'inline-flex', alignItems: 'center', gap: 6,
   },
   actionBtn: {
-    padding: '0 12px', height: 30, borderRadius: 8,
+    padding: '0 12px', height: 30, borderRadius: radius.sm,
     border: `1px solid ${colors.border}`,
     fontSize: type.xs, fontWeight: 600, cursor: 'pointer', fontFamily: FONT,
-    background: colors.surface, color: colors.text,
+    background: colors.paper, color: colors.text,
   },
   backBtn: {
     background: 'none', border: 'none', fontSize: type.sm, fontWeight: 600,
@@ -149,37 +186,80 @@ export const ds = {
     marginBottom: 16, padding: 0,
   },
   primaryBtn: {
-    padding: '0 16px', height: 38, borderRadius: 8,
+    padding: '0 16px', height: 38, borderRadius: radius.sm,
     border: `1px solid ${colors.primary}`,
-    background: colors.primary, color: '#fff',
+    background: colors.primary, color: colors.cream,
+    fontSize: type.sm, fontWeight: 600,
+    cursor: 'pointer', fontFamily: FONT,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  // CTA glossy ink — botón hero del nuevo sistema
+  glossyBtn: {
+    padding: '0 18px', height: 42, borderRadius: radius.sm,
+    background: `linear-gradient(180deg, ${colors.ink2} 0%, ${colors.ink} 100%)`,
+    color: colors.cream,
+    border: '1px solid #000',
+    boxShadow: colors.shadowGlossy,
     fontSize: type.sm, fontWeight: 600,
     cursor: 'pointer', fontFamily: FONT,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   secondaryBtn: {
-    padding: '0 16px', height: 38, borderRadius: 8,
+    padding: '0 16px', height: 38, borderRadius: radius.sm,
     border: `1px solid ${colors.border}`,
-    background: colors.surface, color: colors.text,
+    background: colors.paper, color: colors.text,
     fontSize: type.sm, fontWeight: 600,
     cursor: 'pointer', fontFamily: FONT,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
+  // Ghost button — outline cream estilo bundle
+  ghostBtn: {
+    padding: '0 14px', height: 38, borderRadius: radius.sm,
+    border: `1px solid ${colors.borderStrong}`,
+    background: colors.paper, color: colors.ink,
+    fontSize: type.sm, fontWeight: 600,
+    cursor: 'pointer', fontFamily: FONT,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  // Mini button — compacto para acciones de fila (Editar / Eliminar)
+  miniBtn: {
+    padding: '4px 10px', height: 26, borderRadius: 7,
+    border: `1px solid ${colors.border}`,
+    background: colors.paper, color: colors.ink2,
+    fontSize: type.xxs, fontWeight: 700, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: FONT,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  miniBtnDanger: {
+    padding: '4px 10px', height: 26, borderRadius: 7,
+    border: `1px solid ${colors.dangerSoft}`,
+    background: colors.dangerSoft, color: colors.danger,
+    fontSize: type.xxs, fontWeight: 700, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: FONT,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  // Section label — uppercase muted
+  sectionLabel: {
+    fontSize: type.xxs, fontWeight: 800, color: colors.stone2,
+    textTransform: 'uppercase', letterSpacing: '0.08em',
+    marginBottom: 10,
+  },
 
   // Typography
-  h1: { fontSize: type.xl, fontWeight: 800, color: colors.text, letterSpacing: '-0.4px' },
-  h2: { fontSize: type.lg, fontWeight: 700, color: colors.text, marginBottom: 12, letterSpacing: '-0.2px' },
+  h1: { fontSize: type.xl, fontWeight: 700, color: colors.text, letterSpacing: '-0.02em', fontFamily: FONT },
+  h2: { fontSize: type.lg, fontWeight: 700, color: colors.text, marginBottom: 12, letterSpacing: '-0.015em', fontFamily: FONT },
   muted: { color: colors.textMute, fontSize: type.xs },
   dim: { color: colors.textDim, fontSize: type.sm },
 
   // Modal
   modal: {
-    position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)',
+    position: 'fixed', inset: 0, background: 'rgba(26,24,21,0.45)',
     zIndex: 1000, display: 'flex', alignItems: 'center',
     justifyContent: 'center', backdropFilter: 'blur(4px)',
     padding: 16,
   },
   modalContent: {
-    background: colors.surface, borderRadius: 14, padding: 22,
+    background: colors.paper, borderRadius: radius.lg, padding: 22,
     width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto',
     border: `1px solid ${colors.borderStrong}`,
     boxShadow: colors.shadowLg,
@@ -214,4 +294,32 @@ export function stateBadge(estado) {
 // Helper útil para reutilizar label desde el resultado de stateBadge
 export function stateLabel(estado) {
   return stateBadge(estado)._label
+}
+
+// Chip — pill compacto coloreado por tono
+// Uso: <span style={chip('sage', { dot: true })}>Online</span>
+export function chip(tone = 'paper', { dot = false } = {}) {
+  const tones = {
+    paper:      { bg: colors.paper,        fg: colors.ink2,    bd: colors.border       },
+    sage:       { bg: colors.sageSoft,     fg: colors.sage2,   bd: colors.sageSoft     },
+    terracotta: { bg: colors.terracottaSoft,fg: colors.terracotta2, bd: colors.terracottaSoft },
+    warning:    { bg: colors.warningSoft,  fg: '#8B6126',      bd: colors.warningSoft  },
+    danger:     { bg: colors.dangerSoft,   fg: colors.danger,  bd: colors.dangerSoft   },
+    info:       { bg: colors.infoSoft,     fg: '#4A6480',      bd: colors.infoSoft     },
+    ink:        { bg: colors.ink2,         fg: colors.cream,   bd: colors.ink          },
+  }
+  const t = tones[tone] || tones.paper
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    background: t.bg, color: t.fg, border: `1px solid ${t.bd}`,
+    fontSize: type.xxs, fontWeight: 700,
+    padding: dot ? '3px 9px' : '3px 8px',
+    borderRadius: 999, letterSpacing: '0.02em',
+    fontFamily: FONT,
+  }
+}
+
+// Dot interior para chips con dot=true (renderizado con un <span> antes del texto)
+export const chipDot = {
+  width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
 }

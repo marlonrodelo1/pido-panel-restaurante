@@ -251,32 +251,32 @@ export default function FinanzasRiders() {
   const hastaVisible = new Date(hasta.getTime() - 1)
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 220px', minWidth: 0 }}>
           <h1 style={{ ...ds.h1, margin: 0 }}>Finanzas con el socio</h1>
-          <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4, lineHeight: 1.4 }}>
-            Ventas, métricas y pagos a tus socios repartidores en el periodo elegido.
+          <div style={{ fontSize: type.sm, color: colors.stone, marginTop: 4, lineHeight: 1.4 }}>
+            Resumen de lo que debes a tus socios repartidores este periodo
           </div>
         </div>
-        <button onClick={descargarCSV} disabled={entregados.length === 0} style={{ ...ds.primaryBtn, opacity: entregados.length === 0 ? 0.5 : 1 }}>
+        <button onClick={descargarCSV} disabled={entregados.length === 0} style={{ ...ds.ghostBtn, opacity: entregados.length === 0 ? 0.5 : 1 }}>
           Descargar CSV
         </button>
       </div>
 
-      {/* Selector rango */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+      {/* Selector rango pills */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 18 }}>
         {RANGOS.map(r => {
           const active = r.id === rango
           return (
             <button key={r.id} onClick={() => setRango(r.id)} style={{
               padding: '7px 14px', borderRadius: 999,
-              border: `1px solid ${active ? colors.primaryBorder : colors.border}`,
-              background: active ? colors.primarySoft : colors.surface,
-              color: active ? colors.primary : colors.textDim,
+              border: active ? 'none' : `1px solid ${colors.borderStrong}`,
+              background: active ? colors.terracotta : colors.paper,
+              color: active ? '#fff' : colors.stone,
               fontSize: type.xs, fontWeight: 600, cursor: 'pointer',
-              fontFamily: "'Inter', system-ui, sans-serif",
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             }}>
               {r.label}
             </button>
@@ -301,13 +301,30 @@ export default function FinanzasRiders() {
         <div style={{ padding: 32, textAlign: 'center', color: colors.textMute, fontSize: type.sm }}>Cargando...</div>
       ) : !error && (
         <>
-          {/* Card principal ventas */}
-          <div style={{ background: 'linear-gradient(135deg, #FF6B2C, #E85A1F)', borderRadius: 14, padding: '20px 22px', marginBottom: 16 }}>
-            <div style={{ fontSize: type.xs, fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: 6 }}>Ventas entregadas</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: -1 }}>{fmtMoney(stats.ventas)}</div>
-            <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: type.xs, color: 'rgba(255,255,255,0.9)', flexWrap: 'wrap' }}>
-              <span>💳 {fmtMoney(stats.ventasTarjeta)} ({stats.pedTarjeta})</span>
-              <span>💵 {fmtMoney(stats.ventasEfectivo)} ({stats.pedEfectivo})</span>
+          {/* Hero ventas — gradient terracotta */}
+          <div style={{
+            background: `linear-gradient(135deg, ${colors.terracotta} 0%, ${colors.terracotta2} 100%)`,
+            borderRadius: 16, padding: 28, marginBottom: 18,
+            color: '#fff',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.85, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Ventas entregadas</div>
+            <div style={{
+              fontFamily: 'ui-monospace, monospace', fontSize: 48, fontWeight: 800,
+              color: '#fff', marginTop: 6, letterSpacing: '-0.02em',
+            }}>{fmtMoney(stats.ventas)}</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'rgba(255,255,255,0.18)', color: '#fff',
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 700,
+              }}>💳 Tarjeta · {fmtMoney(stats.ventasTarjeta)} · {stats.pedTarjeta} pedidos</span>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'rgba(255,255,255,0.18)', color: '#fff',
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 700,
+              }}>💵 Efectivo · {fmtMoney(stats.ventasEfectivo)} · {stats.pedEfectivo} pedidos</span>
             </div>
           </div>
 
@@ -402,7 +419,7 @@ export default function FinanzasRiders() {
                           ) : (
                             <div style={{
                               width: 36, height: 36, borderRadius: 10,
-                              background: 'linear-gradient(135deg, #FF6B2C 0%, #E85A1F 100%)',
+                              background: 'linear-gradient(135deg, #C5562C 0%, #A8451F 100%)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
                               fontSize: type.sm, fontWeight: 800, flexShrink: 0,
                             }}>{nombre?.[0]?.toUpperCase() || '?'}</div>
@@ -610,8 +627,15 @@ export default function FinanzasRiders() {
             )}
           </div>
 
-          <div style={{ fontSize: type.xs, color: colors.textMute, lineHeight: 1.5, padding: '12px 14px', borderRadius: 10, background: colors.surface, border: `1px solid ${colors.border}` }}>
-            ⓘ Recomendación Pidoo: paga al socio <strong style={{ color: colors.text }}>10% del subtotal + 100% del envío + propina</strong> por cada pedido entregado. Puedes pactar otra cifra libremente con él.
+          <div style={{
+            padding: 18, borderRadius: 12, background: colors.infoSoft, border: 'none',
+            display: 'flex', gap: 14, alignItems: 'flex-start',
+            fontSize: type.sm, color: '#4A6480', lineHeight: 1.55,
+          }}>
+            <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>ⓘ</span>
+            <div>
+              <b>Recomendación Pidoo:</b> paga al socio <b>10% del subtotal + 100% del envío + 100% de la propina</b>. Tú decides cómo y cuándo le pagas (Bizum, transferencia, efectivo). Pidoo no procesa estos pagos.
+            </div>
           </div>
         </>
       )}

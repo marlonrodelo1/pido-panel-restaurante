@@ -1,22 +1,17 @@
 // EliminarCuenta — pantalla de borrado de cuenta del restaurante.
-// Cumple requisito de Google Play / App Store (Data Safety: cuenta eliminable
-// desde la propia app sin pasar por web).
-//
-// Flujo: pide email + contraseña actual → re-autentica con signInWithPassword
-// → invoca edge function eliminar_cuenta_restaurante → logout + redirect.
-//
-// La pantalla la abre Ajustes.jsx desde la "zona peligrosa" al final.
+// Cumple requisito de Google Play / App Store (Data Safety).
 
 import { useState } from 'react'
-import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, AlertCircle, XCircle, Check, ArrowRight, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
+import { colors, type, ds } from '../lib/uiStyles'
 
 const FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`
 
 export default function EliminarCuenta({ onBack }) {
   const { user, restaurante, logout } = useRest()
-  const [paso, setPaso] = useState(1) // 1=aviso, 2=confirmacion con password
+  const [paso, setPaso] = useState(1)
   const [password, setPassword] = useState('')
   const [confirmText, setConfirmText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,14 +27,12 @@ export default function EliminarCuenta({ onBack }) {
 
     setLoading(true)
     try {
-      // 1) Re-autenticar con la contraseña actual para confirmar identidad
       const { error: authErr } = await supabase.auth.signInWithPassword({
         email: user.email,
         password,
       })
       if (authErr) throw new Error('Contraseña incorrecta')
 
-      // 2) Llamar edge function (recoge JWT vigente)
       const { data: { session } } = await supabase.auth.getSession()
       const r = await fetch(`${FUNCTIONS_URL}/eliminar_cuenta_restaurante`, {
         method: 'POST',
@@ -53,7 +46,6 @@ export default function EliminarCuenta({ onBack }) {
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || 'No se pudo eliminar la cuenta')
 
-      // 3) Logout + redirigir a Login con flag
       try { await logout() } catch (_) {}
       try { localStorage.setItem('pidoo_cuenta_eliminada', '1') } catch (_) {}
       try { sessionStorage.clear() } catch (_) {}
@@ -64,128 +56,144 @@ export default function EliminarCuenta({ onBack }) {
     }
   }
 
+  const itemsQuePasa = [
+    'La suscripción Pidoo se cancela inmediatamente',
+    'Tu URL pública se desactiva al instante',
+    'Todos los datos del perfil se borran',
+    'No hay forma de recuperar la cuenta',
+  ]
+  const itemsQueSeConserva = [
+    'Las facturas ya emitidas (obligación legal)',
+    'Los datos contables (art. 30 CCom · 6 años)',
+    'Registro de pedidos finalizados anonimizado',
+    'Tickets de soporte para resolución de incidencias',
+  ]
+
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', paddingBottom: 80 }}>
+    <div style={{ maxWidth: 600, margin: '0 auto', paddingBottom: 80 }}>
       <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 6, background: 'none',
-        border: 'none', color: 'var(--c-text)', fontSize: 13, fontWeight: 600,
-        cursor: 'pointer', fontFamily: 'inherit', marginBottom: 16, padding: 0,
+        display: 'flex', alignItems: 'center', gap: 6,
+        background: 'none', border: 'none',
+        color: colors.stone, fontSize: type.sm, fontWeight: 600,
+        cursor: 'pointer', fontFamily: 'inherit',
+        marginBottom: 18, padding: '6px 0',
       }}>
-        <ArrowLeft size={16} /> Volver
+        <ArrowLeft size={14} /> Volver a ajustes
       </button>
 
+      {/* Card danger-soft */}
       <div style={{
-        background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)',
-        borderRadius: 14, padding: 16, marginBottom: 16,
-        display: 'flex', gap: 12, alignItems: 'flex-start',
+        background: colors.dangerSoft,
+        border: 'none',
+        borderRadius: 12,
+        padding: 22,
+        marginBottom: 14,
       }}>
-        <AlertTriangle size={22} color="#DC2626" style={{ flexShrink: 0, marginTop: 2 }} />
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#DC2626', marginBottom: 6 }}>
-            Eliminar cuenta de restaurante
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: '#fff', color: colors.danger,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <AlertCircle size={24} />
           </div>
-          <div style={{ fontSize: 13, color: 'var(--c-text)', lineHeight: 1.5 }}>
-            Esta acción es <strong>irreversible</strong>. No podrás recuperar tu cuenta ni los datos asociados.
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: colors.danger, letterSpacing: '-0.015em' }}>
+              Eliminar cuenta
+            </div>
+            <div style={{ fontSize: type.sm, color: colors.danger, marginTop: 6, lineHeight: 1.5 }}>
+              Esta acción es <b>irreversible</b>. Tu cuenta, datos y URL pública se eliminarán de forma permanente.
+            </div>
           </div>
         </div>
       </div>
 
-      <div style={{
-        background: 'var(--c-surface)', border: '1px solid var(--c-border)',
-        borderRadius: 14, padding: 18, marginBottom: 16,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>
-          Qué pasará al eliminar tu cuenta
+      {/* Listas 2-col */}
+      <div style={{ ...ds.card, padding: 22, marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22 }}>
+          <div>
+            <div style={{ ...ds.sectionLabel, color: colors.danger }}>Qué pasará</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {itemsQuePasa.map(t => (
+                <div key={t} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: type.sm, color: colors.ink }}>
+                  <XCircle size={15} style={{ color: colors.danger, flexShrink: 0, marginTop: 2 }} />
+                  <span>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ ...ds.sectionLabel, color: colors.sage2 }}>Qué se conserva</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {itemsQueSeConserva.map(t => (
+                <div key={t} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: type.sm, color: colors.ink }}>
+                  <Check size={15} style={{ color: colors.sage2, flexShrink: 0, marginTop: 2 }} />
+                  <span>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <ul style={{ fontSize: 13, color: 'var(--c-muted)', lineHeight: 1.7, paddingLeft: 18, margin: 0 }}>
-          <li>Tu cuenta de acceso se borrará por completo (email + contraseña).</li>
-          <li>Tu restaurante dejará de aparecer en Pidoo y no recibirá más pedidos.</li>
-          <li>Se eliminarán los tokens de notificaciones de tu dispositivo.</li>
-          <li>Se eliminarán de Pidoo tu email, teléfono y datos fiscales.</li>
-        </ul>
-
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-text)', margin: '14px 0 10px' }}>
-          Qué se conserva (obligación legal)
-        </div>
-        <ul style={{ fontSize: 13, color: 'var(--c-muted)', lineHeight: 1.7, paddingLeft: 18, margin: 0 }}>
-          <li>Histórico de pedidos completados (mín. 6 años — art. 30 Código de Comercio).</li>
-          <li>Comisiones, facturas y movimientos contables anonimizados.</li>
-        </ul>
       </div>
 
-      {paso === 1 && (
-        <button
-          onClick={() => setPaso(2)}
-          style={{
-            width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
-            background: '#DC2626', color: '#fff',
-            fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          Continuar con la eliminación
-        </button>
-      )}
-
-      {paso === 2 && (
-        <div style={{
-          background: 'var(--c-surface)', border: '1px solid var(--c-border)',
-          borderRadius: 14, padding: 18,
+      {paso === 1 ? (
+        <button onClick={() => setPaso(2)} style={{
+          width: '100%', padding: '14px 16px', borderRadius: 12, border: 'none',
+          background: colors.danger, color: '#fff',
+          fontFamily: "'Plus Jakarta Sans', sans-serif",
+          fontWeight: 700, fontSize: 15, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-text)', marginBottom: 12 }}>
-            Confirma con tu contraseña
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-              Email
-            </label>
-            <input
-              value={user?.email || ''}
-              readOnly
-              style={{
-                width: '100%', padding: '10px 12px', borderRadius: 8,
-                border: '1px solid var(--c-border)', background: 'var(--c-surface2)',
-                color: 'var(--c-muted)', fontSize: 13, fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-              Contraseña actual
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              style={{
-                width: '100%', padding: '10px 12px', borderRadius: 8,
-                border: '1px solid var(--c-border)', background: 'var(--c-surface)',
-                color: 'var(--c-text)', fontSize: 13, fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-              Escribe <strong style={{ color: '#DC2626' }}>ELIMINAR</strong> para confirmar
-            </label>
-            <input
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder="ELIMINAR"
-              style={{
-                width: '100%', padding: '10px 12px', borderRadius: 8,
-                border: '1px solid var(--c-border)', background: 'var(--c-surface)',
-                color: 'var(--c-text)', fontSize: 13, fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
-            />
+          Continuar con la eliminación <ArrowRight size={15} />
+        </button>
+      ) : (
+        <div style={{ ...ds.card, padding: 22 }}>
+          <div style={{ ...ds.h2, marginBottom: 16 }}>Confirma tu identidad</div>
+
+          <label style={ds.label}>Email</label>
+          <input
+            value={user?.email || ''}
+            readOnly
+            style={{ ...ds.formInput, marginBottom: 14, color: colors.stone, background: colors.cream2 }}
+          />
+
+          <label style={ds.label}>Contraseña actual</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            placeholder="Tu contraseña actual"
+            style={{ ...ds.formInput, marginBottom: 14 }}
+          />
+
+          <label style={ds.label}>Escribe ELIMINAR para confirmar</label>
+          <input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="ELIMINAR"
+            style={{
+              ...ds.formInput,
+              marginBottom: 14,
+              fontFamily: 'ui-monospace, monospace',
+              letterSpacing: '0.04em',
+            }}
+          />
+
+          <div style={{
+            background: colors.dangerSoft,
+            borderRadius: 10, padding: '10px 12px',
+            fontSize: 12, color: colors.danger,
+            marginBottom: 18,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <AlertCircle size={14} /> Última oportunidad para volver atrás.
           </div>
 
           {error && (
             <div style={{
-              background: 'rgba(220,38,38,0.08)', color: '#DC2626',
+              background: colors.dangerSoft, color: colors.danger,
               padding: '10px 12px', borderRadius: 8, marginBottom: 12,
               fontSize: 12, fontWeight: 600,
             }}>
@@ -193,17 +201,11 @@ export default function EliminarCuenta({ onBack }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={() => setPaso(1)}
               disabled={loading}
-              style={{
-                flex: 1, padding: '12px 0', borderRadius: 10,
-                border: '1px solid var(--c-border)', background: 'var(--c-surface)',
-                color: 'var(--c-text)', fontSize: 13, fontWeight: 700,
-                cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit',
-                opacity: loading ? 0.6 : 1,
-              }}
+              style={{ ...ds.ghostBtn, flex: 1, opacity: loading ? 0.5 : 1 }}
             >
               Cancelar
             </button>
@@ -211,13 +213,16 @@ export default function EliminarCuenta({ onBack }) {
               onClick={eliminar}
               disabled={loading}
               style={{
-                flex: 2, padding: '12px 0', borderRadius: 10, border: 'none',
-                background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 800,
-                cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit',
+                flex: 1, padding: '12px 16px', borderRadius: 10, border: 'none',
+                background: colors.danger, color: '#fff',
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                fontWeight: 700, fontSize: 14,
+                cursor: loading ? 'default' : 'pointer',
                 opacity: loading ? 0.6 : 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               }}
             >
-              {loading ? 'Eliminando…' : 'Eliminar cuenta permanentemente'}
+              <Trash2 size={14} /> {loading ? 'Eliminando…' : 'Eliminar definitivamente'}
             </button>
           </div>
         </div>
