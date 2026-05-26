@@ -354,7 +354,7 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
           padding: '18px 22px', borderBottom: `1px solid ${colors.border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ ...ds.h2, fontSize: 19, margin: 0 }}>Activar Plan SaaS</div>
+          <div style={{ ...ds.h2, fontSize: 19, margin: 0 }}>Activar Suscripción</div>
         </div>
 
         {/* Body */}
@@ -371,7 +371,7 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
                 <span style={{ color: colors.terracotta2, fontSize: 13, fontWeight: 600, marginLeft: 2 }}>/mes</span>
               </div>
               <div style={{ fontSize: 12, color: colors.terracotta2, textAlign: 'center', marginTop: 6, fontWeight: 600 }}>
-                0% comisión · Cancela cuando quieras
+                5% por pagos con tarjeta · Cancela cuando quieras
               </div>
             </div>
 
