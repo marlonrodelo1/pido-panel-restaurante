@@ -80,6 +80,13 @@ export default function Ajustes() {
   const [obteniendoUbi, setObteniendoUbi] = useState(false)
   const [ubiOk, setUbiOk] = useState(!!restaurante?.latitud)
 
+  // Métodos de pago aceptados por el restaurante (default: los 3 activos)
+  const [aceptaEfectivo, setAceptaEfectivo] = useState(restaurante?.acepta_efectivo ?? true)
+  const [aceptaTarjetaOnline, setAceptaTarjetaOnline] = useState(restaurante?.acepta_tarjeta_online ?? true)
+  const [aceptaDatafono, setAceptaDatafono] = useState(restaurante?.acepta_datafono ?? true)
+  // Si true, el cliente debe registrarse. Default false = guest checkout permitido.
+  const [exigeRegistro, setExigeRegistro] = useState(restaurante?.exige_registro_cliente ?? false)
+
   // Delivery config (algoritmo + tarifa)
   const [deliveryCfg, setDeliveryCfg] = useState({
     algoritmo_asignacion: 'nearest',
@@ -303,6 +310,10 @@ export default function Ajustes() {
       codigo_postal: codigoPostalFiscal.trim() || null,
       ciudad_fiscal: ciudadFiscal.trim() || null,
       provincia_fiscal: provinciaFiscal.trim() || null,
+      acepta_efectivo: aceptaEfectivo,
+      acepta_tarjeta_online: aceptaTarjetaOnline,
+      acepta_datafono: aceptaDatafono,
+      exige_registro_cliente: exigeRegistro,
     }
     if (direccion.trim() && direccion.trim() !== (restaurante?.direccion || '')) {
       try {
@@ -638,6 +649,59 @@ export default function Ajustes() {
         <button onClick={toggleActivo} style={{ width: 52, height: 28, borderRadius: 14, border: 'none', background: activo ? '#8B9D7A' : 'rgba(0,0,0,0.2)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', minHeight: 44, minWidth: 52, display: 'flex', alignItems: 'center', padding: 0 }}>
           <span style={{ position: 'absolute', top: 3, left: activo ? 27 : 3, width: 22, height: 22, borderRadius: 11, background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
         </button>
+      </div>
+
+      {/* Métodos de pago aceptados */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Métodos de pago</h3>
+        <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14 }}>
+          Elige qué métodos puede usar el cliente al pagar. Solo se mostrarán los activos.
+        </div>
+        <PayToggle
+          label="Pago en efectivo"
+          sub="El rider cobra al entregar (sin comisión Pidoo)."
+          value={aceptaEfectivo}
+          onChange={setAceptaEfectivo}
+        />
+        <PayToggle
+          label="Pago online (tarjeta)"
+          sub="Cobro inmediato con Stripe en el checkout. Pidoo retiene 5% del subtotal."
+          value={aceptaTarjetaOnline}
+          onChange={setAceptaTarjetaOnline}
+        />
+        <PayToggle
+          label="Datáfono al entregar"
+          sub="Tú prestas tu TPV al rider y este cobra en el domicilio del cliente."
+          value={aceptaDatafono}
+          onChange={setAceptaDatafono}
+        />
+        {!aceptaEfectivo && !aceptaTarjetaOnline && !aceptaDatafono && (
+          <div style={{
+            marginTop: 10, padding: '10px 12px', borderRadius: 10,
+            background: 'rgba(239,68,68,0.10)', color: '#B5564A',
+            fontSize: 12, fontWeight: 600,
+          }}>
+            ⚠️ Has desactivado todos los métodos de pago. El cliente no podrá pedir.
+          </div>
+        )}
+      </div>
+
+      {/* Acceso del cliente */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Acceso del cliente</h3>
+        <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14 }}>
+          Decide si el cliente debe crear cuenta para pedir o puede hacerlo como invitado.
+        </div>
+        <PayToggle
+          label="Exigir registro"
+          sub={
+            exigeRegistro
+              ? 'El cliente debe crear cuenta o iniciar sesión antes de pedir.'
+              : 'Guest checkout activo: el cliente pide con solo nombre, teléfono y dirección.'
+          }
+          value={exigeRegistro}
+          onChange={setExigeRegistro}
+        />
       </div>
 
       {/* Logo */}
@@ -1510,6 +1574,48 @@ export default function Ajustes() {
         </div>
       )}
 
+    </div>
+  )
+}
+
+/**
+ * Toggle reutilizable para métodos de pago / acceso del cliente.
+ * Una fila con label + subtítulo + switch a la derecha.
+ */
+function PayToggle({ label, sub, value, onChange }) {
+  return (
+    <div
+      onClick={() => onChange(!value)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '12px 0',
+        borderTop: '1px solid var(--c-border)',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-text)' }}>{label}</div>
+        {sub && (
+          <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 2, lineHeight: 1.4 }}>{sub}</div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onChange(!value) }}
+        aria-label={label}
+        style={{
+          width: 46, height: 26, borderRadius: 13, border: 'none',
+          background: value ? '#8B9D7A' : 'rgba(0,0,0,0.2)',
+          cursor: 'pointer', position: 'relative', flexShrink: 0,
+          transition: 'background 0.2s',
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 3, left: value ? 23 : 3,
+          width: 20, height: 20, borderRadius: 10, background: '#fff',
+          transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        }} />
+      </button>
     </div>
   )
 }
