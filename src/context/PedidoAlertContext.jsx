@@ -64,6 +64,10 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, payload => {
         if (payload.new.canal !== 'pido') return
+        // Solo pedidos PAGADOS (estado 'nuevo'). Un pedido con tarjeta se inserta
+        // primero como 'pendiente_pago' y NO debe avisar al restaurante ni sonar
+        // la alarma hasta que el pago se confirme (pasa a 'nuevo' vía UPDATE).
+        if (payload.new.estado !== 'nuevo') return
         setPedidosNuevos(prev => {
           if (prev.some(p => p.id === payload.new.id)) return prev
           return [payload.new, ...prev]
@@ -83,7 +87,21 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
       }, payload => {
         if (payload.new.canal !== 'pido') return
         const p = payload.new
-        if (p.estado !== 'nuevo') {
+        if (p.estado === 'nuevo') {
+          // Transición a 'nuevo' (p.ej. 'pendiente_pago' → 'nuevo' al confirmarse
+          // el pago con tarjeta): AHORA sí entra como pedido nuevo y suena.
+          setPedidosNuevos(prev => {
+            if (prev.some(x => x.id === p.id)) return prev
+            return [p, ...prev]
+          })
+          setSilenciada(false)
+          silenciadaRef.current = false
+          if (isNative) {
+            startAlarm()
+            notificarNuevoPedido(p.codigo)
+          }
+          if (onNuevoPedidoRef.current) onNuevoPedidoRef.current(p)
+        } else {
           setPedidosNuevos(prev => {
             const remaining = prev.filter(x => x.id !== p.id)
             if (remaining.length === 0) stopAlarm()

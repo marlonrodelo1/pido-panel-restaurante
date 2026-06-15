@@ -9,7 +9,7 @@ import { colors, type, ds, chip } from '../lib/uiStyles'
 
 const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 const stripePromise = STRIPE_KEY ? loadStripe(STRIPE_KEY) : null
-const MONTO = 30.0
+const MONTO = 39.0
 
 const cardElementOptions = {
   style: {
@@ -98,7 +98,7 @@ export default function PlanSaaS() {
       <div style={{ marginBottom: 22 }}>
         <h1 style={{ ...ds.h1, margin: 0 }}>Suscripción</h1>
         <div style={{ fontSize: type.sm, color: colors.stone, marginTop: 4 }}>
-          30€/mes · 5% por pagos con tarjeta · Cancela cuando quieras
+          39€/mes · pequeña comisión por pago con tarjeta · Cancela cuando quieras
         </div>
       </div>
 
@@ -219,7 +219,7 @@ export default function PlanSaaS() {
             Activa el Plan Pidoo SaaS
           </h2>
           <div style={{ fontSize: type.sm, color: colors.stone, marginBottom: 18, lineHeight: 1.5 }}>
-            Por <strong style={{ color: colors.ink }}>{MONTO.toFixed(2)}€/mes</strong> · <strong>5% por pagos con tarjeta</strong> · Cancela cuando quieras.
+            Por <strong style={{ color: colors.ink }}>{MONTO.toFixed(2)}€/mes</strong> · <strong>pequeña comisión por pago con tarjeta</strong> · Cancela cuando quieras.
           </div>
           <button onClick={() => setShowPay(true)} style={{ ...ds.glossyBtn, height: 46, padding: '0 22px' }}>
             Activar plan {MONTO.toFixed(2).replace('.', ',')} €/mes
@@ -371,7 +371,7 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
                 <span style={{ color: colors.terracotta2, fontSize: 13, fontWeight: 600, marginLeft: 2 }}>/mes</span>
               </div>
               <div style={{ fontSize: 12, color: colors.terracotta2, textAlign: 'center', marginTop: 6, fontWeight: 600 }}>
-                5% por pagos con tarjeta · Cancela cuando quieras
+                Comisión reducida por pago con tarjeta · Cancela cuando quieras
               </div>
             </div>
 
