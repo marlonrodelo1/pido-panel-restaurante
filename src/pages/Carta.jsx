@@ -138,18 +138,12 @@ export default function Carta() {
       setErrorCarta('Precio inválido. Usa punto como decimal (ej: 0.50)')
       return
     }
-    const precioTienda = parsePrecio(prodForm.precio_tienda_publica)
-    if (precioTienda !== null && (Number.isNaN(precioTienda) || precioTienda < 0)) {
-      setErrorCarta('Precio tienda pública inválido')
-      return
-    }
     setSaving(true)
     setErrorCarta(null)
     const baseData = {
       nombre: prodForm.nombre.trim(),
       descripcion: prodForm.descripcion.trim() || null,
       precio,
-      precio_tienda_publica: precioTienda,
       categoria_id: prodForm.categoria_id || null,
       imagen_url: prodForm.imagen_url || null,
     }
@@ -605,18 +599,9 @@ export default function Carta() {
                 <label style={ds.label}>Nombre</label>
                 <input value={prodForm.nombre} onChange={e => setProdForm({ ...prodForm, nombre: e.target.value })} placeholder="Ej: Pizza Margarita" style={ds.formInput} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={ds.label}>Precio</label>
-                  <input type="number" step="0.01" value={prodForm.precio} onChange={e => setProdForm({ ...prodForm, precio: e.target.value })} placeholder="9.50" style={ds.formInput} />
-                </div>
-                <div>
-                  <label style={{ ...ds.label, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Precio tienda pública
-                    <span style={{ ...chip('warning'), fontSize: 10, padding: '1px 6px' }}>PLAN 39€</span>
-                  </label>
-                  <input type="number" step="0.01" value={prodForm.precio_tienda_publica} onChange={e => setProdForm({ ...prodForm, precio_tienda_publica: e.target.value })} placeholder="Igual que precio" style={ds.formInput} />
-                </div>
+              <div>
+                <label style={ds.label}>Precio (€)</label>
+                <input type="number" step="0.01" value={prodForm.precio} onChange={e => setProdForm({ ...prodForm, precio: e.target.value })} placeholder="9.50" style={ds.formInput} />
               </div>
               <div>
                 <label style={ds.label}>Descripción</label>
