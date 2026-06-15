@@ -225,7 +225,6 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
     { id: 'historial', Icon: ClipboardList, label: 'Historial' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
     { id: 'promos', Icon: Tag, label: 'Promociones' },
-    { id: 'metricas', Icon: BarChart3, label: 'Métricas' },
     { id: 'ajustes', Icon: Settings, label: 'Ajustes' },
   ]
   const more = [
