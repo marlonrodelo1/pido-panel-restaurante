@@ -5,11 +5,35 @@ import { ExternalLink, Copy, CheckCircle2, AlertCircle, CreditCard, Download } f
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { toast, confirmar } from '../App'
-import { colors, type, ds, chip } from '../lib/uiStyles'
+import { colors, type, ds, chip, radius } from '../lib/uiStyles'
 
 const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 const stripePromise = STRIPE_KEY ? loadStripe(STRIPE_KEY) : null
-const MONTO = 39.0
+
+// Planes disponibles. El server (crear-suscripcion-tienda v7) elige el Price real
+// según `plan`. Aquí solo mantenemos los importes para mostrarlos.
+const PLANES = {
+  mensual: {
+    id: 'mensual',
+    label: 'Mensual',
+    precioMes: 30,          // 30 €/mes
+    total: 30,
+    periodo: '/mes',
+    facturacion: 'Facturado cada mes',
+  },
+  anual: {
+    id: 'anual',
+    label: 'Anual',
+    precioMes: 26,          // 26 €/mes equivalente
+    total: 312,             // 312 €/año
+    periodo: '/año',
+    facturacion: 'Facturado una vez al año',
+    ahorro: 'Ahorra ~13%',
+  },
+}
+const MONTO = 30.0 // importe mensual base (compat. con secciones que muestran /mes)
+
+const eur = (n) => Number(n).toFixed(2).replace('.', ',')
 
 const cardElementOptions = {
   style: {
@@ -39,6 +63,7 @@ export default function PlanSaaS() {
   const [loading, setLoading] = useState(true)
   const [showPay, setShowPay] = useState(false)
   const [facturas, setFacturas] = useState([])
+  const [plan, setPlan] = useState('anual') // 'mensual' | 'anual' — anual recomendado por defecto
 
   useEffect(() => {
     if (!restaurante?.id) return
@@ -98,7 +123,7 @@ export default function PlanSaaS() {
       <div style={{ marginBottom: 22 }}>
         <h1 style={{ ...ds.h1, margin: 0 }}>Suscripción</h1>
         <div style={{ fontSize: type.sm, color: colors.stone, marginTop: 4 }}>
-          39€/mes · pequeña comisión por pago con tarjeta · Cancela cuando quieras
+          Desde 30€/mes · 7 días de prueba gratis · Cancela cuando quieras
         </div>
       </div>
 
@@ -206,24 +231,37 @@ export default function PlanSaaS() {
 
       {/* CTA activar si inactivo/canceled */}
       {(!sub || estado === 'inactive' || estado === 'canceled') && (
-        <div style={{ ...ds.card, padding: 28, textAlign: 'center', marginBottom: 14 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 14,
-            background: colors.terracottaSoft, color: colors.terracotta2,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            marginBottom: 12,
-          }}>
-            <CreditCard size={28} strokeWidth={2} />
+        <div style={{ ...ds.card, padding: 28, marginBottom: 14 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: 14,
+              background: colors.terracottaSoft, color: colors.terracotta2,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              marginBottom: 12,
+            }}>
+              <CreditCard size={28} strokeWidth={2} />
+            </div>
+            <h2 style={{ ...ds.h2, marginBottom: 6 }}>
+              Activa el Plan Pidoo SaaS
+            </h2>
+            <div style={{ fontSize: type.sm, color: colors.stone, marginBottom: 18, lineHeight: 1.5 }}>
+              <strong style={{ color: colors.ink }}>7 días de prueba gratis</strong>. Luego se cobra según el plan que elijas · Cancela cuando quieras.
+            </div>
           </div>
-          <h2 style={{ ...ds.h2, marginBottom: 6 }}>
-            Activa el Plan Pidoo SaaS
-          </h2>
-          <div style={{ fontSize: type.sm, color: colors.stone, marginBottom: 18, lineHeight: 1.5 }}>
-            Por <strong style={{ color: colors.ink }}>{MONTO.toFixed(2)}€/mes</strong> · <strong>pequeña comisión por pago con tarjeta</strong> · Cancela cuando quieras.
+
+          {/* Selector mensual / anual */}
+          <PlanSelector plan={plan} onChange={setPlan} />
+
+          <div style={{ textAlign: 'center', marginTop: 18 }}>
+            <button onClick={() => setShowPay(true)} style={{ ...ds.glossyBtn, height: 46, padding: '0 22px' }}>
+              {plan === 'anual'
+                ? `Empezar prueba · luego ${eur(PLANES.anual.total)} €/año`
+                : `Empezar prueba · luego ${eur(PLANES.mensual.total)} €/mes`}
+            </button>
+            <div style={{ fontSize: type.xs, color: colors.stone2, marginTop: 8 }}>
+              No se te cobra hoy. Primer cobro tras los 7 días de prueba.
+            </div>
           </div>
-          <button onClick={() => setShowPay(true)} style={{ ...ds.glossyBtn, height: 46, padding: '0 22px' }}>
-            Activar plan {MONTO.toFixed(2).replace('.', ',')} €/mes
-          </button>
         </div>
       )}
 
@@ -275,12 +313,13 @@ export default function PlanSaaS() {
       {showPay && stripePromise && (
         <Elements stripe={stripePromise}>
           <PayModal
+            plan={plan}
             onClose={() => setShowPay(false)}
             onSuccess={async () => {
               setShowPay(false)
               await refetch?.()
               load()
-              toast('Plan activado', 'success')
+              toast('Plan activado · 7 días de prueba gratis, luego se cobra según el plan elegido', 'success')
             }}
             establecimientoId={restaurante.id}
           />
@@ -303,11 +342,12 @@ export default function PlanSaaS() {
   )
 }
 
-function PayModal({ onClose, onSuccess, establecimientoId }) {
+function PayModal({ plan = 'anual', onClose, onSuccess, establecimientoId }) {
   const stripe = useStripe()
   const elements = useElements()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const p = PLANES[plan] || PLANES.mensual
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -322,22 +362,24 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
     })
     if (pmErr) { setError(pmErr.message); setSubmitting(false); return }
 
-    // 2. Call edge function
+    // 2. Call edge function (v7 acepta `plan` y nace en trialing sin cobro)
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crear-suscripcion-tienda`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-      body: JSON.stringify({ establecimiento_id: establecimientoId, payment_method_id: paymentMethod.id }),
+      body: JSON.stringify({ establecimiento_id: establecimientoId, payment_method_id: paymentMethod.id, plan }),
     })
     const json = await res.json()
     if (!res.ok) { setError(json.error || 'Error al crear suscripción'); setSubmitting(false); return }
 
+    // Caso raro SCA: confirmar antes de dar por activo.
     if (json.status === 'requires_action' && json.client_secret) {
       const { error: confirmErr } = await stripe.confirmCardPayment(json.client_secret)
       if (confirmErr) { setError(confirmErr.message); setSubmitting(false); return }
       onSuccess()
       return
     }
+    // Éxito: la suscripción nace en `trialing` (7 días de prueba sin cobro inmediato).
     if (json.status === 'success') {
       onSuccess()
       return
@@ -354,7 +396,7 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
           padding: '18px 22px', borderBottom: `1px solid ${colors.border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ ...ds.h2, fontSize: 19, margin: 0 }}>Activar Suscripción</div>
+          <div style={{ ...ds.h2, fontSize: 19, margin: 0 }}>Empezar prueba gratis</div>
         </div>
 
         {/* Body */}
@@ -365,13 +407,18 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
               background: colors.terracottaSoft, borderRadius: 12,
               padding: 16, textAlign: 'center',
             }}>
+              <div style={{ fontSize: 12, color: colors.terracotta2, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                7 días de prueba gratis
+              </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, justifyContent: 'center' }}>
-                <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 36, color: colors.terracotta2, fontWeight: 800 }}>{Math.floor(MONTO)}</span>
+                <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 36, color: colors.terracotta2, fontWeight: 800 }}>{Math.floor(p.precioMes)}</span>
                 <span style={{ fontSize: 18, color: colors.terracotta2, fontWeight: 700 }}>€</span>
                 <span style={{ color: colors.terracotta2, fontSize: 13, fontWeight: 600, marginLeft: 2 }}>/mes</span>
               </div>
               <div style={{ fontSize: 12, color: colors.terracotta2, textAlign: 'center', marginTop: 6, fontWeight: 600 }}>
-                Comisión reducida por pago con tarjeta · Cancela cuando quieras
+                {plan === 'anual'
+                  ? `Plan anual · ${eur(p.total)} €/año · luego de la prueba`
+                  : `Plan mensual · ${eur(p.total)} €/mes · luego de la prueba`}
               </div>
             </div>
 
@@ -403,11 +450,77 @@ function PayModal({ onClose, onSuccess, establecimientoId }) {
           }}>
             <button type="button" onClick={onClose} disabled={submitting} style={ds.ghostBtn}>Cancelar</button>
             <button type="submit" disabled={submitting || !stripe} style={{ ...ds.glossyBtn, opacity: submitting ? 0.55 : 1 }}>
-              {submitting ? 'Procesando...' : `Activar ${MONTO.toFixed(2).replace('.', ',')} €/mes`}
+              {submitting ? 'Procesando...' : 'Empezar prueba gratis'}
             </button>
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// Selector de plan Mensual / Anual — dos cards tipo toggle.
+// La anual queda resaltada como recomendada, pero ambas son seleccionables.
+function PlanSelector({ plan, onChange }) {
+  const opciones = [PLANES.mensual, PLANES.anual]
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
+      marginTop: 4,
+    }}>
+      {opciones.map((op) => {
+        const activo = plan === op.id
+        return (
+          <button
+            key={op.id}
+            type="button"
+            onClick={() => onChange(op.id)}
+            style={{
+              position: 'relative',
+              textAlign: 'left', cursor: 'pointer', fontFamily: type.family,
+              borderRadius: radius.md,
+              padding: '16px 16px 14px',
+              background: activo ? colors.terracottaSoft : colors.paper,
+              border: `1.5px solid ${activo ? colors.terracotta : colors.border}`,
+              boxShadow: activo ? colors.shadow : 'none',
+              transition: 'all .12s ease',
+            }}
+          >
+            {op.ahorro && (
+              <span style={{
+                position: 'absolute', top: -9, right: 12,
+                ...chip('sage'),
+                fontSize: type.xxs, padding: '2px 8px',
+              }}>
+                {op.ahorro}
+              </span>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <span style={{
+                width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+                border: `1.5px solid ${activo ? colors.terracotta : colors.borderStrong}`,
+                background: activo ? colors.terracotta : 'transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {activo && <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.cream }} />}
+              </span>
+              <span style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>{op.label}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+              <span style={{ fontFamily: type.mono, fontSize: 26, fontWeight: 800, color: colors.ink }}>
+                {op.precioMes}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: colors.ink }}>€</span>
+              <span style={{ fontSize: type.xs, color: colors.stone, fontWeight: 600 }}>/mes</span>
+            </div>
+            <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 4 }}>
+              {op.id === 'anual'
+                ? `${eur(op.total)} € facturado anual`
+                : 'Facturado cada mes'}
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }
