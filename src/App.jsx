@@ -407,6 +407,7 @@ function AppInner({ seccion, setSeccion, nav }) {
   const { pedidosNuevos, silenciada, silenciar } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sociosPendientes, setSociosPendientes] = useState(0)
+  const [subActiva, setSubActiva] = useState(null) // null=cargando, true/false
   const menuRef = useRef(null)
   const isDesktop = useIsDesktop(1024)
 
@@ -431,6 +432,21 @@ function AppInner({ seccion, setSeccion, nav }) {
     fetchCount()
     const id = setInterval(fetchCount, 30000)
     return () => { cancel = true; clearInterval(id) }
+  }, [restaurante?.id, seccion])
+
+  // ¿Tiene suscripción activa? (para el banner de "añade tu tarjeta")
+  useEffect(() => {
+    if (!restaurante?.id || isNative) return
+    let cancel = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('suscripciones_tienda')
+        .select('estado')
+        .eq('establecimiento_id', restaurante.id)
+        .maybeSingle()
+      if (!cancel) setSubActiva(['active', 'trialing'].includes(data?.estado))
+    })()
+    return () => { cancel = true }
   }, [restaurante?.id, seccion])
 
   async function abrirPanelWeb() {
@@ -496,6 +512,48 @@ function AppInner({ seccion, setSeccion, nav }) {
     </div>
   ) : null
 
+  // ── Banner trial / añadir tarjeta (web). Se oculta solo cuando hay suscripción activa.
+  const diasTrial = restaurante?.trial_gratis_hasta
+    ? Math.max(0, Math.ceil((new Date(restaurante.trial_gratis_hasta).getTime() - Date.now()) / 86400000))
+    : null
+  const showTrialBanner = !isNative && subActiva === false && seccion !== 'plan-saas'
+  const trialExpirado = diasTrial === 0
+  const trialBanner = showTrialBanner ? (
+    <div
+      onClick={() => setSeccion('plan-saas')}
+      style={{
+        margin: isDesktop ? '0 0 18px' : '12px 16px 0',
+        padding: '12px 14px', borderRadius: 12,
+        background: trialExpirado ? 'rgba(181,86,74,0.12)' : 'rgba(197,86,44,0.10)',
+        border: `1px solid ${trialExpirado ? 'rgba(181,86,74,0.35)' : 'rgba(197,86,44,0.30)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 10, cursor: 'pointer', flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 13, color: trialExpirado ? '#7A2E22' : colors.terracotta2 }}>
+          {trialExpirado
+            ? 'Tu periodo gratis ha terminado'
+            : diasTrial === null
+              ? 'Activa tu suscripción · 7 días de prueba gratis'
+              : `Tienes ${diasTrial} día${diasTrial === 1 ? '' : 's'} gratis`}
+        </div>
+        <div style={{ fontSize: 11, color: colors.stone, marginTop: 2 }}>
+          {trialExpirado
+            ? 'Añade tu tarjeta para reactivar tu suscripción y no perder el servicio.'
+            : 'Añade tu tarjeta cuando quieras para activar tu suscripción. No se te cobra hasta terminar la prueba.'}
+        </div>
+      </div>
+      <span style={{
+        padding: '7px 12px', borderRadius: 8,
+        background: colors.terracotta, color: '#fff',
+        fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+      }}>
+        Añadir tarjeta
+      </span>
+    </div>
+  ) : null
+
   // Contenido de la sección (compartido)
   const seccionContent = (
     <>
@@ -539,6 +597,7 @@ function AppInner({ seccion, setSeccion, nav }) {
         }}>
           <Breadcrumbs seccion={seccion} />
           {fiscalBanner}
+          {trialBanner}
           <div>
             {seccionContent}
           </div>
@@ -715,6 +774,9 @@ function AppInner({ seccion, setSeccion, nav }) {
 
       {/* Banner fiscal */}
       {fiscalBanner}
+
+      {/* Banner trial / añadir tarjeta */}
+      {trialBanner}
 
       {/* Contenido */}
       <div style={{ padding: 20, animation: 'fadeIn 0.3s ease' }}>
