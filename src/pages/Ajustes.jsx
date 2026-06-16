@@ -355,12 +355,29 @@ export default function Ajustes() {
     const tipo = field === 'logo_url' ? 'logo' : 'banner'
     setSubiendoImg(tipo)
     try {
+      if (!file.type.startsWith('image/')) { toast('Solo se permiten imágenes'); return }
+      if (file.size > 5 * 1024 * 1024) { toast('La imagen no puede superar los 5 MB'); return }
       const ext = file.name.split('.').pop()
       const path = `establecimientos/${restaurante.id}_${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from(bucket).upload(path, file)
-      if (error) { toast('Error al subir: ' + error.message); return }
-      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)
-      await updateRestaurante({ [field]: publicUrl })
+      // Subida vía Edge Function: Storage no valida el JWT de sesión (claves
+      // asimétricas), así que se sube en el servidor con permisos de admin.
+      const { data: { session } } = await supabase.auth.getSession()
+      const fd = new FormData()
+      fd.append('bucket', bucket)
+      fd.append('path', path)
+      fd.append('establecimientoId', restaurante.id)
+      fd.append('file', file)
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/subir-imagen-producto`, {
+        method: 'POST',
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+        },
+        body: fd,
+      })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok) { toast('Error al subir: ' + (out.error || 'desconocido')); return }
+      await updateRestaurante({ [field]: out.publicUrl })
     } catch (err) {
       toast('Error al subir imagen: ' + err.message)
     } finally {
