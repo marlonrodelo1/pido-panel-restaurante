@@ -6,6 +6,30 @@ import { confirmar, toast } from '../App'
 import { colors, type, ds, chip } from '../lib/uiStyles'
 import { FoodChip } from '../lib/food.jsx'
 
+// Subida de imágenes vía Edge Function: Storage no valida el JWT de sesión actual
+// (claves asimétricas), así que la subida se hace en el servidor con permisos de
+// admin tras validar que el usuario es el dueño del establecimiento.
+async function subirImagenViaFuncion(file, path) {
+  if (!file.type.startsWith('image/')) throw new Error('Solo se permiten imágenes')
+  if (file.size > 5 * 1024 * 1024) throw new Error('La imagen no puede superar los 5 MB')
+  const { data: { session } } = await supabase.auth.getSession()
+  const fd = new FormData()
+  fd.append('bucket', 'productos')
+  fd.append('path', path)
+  fd.append('file', file)
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/subir-imagen-producto`, {
+    method: 'POST',
+    headers: {
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session?.access_token ?? ''}`,
+    },
+    body: fd,
+  })
+  const out = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(out.error || 'No se pudo subir la imagen')
+  return out.publicUrl
+}
+
 export default function Carta() {
   const { restaurante } = useRest()
   const [categoriasRest, setCategoriasRest] = useState([])
@@ -93,8 +117,7 @@ export default function Carta() {
   async function subirImagenProducto(file, productoId) {
     const ext = file.name.split('.').pop()
     const path = `${restaurante.id}/${productoId || 'new'}_${Date.now()}.${ext}`
-    await supabase.storage.from('productos').upload(path, file, { upsert: true })
-    const { data: { publicUrl } } = supabase.storage.from('productos').getPublicUrl(path)
+    const publicUrl = await subirImagenViaFuncion(file, path)
     if (productoId) {
       await supabase.from('productos').update({ imagen_url: publicUrl }).eq('id', productoId)
       setProductos(prev => prev.map(p => p.id === productoId ? { ...p, imagen_url: publicUrl } : p))
@@ -187,15 +210,19 @@ export default function Carta() {
 
   async function handleImagenForm(file) {
     if (!file) return
-    if (editProd) {
-      const url = await subirImagenProducto(file, editProd.id)
-      setProdForm(prev => ({ ...prev, imagen_url: url }))
-    } else {
-      const ext = file.name.split('.').pop()
-      const path = `${restaurante.id}/temp_${Date.now()}.${ext}`
-      await supabase.storage.from('productos').upload(path, file, { upsert: true })
-      const { data: { publicUrl } } = supabase.storage.from('productos').getPublicUrl(path)
-      setProdForm(prev => ({ ...prev, imagen_url: publicUrl }))
+    try {
+      if (editProd) {
+        const url = await subirImagenProducto(file, editProd.id)
+        setProdForm(prev => ({ ...prev, imagen_url: url }))
+      } else {
+        const ext = file.name.split('.').pop()
+        const path = `${restaurante.id}/temp_${Date.now()}.${ext}`
+        const publicUrl = await subirImagenViaFuncion(file, path)
+        setProdForm(prev => ({ ...prev, imagen_url: publicUrl }))
+      }
+      toast('Imagen subida', 'success')
+    } catch (e) {
+      toast('No se pudo subir la imagen: ' + e.message)
     }
   }
 
@@ -557,11 +584,15 @@ export default function Carta() {
       )}
 
       {/* Input oculto subir imagen */}
-      <input ref={imgRef} type="file" accept="image/*" hidden onChange={e => {
+      <input ref={imgRef} type="file" accept="image/*" hidden onChange={async e => {
         const target = imgTargetRef.current
-        if (e.target.files[0] && target) subirImagenProducto(e.target.files[0], target.id)
+        const file = e.target.files[0]
         imgTargetRef.current = null
         e.target.value = ''
+        if (file && target) {
+          try { await subirImagenProducto(file, target.id); toast('Imagen actualizada', 'success') }
+          catch (err) { toast('No se pudo subir la imagen: ' + err.message) }
+        }
       }} />
 
       {/* Modal crear/editar producto — bundle style centrado */}
