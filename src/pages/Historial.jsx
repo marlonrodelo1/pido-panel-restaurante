@@ -160,7 +160,7 @@ export default function Historial() {
 
       {/* Card filtros */}
       <div style={{ ...ds.card, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div className="pidoo-grid-3" style={{ marginBottom: 12 }}>
           {/* Buscador */}
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: colors.stone2 }} />

@@ -44,7 +44,7 @@ export default function Carta() {
   // Crear/editar producto
   const [showAddProd, setShowAddProd] = useState(false)
   const [editProd, setEditProd] = useState(null)
-  const [prodForm, setProdForm] = useState({ nombre: '', descripcion: '', precio: '', precio_tienda_publica: '', categoria_id: '', imagen_url: '' })
+  const [prodForm, setProdForm] = useState({ nombre: '', descripcion: '', precio: '', categoria_id: '', imagen_url: '' })
   const [saving, setSaving] = useState(false)
   const [extrasAsignados, setExtrasAsignados] = useState([])
   const [tamanos, setTamanos] = useState([])
@@ -126,7 +126,7 @@ export default function Carta() {
   }
 
   function abrirCrearProducto() {
-    setProdForm({ nombre: '', descripcion: '', precio: '', precio_tienda_publica: '', categoria_id: catFiltro || categoriasRest[0]?.id || '', imagen_url: '' })
+    setProdForm({ nombre: '', descripcion: '', precio: '', categoria_id: catFiltro || categoriasRest[0]?.id || '', imagen_url: '' })
     setEditProd(null)
     setExtrasAsignados([])
     setTamanos([])
@@ -134,7 +134,7 @@ export default function Carta() {
   }
 
   async function abrirEditarProducto(p) {
-    setProdForm({ nombre: p.nombre, descripcion: p.descripcion || '', precio: p.precio, precio_tienda_publica: p.precio_tienda_publica ?? '', categoria_id: p.categoria_id || '', imagen_url: p.imagen_url || '' })
+    setProdForm({ nombre: p.nombre, descripcion: p.descripcion || '', precio: p.precio, categoria_id: p.categoria_id || '', imagen_url: p.imagen_url || '' })
     setEditProd(p)
     const { data } = await supabase.from('producto_extras').select('grupo_id').eq('producto_id', p.id)
     setExtrasAsignados((data || []).map(d => d.grupo_id))

@@ -409,7 +409,7 @@ function AppInner({ seccion, setSeccion, nav }) {
   const [sociosPendientes, setSociosPendientes] = useState(0)
   const [subActiva, setSubActiva] = useState(null) // null=cargando, true/false
   const menuRef = useRef(null)
-  const isDesktop = useIsDesktop(1024)
+  const isDesktop = useIsDesktop(900)
 
   // Si pasamos a desktop y la sección actual no es válida para desktop, redirigir
   useEffect(() => {
@@ -590,16 +590,18 @@ function AppInner({ seccion, setSeccion, nav }) {
         />
         <main style={{
           flex: 1, minWidth: 0,
-          padding: '28px 32px',
-          maxWidth: 1280,
+          padding: 'clamp(20px, 2.4vw, 36px) clamp(16px, 3vw, 40px)',
           width: '100%',
+          overflowX: 'hidden',
           animation: 'fadeIn 0.3s ease',
         }}>
-          <Breadcrumbs seccion={seccion} />
-          {fiscalBanner}
-          {trialBanner}
-          <div>
-            {seccionContent}
+          <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%' }}>
+            <Breadcrumbs seccion={seccion} />
+            {fiscalBanner}
+            {trialBanner}
+            <div>
+              {seccionContent}
+            </div>
           </div>
         </main>
       </div>

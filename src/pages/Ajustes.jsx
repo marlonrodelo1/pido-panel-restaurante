@@ -614,8 +614,8 @@ export default function Ajustes() {
         )}
       </div>
 
-      {/* ── F4: Tarifa de envío (solo plan SaaS) ── */}
-      {restaurante?.plan_pro && (
+      {/* ── Tarifa de envío fija de la tienda pública (todos los restaurantes) ── */}
+      {(
         <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Tarifa de envío</h3>
           <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
