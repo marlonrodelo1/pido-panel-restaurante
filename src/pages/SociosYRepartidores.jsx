@@ -241,7 +241,7 @@ function ModalCambiarTarifa({ row, onClose, onPropuesta }) {
   )
 }
 
-function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onCambiarTarifa }) {
+function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onCambiarTarifa, onResponderTarifa }) {
   const socio = row.socios || {}
   const estadoInfo = ESTADOS[row.estado] || ESTADOS.pendiente
   const online = riderStatus?.is_online
@@ -380,16 +380,24 @@ function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onR
                   .map(d => `${d.label}: ${d.actual ?? '—'} → ${d.propuesta ?? '—'}`)
                   .join('\n')
                 return (
-                  <div
-                    title={tooltipDiffs}
-                    style={{
-                      marginTop: 10, padding: '8px 10px', borderRadius: 8,
-                      background: colors.statePrepSoft, border: `1px solid ${colors.statePrep}55`,
-                      fontSize: type.xs, color: colors.statePrep, fontWeight: 600,
-                      cursor: 'help',
-                    }}
-                  >
-                    ⏳ {propio ? 'Propuesta enviada' : 'Propuesta del socio'} · expira en {expira}
+                  <div style={{ marginTop: 10 }}>
+                    <div
+                      title={tooltipDiffs}
+                      style={{
+                        padding: '8px 10px', borderRadius: 8,
+                        background: colors.statePrepSoft, border: `1px solid ${colors.statePrep}55`,
+                        fontSize: type.xs, color: colors.statePrep, fontWeight: 600,
+                        cursor: 'help',
+                      }}
+                    >
+                      ⏳ {propio ? 'Propuesta enviada · esperando al socio' : 'El socio te propone una tarifa'} · expira en {expira}
+                    </div>
+                    {!propio && (
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                        <button onClick={() => onResponderTarifa(row.id, 'aceptar')} style={{ ...ds.primaryBtn, background: colors.stateOk, borderColor: colors.stateOk }}>Aceptar tarifa</button>
+                        <button onClick={() => onResponderTarifa(row.id, 'rechazar')} style={{ ...ds.secondaryBtn, color: colors.danger, borderColor: colors.danger }}>Rechazar</button>
+                      </div>
+                    )}
                   </div>
                 )
               })()}
@@ -544,6 +552,27 @@ export default function SociosYRepartidores() {
     cargar()
   }
 
+  async function handleResponderTarifa(vinculacion_id, accion, motivo) {
+    const { data: sess } = await supabase.auth.getSession()
+    const token = sess?.session?.access_token
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/responder-tarifa-pendiente`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ socio_establecimiento_id: vinculacion_id, accion, ...(motivo ? { motivo } : {}) }),
+    })
+    const body = await resp.json().catch(() => ({}))
+    if (!resp.ok || !body?.ok) {
+      const msg = body?.error || 'Error al responder la propuesta'
+      toast(msg, 'error')
+      throw new Error(msg)
+    }
+    toast(accion === 'aceptar' ? 'Tarifa del socio aceptada' : 'Propuesta del socio rechazada', 'success')
+    cargar()
+  }
+
   async function handleDesvincular(id, motivo) {
     try {
       await callFunction(id, 'rechazar', motivo || 'Desvinculado por restaurante')
@@ -643,6 +672,7 @@ export default function SociosYRepartidores() {
               onRechazar={(id) => setModalRechazar({ id })}
               onDesvincular={(id) => setModalDesvincular({ id })}
               onCambiarTarifa={(rowSel) => setModalTarifa(rowSel)}
+              onResponderTarifa={handleResponderTarifa}
             />
           ))}
         </div>
