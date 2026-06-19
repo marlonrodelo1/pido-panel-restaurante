@@ -95,38 +95,47 @@ export function RestProvider({ children }) {
   }
 
   async function registro(formData) {
-    // Verificar email no existe en otros roles
-    const { data: roleCheck } = await supabase.rpc('check_email_role', { check_email: formData.email })
-    if (roleCheck?.exists) throw new Error(`Este email ya está registrado como ${roleCheck.role}. Usa otro email.`)
+    // Geocodificar la direccion en el cliente (tenemos la API key aqui).
+    // El alta real (usuario + establecimiento) la hace la edge function
+    // 'registrar-restaurante' con service role: con la confirmacion de email
+    // activada, signUp NO devuelve sesion -> auth.uid() null -> el INSERT en
+    // establecimientos viola RLS. La edge salta RLS y crea todo de forma atomica.
+    let latitud, longitud
+    try {
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+      if (apiKey && formData.direccion) {
+        const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(formData.direccion.trim())}&key=${apiKey}`)
+        const geoData = await geoRes.json()
+        if (geoData.results?.length > 0) {
+          latitud = geoData.results[0].geometry.location.lat
+          longitud = geoData.results[0].geometry.location.lng
+        }
+      }
+    } catch (e) { console.warn('[registro] geocoding fallo, la edge usara default:', e) }
 
-    // Crear auth user
-    const { data, error } = await supabase.auth.signUp({ email: formData.email, password: formData.password, options: { data: { nombre: formData.nombre, rol: 'restaurante' } } })
-    if (error) throw error
-
-    // Crear establecimiento con user_id
-    const { error: estError } = await supabase.from('establecimientos').insert({
-      user_id: data.user?.id,
-      nombre: formData.nombre,
-      tipo: formData.tipo || 'restaurante',
-      categoria_padre: formData.categoria_padre || 'comida',
-      email: formData.email,
-      telefono: formData.telefono || null,
-      direccion: formData.direccion || null,
-      descripcion: formData.descripcion || null,
-      activo: true,
-      rating: 0,
-      total_resenas: 0,
-      latitud: null,
-      longitud: null,
-      radio_cobertura_km: 10,
+    const { data, error } = await supabase.functions.invoke('registrar-restaurante', {
+      body: {
+        nombre: formData.nombre,
+        email: formData.email,
+        password: formData.password,
+        tipo: formData.tipo || 'restaurante',
+        categoria_padre: formData.categoria_padre || 'comida',
+        telefono: formData.telefono || null,
+        direccion: formData.direccion || null,
+        descripcion: formData.descripcion || null,
+        ...(typeof latitud === 'number' ? { latitud, longitud } : {}),
+      },
     })
-    if (estError) {
-      // Rollback: eliminar el usuario auth huerfano
-      try { await supabase.auth.admin?.deleteUser(data.user?.id) } catch {}
-      // Al menos cerrar la sesion para que no quede logueado sin establecimiento
-      await supabase.auth.signOut()
-      throw new Error('Error al crear el establecimiento. Intenta de nuevo.')
-    }
+    if (error) throw new Error('No se pudo completar el registro. Revisa tu conexion e intenta de nuevo.')
+    if (!data?.ok) throw new Error(data?.message || 'No se pudo completar el registro. Intenta de nuevo.')
+
+    // Iniciar sesion para obtener sesion valida (email ya confirmado por la edge).
+    // onAuthStateChange cargara el establecimiento recien creado.
+    const { error: signInErr } = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
+    })
+    if (signInErr) throw new Error('Cuenta creada correctamente. Inicia sesion con tu email y contrasena.')
     return data
   }
 
