@@ -4,15 +4,15 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "com.pido.restaurante",
+  "applicationId": "com.pidoo.order",
   "variantName": "release",
   "elements": [
     {
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 1,
-      "versionName": "1.0",
+      "versionCode": 14,
+      "versionName": "2.2",
       "outputFile": "app-release.apk"
     }
   ],

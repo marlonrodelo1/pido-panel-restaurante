@@ -1210,6 +1210,100 @@ function ModalReasignar({ pedido, onClose }) {
   )
 }
 
+// ─── Modal Cambiar de socio (multi-socio) ──────────────────────────────────
+// El restaurante elige a cuál de sus socios vinculados asignar el pedido.
+// La edge `assign-pedido-restaurante` elige el rider más cercano ONLINE de ese socio.
+function ModalCambiarSocio({ pedido, socios, onClose }) {
+  const [seleccion, setSeleccion] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape' && !loading) onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, loading])
+
+  async function confirmar() {
+    if (!seleccion || loading) return
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('assign-pedido-restaurante', { body: { pedido_id: pedido.id, socio_id: seleccion } })
+      if (error) throw error
+      if (data?.ok === false) {
+        toast(data.reason === 'socio_sin_rider_online' ? 'Ese socio no tiene repartidores en línea ahora mismo' : (data.reason || 'No se pudo asignar'), 'error')
+        setLoading(false)
+        return
+      }
+      toast('Pedido asignado al socio elegido', 'success')
+      onClose()
+    } catch (err) {
+      console.error('[CambiarSocio]', err)
+      toast(err?.message || 'Error al asignar el pedido', 'error')
+      setLoading(false)
+    }
+  }
+
+  const handleOverlayClick = () => { if (!loading) onClose() }
+
+  return (
+    <div onClick={handleOverlayClick} style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,21,0.45)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ position: 'relative', background: colors.paper, borderRadius: 16, width: '100%', maxWidth: 480, border: `1px solid ${colors.borderStrong}`, boxShadow: colors.shadowLg, overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ padding: '16px 22px', borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ fontSize: type.lg, fontWeight: 700, color: colors.ink, letterSpacing: '-0.01em' }}>
+            Cambiar de socio{' '}
+            <span style={{ fontFamily: type.mono, color: colors.stone, fontSize: type.sm, fontWeight: 600 }}>{pedido?.codigo || ''}</span>
+          </div>
+          <button onClick={onClose} disabled={loading} aria-label="Cerrar" style={{ width: 30, height: 30, borderRadius: 7, border: 'none', background: colors.cream2, color: colors.stone, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+        </div>
+
+        {/* Body: lista de socios */}
+        <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: type.sm, color: colors.stone, lineHeight: 1.55, marginBottom: 4 }}>
+            Elige el socio que repartirá este pedido. Se asignará a su repartidor más cercano que esté en línea.
+          </div>
+          {socios.map(s => {
+            const activo = seleccion === s.socio_id
+            const disabled = !s.en_servicio
+            return (
+              <button key={s.socio_id} onClick={() => !disabled && setSeleccion(s.socio_id)} disabled={disabled}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 10, textAlign: 'left',
+                  border: `${activo ? 2 : 1}px solid ${activo ? colors.terracotta : colors.border}`,
+                  background: activo ? colors.terracottaSoft || colors.cream2 : colors.surface,
+                  cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, fontFamily: 'inherit', width: '100%',
+                }}>
+                <div style={{ width: 38, height: 38, borderRadius: 8, flexShrink: 0, background: s.logo_url ? `url(${s.logo_url}) center/cover` : colors.cream2, border: `1px solid ${colors.border}`, display: 'grid', placeItems: 'center', color: colors.stone, fontWeight: 800 }}>
+                  {!s.logo_url && (s.nombre?.[0] || 'S').toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: type.xxs, color: s.en_servicio ? colors.sage2 : colors.stone, fontWeight: 600, marginTop: 2 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: s.en_servicio ? colors.sage : colors.stone2 }} />
+                    {s.en_servicio ? 'En línea' : 'Fuera de servicio'}
+                  </div>
+                </div>
+                {activo && <span style={{ color: colors.terracotta, fontWeight: 800, fontSize: 16 }}>✓</span>}
+              </button>
+            )
+          })}
+          {socios.length === 0 && (
+            <div style={{ fontSize: type.sm, color: colors.stone }}>No tienes socios vinculados activos.</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '14px 22px', borderTop: `1px solid ${colors.border}`, background: colors.cream, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={onClose} disabled={loading} style={{ ...ds.secondaryBtn, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>Cancelar</button>
+          <button onClick={confirmar} disabled={loading || !seleccion} style={{ ...ds.glossyBtn, cursor: (loading || !seleccion) ? 'not-allowed' : 'pointer', opacity: (loading || !seleccion) ? 0.6 : 1, minWidth: 130 }}>
+            {loading ? 'Asignando…' : 'Asignar socio'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Pantalla de detalle ───────────────────────────────────────────────────
 const seccionLabel = { fontSize: type.xxs, fontWeight: 700, color: colors.textMute, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, display: 'block' }
 const seccionCard = { background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 12, padding: '14px 16px', marginBottom: 12 }
@@ -1219,11 +1313,30 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
   const [cancelando, setCancelando] = useState(false)
   const [minutosSel, setMinutosSel] = useState(20)
   const [reasignando, setReasignando] = useState(false)
+  const [sociosVinc, setSociosVinc] = useState([])
+  const [cambiarSocio, setCambiarSocio] = useState(false)
 
   const puedeReasignar = pedido.modo_entrega === 'delivery'
     && ['preparando', 'listo', 'nuevo', 'aceptado'].includes(pedido.estado) // 'aceptado' equivale a 'preparando' en este panel
     && !!pedido.rider_accounts
     && pedido.shipday_status !== 'no_rider'
+
+  // Socios vinculados (multi-socio): permite que el restaurante elija a cuál asignar.
+  useEffect(() => {
+    let cancel = false
+    if (pedido.modo_entrega !== 'delivery' || !restaurante?.id) { setSociosVinc([]); return }
+    ;(async () => {
+      try {
+        const { data } = await supabase.functions.invoke('list-socios-restaurante', { body: { establecimiento_id: restaurante.id } })
+        if (!cancel && data?.ok) setSociosVinc(data.socios || [])
+      } catch (_) { /* silencioso: si falla, no se muestra el botón */ }
+    })()
+    return () => { cancel = true }
+  }, [pedido.modo_entrega, restaurante?.id])
+
+  const puedeCambiarSocio = pedido.modo_entrega === 'delivery'
+    && ['nuevo', 'aceptado', 'preparando', 'listo'].includes(pedido.estado)
+    && sociosVinc.length > 1
 
   const nombre = pedido.usuarios?.nombre
     ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
@@ -1282,15 +1395,25 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
         <div style={seccionCard}>
           <span style={seccionLabel}>Repartidor</span>
           <RiderInfo pedido={pedido} />
-          {puedeReasignar && (
-            <button onClick={() => setReasignando(true)} style={{ marginTop: 4, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface2)', color: 'var(--c-text)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-              Reasignar
-            </button>
+          {(puedeReasignar || puedeCambiarSocio) && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+              {puedeReasignar && (
+                <button onClick={() => setReasignando(true)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface2)', color: 'var(--c-text)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Reasignar
+                </button>
+              )}
+              {puedeCambiarSocio && (
+                <button onClick={() => setCambiarSocio(true)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface2)', color: 'var(--c-text)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cambiar de socio
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
 
       {reasignando && <ModalReasignar pedido={pedido} onClose={() => setReasignando(false)} />}
+      {cambiarSocio && <ModalCambiarSocio pedido={pedido} socios={sociosVinc} onClose={() => setCambiarSocio(false)} />}
 
       {/* CLIENTE */}
       <div style={seccionCard}>
