@@ -14,6 +14,7 @@ const ESTADOS = {
   pagada: { label: 'Pagada', color: colors.sage2, bg: colors.sageSoft },
   sin_movimiento: { label: 'Sin movimiento', color: colors.stone, bg: colors.cream2 },
   fallida: { label: 'Fallida', color: colors.danger, bg: colors.dangerSoft },
+  arrastrada: { label: 'Incluida en la siguiente', color: colors.stone, bg: colors.cream2 },
 }
 
 export default function LiquidacionPido() {
@@ -36,8 +37,8 @@ export default function LiquidacionPido() {
     return () => { cancel = true }
   }, [restaurante?.id])
 
-  const pendientePido = rows.filter(r => r.direccion === 'pido_paga' && r.estado === 'pendiente').reduce((s, r) => s + Number(r.transfer_restaurante || 0), 0)
-  const pendienteDebes = rows.filter(r => r.direccion === 'restaurante_paga' && r.estado === 'pendiente').reduce((s, r) => s + Math.abs(Number(r.transfer_restaurante || 0)), 0)
+  const pendientePido = rows.filter(r => r.direccion === 'pido_paga' && r.estado === 'pendiente').reduce((s, r) => s + Number(r.neto_a_pagar || 0), 0)
+  const pendienteDebes = rows.filter(r => r.direccion === 'restaurante_paga' && r.estado === 'pendiente').reduce((s, r) => s + Math.abs(Number(r.neto_a_pagar || 0)), 0)
 
   return (
     <div>
@@ -72,11 +73,15 @@ export default function LiquidacionPido() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {rows.map(r => {
             const est = ESTADOS[r.estado] || ESTADOS.pendiente
-            const t = Number(r.transfer_restaurante || 0)
-            const linea = r.direccion === 'sin_movimiento' ? 'Sin movimiento esta semana'
-              : r.direccion === 'pido_paga' ? `Pido te envía ${euro(t)}`
-              : `Debes a Pido ${euro(Math.abs(t))}`
-            const lineaColor = r.direccion === 'pido_paga' ? colors.sage2 : r.direccion === 'restaurante_paga' ? colors.terracotta : colors.stone
+            const neto = Number(r.neto_a_pagar || 0)
+            const arr = Number(r.saldo_arrastre || 0)
+            const linea = r.estado === 'arrastrada' ? 'Incluida en la liquidación siguiente'
+              : r.direccion === 'sin_movimiento' ? 'Sin movimiento esta semana'
+              : r.direccion === 'pido_paga' ? `Pido te envía ${euro(neto)}`
+              : `Debes a Pido ${euro(Math.abs(neto))}`
+            const lineaColor = r.estado === 'arrastrada' ? colors.stone
+              : r.direccion === 'pido_paga' ? colors.sage2
+              : r.direccion === 'restaurante_paga' ? colors.terracotta : colors.stone
             return (
               <div key={r.id} style={{ ...ds.card, padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -95,6 +100,7 @@ export default function LiquidacionPido() {
                   <Mini label="Cobrado efectivo" v={euro(r.efectivo_total)} />
                   <Mini label="Cobrado tarjeta" v={euro(r.tarjeta_total)} />
                   <Mini label="Envíos + propinas" v={euro(Number(r.envios_total || 0) + Number(r.propinas_total || 0))} />
+                  {Math.abs(arr) >= 0.005 && <Mini label="Arrastre sem. anterior" v={euro(arr)} />}
                 </div>
               </div>
             )
