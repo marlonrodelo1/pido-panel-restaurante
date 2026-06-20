@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Component } from 'react'
 import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, CreditCard, Handshake, Bike, History,
-  BarChart3, Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen,
+  BarChart3, Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -26,6 +26,7 @@ import ConfigImpresora from './pages/ConfigImpresora'
 import Activacion from './pages/Activacion'
 import SociosYRepartidores from './pages/SociosYRepartidores'
 import FinanzasRiders from './pages/FinanzasRiders'
+import LiquidacionPido from './pages/LiquidacionPido'
 import PlanSaaS from './pages/PlanSaaS'
 import EliminarCuenta from './pages/EliminarCuenta'
 
@@ -44,6 +45,7 @@ const SECCION_LABELS = {
   'socios-riders': 'Socios y repartidores',
   'plan-saas': 'Suscripción',
   'finanzas-riders': 'Finanzas con el socio',
+  'liquidacion-pido': 'Liquidación con Pido',
   'eliminar-cuenta': 'Eliminar cuenta',
   pedidos: 'Pedidos',
   'historial-movil': 'Historial',
@@ -231,6 +233,7 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
     { id: 'socios-riders', Icon: Users, label: 'Socios y repartidores', badge: sociosPendientes },
     { id: 'plan-saas', Icon: CreditCard, label: 'Suscripción' },
     { id: 'finanzas-riders', Icon: Wallet, label: 'Finanzas con el socio' },
+    { id: 'liquidacion-pido', Icon: Receipt, label: 'Liquidación con Pido' },
     { id: 'soporte', Icon: LifeBuoy, label: 'Soporte' },
   ]
 
@@ -472,6 +475,7 @@ function AppInner({ seccion, setSeccion, nav }) {
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
     { id: 'plan-saas', label: 'Suscripción', Icon: CreditCard },
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
+    { id: 'liquidacion-pido', label: 'Liquidación con Pido', Icon: Receipt },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
   const extraActive = extraOpciones.find(e => e.id === seccion)
@@ -568,6 +572,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'socios-riders' && <SociosYRepartidores />}
       {seccion === 'plan-saas' && <PlanSaaS />}
       {seccion === 'finanzas-riders' && <FinanzasRiders />}
+      {seccion === 'liquidacion-pido' && <LiquidacionPido />}
       {seccion === 'ajustes' && <Ajustes />}
       {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
     </>
