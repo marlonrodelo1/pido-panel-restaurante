@@ -447,7 +447,10 @@ function AppInner({ seccion, setSeccion, nav }) {
         .select('estado')
         .eq('establecimiento_id', restaurante.id)
         .maybeSingle()
-      if (!cancel) setSubActiva(['active', 'trialing'].includes(data?.estado))
+      // Modelo 19-jun: sin cuota mensual salvo casos puntuales. El banner solo
+      // tiene sentido si existe una suscripción REAL lapsada (past_due/unpaid).
+      // Sin fila de suscripción => tratado como OK (no banner).
+      if (!cancel) setSubActiva(!data || ['active', 'trialing'].includes(data?.estado))
     })()
     return () => { cancel = true }
   }, [restaurante?.id, seccion])
