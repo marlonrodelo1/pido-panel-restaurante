@@ -67,6 +67,7 @@ export async function registerWebPush(userType, ids = {}) {
     log('6-token:' + (fcmToken ? fcmToken.substring(0, 20) + '...' : 'NULL'))
 
     if (fcmToken) {
+      const endpoint = `fcm:${fcmToken}`
       // Limpiar tokens viejos de este usuario antes de registrar el nuevo
       const idField = ids.establecimiento_id ? 'establecimiento_id' : ids.user_id ? 'user_id' : null
       const idValue = ids.establecimiento_id || ids.user_id
@@ -76,13 +77,13 @@ export async function registerWebPush(userType, ids = {}) {
           .eq(idField, idValue)
           .eq('user_type', userType)
           .neq('fcm_token', 'DEBUG')
-          .neq('endpoint', fcmToken)
+          .neq('endpoint', endpoint)
         log('6b-cleaned-old-tokens')
       }
 
       const { error } = await supabase.from('push_subscriptions').upsert({
         fcm_token: fcmToken,
-        endpoint: fcmToken,
+        endpoint,
         p256dh: '',
         auth: '',
         user_type: userType,

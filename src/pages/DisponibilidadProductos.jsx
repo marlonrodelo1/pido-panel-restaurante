@@ -10,6 +10,7 @@ export default function DisponibilidadProductos() {
   const [productos, setProductos] = useState([])
   const [categorias, setCategorias] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
@@ -17,17 +18,29 @@ export default function DisponibilidadProductos() {
   }, [restaurante?.id])
 
   async function fetchProductos() {
-    const [prodRes, catRes] = await Promise.all([
-      supabase
-        .from('productos')
-        .select('id, nombre, disponible, imagen_url, categoria_id')
-        .eq('establecimiento_id', restaurante.id)
-        .order('orden'),
-      supabase.from('categorias').select('id, nombre').eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
-    ])
-    setProductos(prodRes.data || [])
-    setCategorias(catRes.data || [])
-    setLoading(false)
+    setLoading(true); setError(false)
+    try {
+      const queries = Promise.all([
+        supabase
+          .from('productos')
+          .select('id, nombre, disponible, imagen_url, categoria_id')
+          .eq('establecimiento_id', restaurante.id)
+          .order('orden'),
+        supabase.from('categorias').select('id, nombre').eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
+      ])
+      // Timeout de 12s: en red muy lenta la consulta puede colgarse sin dar error
+      // (Supabase no aborta sola). Lo convertimos en error para mostrar "Reintentar"
+      // en vez de "Cargando…" eterno. Distinguir fallo de red de "no hay productos".
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000))
+      const [prodRes, catRes] = await Promise.race([queries, timeout])
+      if (prodRes.error) throw prodRes.error
+      setProductos(prodRes.data || [])
+      setCategorias(catRes.data || [])
+    } catch (_) {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function toggleDisponible(id, current) {
@@ -53,6 +66,22 @@ export default function DisponibilidadProductos() {
     return (
       <div style={{ textAlign: 'center', padding: 60, color: colors.textMute }}>
         <div style={{ fontSize: type.sm, fontWeight: 600 }}>Cargando productos…</div>
+      </div>
+    )
+  }
+
+  // Fallo de carga (red): NO mostramos "Sin productos" (sería engañoso, parece que
+  // se borraron). Mostramos error + Reintentar, conservando nada solo si no había datos.
+  if (error && productos.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: 60 }}>
+        <div style={{ fontSize: type.base, fontWeight: 700, color: colors.ink, marginBottom: 6 }}>
+          No se pudieron cargar los productos
+        </div>
+        <div style={{ fontSize: type.xs, color: colors.textMute, marginBottom: 16 }}>
+          Revisa tu conexión e inténtalo de nuevo.
+        </div>
+        <button onClick={fetchProductos} style={ds.primaryBtn}>Reintentar</button>
       </div>
     )
   }

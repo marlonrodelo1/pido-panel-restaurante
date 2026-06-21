@@ -69,8 +69,8 @@ export function RestProvider({ children }) {
       }
       setRestaurante(data)
       if (data) {
-        registerWebPush('restaurante', { establecimiento_id: data.id })
-        registerPushNotifications('restaurante', { establecimiento_id: data.id })
+        registerWebPush('restaurante', { establecimiento_id: data.id, user_id: userId })
+        registerPushNotifications('restaurante', { establecimiento_id: data.id, user_id: userId })
       } else {
         // Cuenta autenticada pero sin establecimiento vinculado: marcar
         // explicitamente "no encontrado" para no quedar en "Cargando..." infinito.
