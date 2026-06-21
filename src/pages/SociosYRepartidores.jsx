@@ -93,10 +93,13 @@ function ModalMotivo({ titulo, textoBoton, onClose, onConfirm }) {
   )
 }
 
-function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onResponderTarifa }) {
+function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onResponderTarifa }) {
   const socio = row.socios || {}
   const estadoInfo = ESTADOS[row.estado] || ESTADOS.pendiente
-  const online = riderStatus?.is_online
+  // Estado REAL del repartidor (socio = rider): la verdad es socios.en_servicio
+  // (online/offline) y socios.activo (desactivado). rider_status quedó legacy.
+  const desactivado = socio.activo === false
+  const online = socio.en_servicio === true && !desactivado
   const isPendiente = row.estado === 'pendiente'
   const isActivo = row.estado === 'activa'
 
@@ -123,11 +126,13 @@ function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onR
               background: estadoInfo.bg, color: estadoInfo.color,
               textTransform: 'uppercase', letterSpacing: '0.04em',
             }}>{estadoInfo.label}</span>
-            {isActivo && rider && (
-              online ? (
-                <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateOkSoft, color: colors.stateOk }}>● Online</span>
+            {isActivo && (
+              desactivado ? (
+                <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.dangerSoft, color: colors.danger }}>⊘ Desactivado</span>
+              ) : online ? (
+                <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateOkSoft, color: colors.stateOk }}>● Online · recibe pedidos</span>
               ) : (
-                <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateNeutralSoft, color: colors.stateNeutral }}>○ Offline</span>
+                <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateNeutralSoft, color: colors.stateNeutral }}>○ Offline · solo recogida</span>
               )
             )}
           </div>
@@ -191,7 +196,9 @@ function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onR
                   {[rider.telefono, rider.email].filter(Boolean).join(' · ') || '—'}
                 </div>
               </div>
-              {online ? (
+              {desactivado ? (
+                <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.dangerSoft, color: colors.danger }}>⊘ Desactivado</span>
+              ) : online ? (
                 <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateOkSoft, color: colors.stateOk }}>● Online</span>
               ) : (
                 <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateNeutralSoft, color: colors.stateNeutral }}>○ Offline</span>
@@ -277,7 +284,6 @@ function SocioCard({ row, rider, riderStatus, expanded, onToggle, onAceptar, onR
 export default function SociosYRepartidores() {
   const { restaurante } = useRest()
   const [vincs, setVincs] = useState([])
-  const [riderStatus, setRiderStatus] = useState({})
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('todos')
   const [expanded, setExpanded] = useState({})
@@ -287,7 +293,7 @@ export default function SociosYRepartidores() {
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
     try {
-      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, shipday_api_key)'
+      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, en_servicio, activo)'
       const { data: rows, error } = await supabase
         .from('socio_establecimiento')
         .select(selectStr)
@@ -296,33 +302,27 @@ export default function SociosYRepartidores() {
       if (error) throw error
 
       const enriched = rows || []
-      const apiKeys = enriched.map(r => r.socios?.shipday_api_key).filter(Boolean)
 
-      let ridersByKey = {}
-      if (apiKeys.length > 0) {
+      // Rider (cuenta operativa) del socio: en el modelo actual se vincula por
+      // socio_id, NO por shipday_api_key (legacy, ya no se usa). Cada socio tiene
+      // su rider_account creada automáticamente al darse de alta.
+      const socioIds = [...new Set(enriched.map(r => r.socio_id).filter(Boolean))]
+      let ridersBySocio = {}
+      if (socioIds.length > 0) {
         const { data: riders } = await supabase
           .from('rider_accounts')
-          .select('id, nombre, telefono, email, shipday_api_key, activa, estado')
-          .in('shipday_api_key', apiKeys)
-        ridersByKey = {}
-        ;(riders || []).forEach(r => { ridersByKey[r.shipday_api_key] = r })
+          .select('id, nombre, telefono, email, socio_id, activa, estado')
+          .in('socio_id', socioIds)
+          .eq('activa', true)
+          .eq('estado', 'activa')
+        ;(riders || []).forEach(r => { if (!ridersBySocio[r.socio_id]) ridersBySocio[r.socio_id] = r })
       }
 
       const withRider = enriched.map(row => ({
         ...row,
-        rider: row.socios?.shipday_api_key ? ridersByKey[row.socios.shipday_api_key] || null : null,
+        rider: ridersBySocio[row.socio_id] || null,
       }))
       setVincs(withRider)
-
-      const riderIds = withRider.map(r => r.rider?.id).filter(Boolean)
-      if (riderIds.length > 0) {
-        const { data: st } = await supabase.from('rider_status').select('*').in('rider_account_id', riderIds)
-        const map = {}
-        ;(st || []).forEach(s => { map[s.rider_account_id] = s })
-        setRiderStatus(map)
-      } else {
-        setRiderStatus({})
-      }
     } catch (err) {
       toast('Error cargando socios: ' + (err.message || err), 'error')
     } finally {
@@ -336,7 +336,9 @@ export default function SociosYRepartidores() {
     if (!restaurante?.id) return
     const channel = supabase.channel(`socios-${restaurante.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'socio_establecimiento', filter: `establecimiento_id=eq.${restaurante.id}` }, cargar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_status' }, cargar)
+      // socios.en_servicio/activo cambia cuando el repartidor se pone online/offline
+      // o se desactiva → refrescar el estado mostrado en vivo.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'socios' }, cargar)
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [restaurante?.id, cargar])
@@ -415,7 +417,7 @@ export default function SociosYRepartidores() {
   const pendientes = vincs.filter(v => v.estado === 'pendiente')
   const activos = vincs.filter(v => v.estado === 'activa')
   const rechazados = vincs.filter(v => v.estado === 'rechazada')
-  const onlineCount = activos.filter(v => v.rider && riderStatus[v.rider.id]?.is_online).length
+  const onlineCount = activos.filter(v => v.socios?.en_servicio === true && v.socios?.activo !== false).length
 
   const lista = tab === 'activos' ? activos
     : tab === 'pendientes' ? pendientes
@@ -493,7 +495,6 @@ export default function SociosYRepartidores() {
               key={row.id}
               row={row}
               rider={row.rider}
-              riderStatus={row.rider ? riderStatus[row.rider.id] : null}
               expanded={!!expanded[row.id]}
               onToggle={() => setExpanded(e => ({ ...e, [row.id]: !e[row.id] }))}
               onAceptar={handleAceptar}
