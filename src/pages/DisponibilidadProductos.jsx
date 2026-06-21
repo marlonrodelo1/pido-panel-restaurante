@@ -192,6 +192,9 @@ export default function DisponibilidadProductos() {
 }
 
 function ProductoRow({ p, cat, toggle }) {
+  // Si la imagen falla al cargar (red caída, imagen borrada del CDN, CSP),
+  // caemos a la ilustración FoodChip en vez de dejar un recuadro vacío.
+  const [imgError, setImgError] = useState(false)
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14,
@@ -203,12 +206,13 @@ function ProductoRow({ p, cat, toggle }) {
       transition: 'opacity 0.2s',
     }}>
       {/* Thumbnail: imagen real si hay, sino FoodChip ilustración */}
-      {p.imagen_url ? (
+      {p.imagen_url && !imgError ? (
         <div style={{
           width: 56, height: 56, borderRadius: 10, flexShrink: 0,
           background: colors.cream2, overflow: 'hidden',
         }}>
-          <img src={p.imagen_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={p.imagen_url} alt="" onError={() => setImgError(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       ) : (
         <FoodChip cat={cat || 'general'} size={56} />

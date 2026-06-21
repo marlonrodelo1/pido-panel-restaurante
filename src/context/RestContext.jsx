@@ -8,6 +8,7 @@ const RestContext = createContext({})
 export function RestProvider({ children }) {
   const [user, setUser] = useState(null)
   const [restaurante, setRestaurante] = useState(null)
+  const [restauranteNotFound, setRestauranteNotFound] = useState(false)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
 
@@ -21,7 +22,7 @@ export function RestProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) fetchRestaurante(session.user.id)
-      else { setRestaurante(null); setLoading(false) }
+      else { setRestaurante(null); setRestauranteNotFound(false); setLoading(false) }
     })
 
     return () => subscription.unsubscribe()
@@ -43,6 +44,7 @@ export function RestProvider({ children }) {
   }, [user?.id])
 
   async function fetchRestaurante(userId) {
+    setRestauranteNotFound(false)
     try {
       // Verificar/asignar rol 'restaurante' en tabla usuarios
       const { data: perfil } = await supabase.from('usuarios').select('id, rol, created_at').eq('id', userId).single()
@@ -69,6 +71,10 @@ export function RestProvider({ children }) {
       if (data) {
         registerWebPush('restaurante', { establecimiento_id: data.id })
         registerPushNotifications('restaurante', { establecimiento_id: data.id })
+      } else {
+        // Cuenta autenticada pero sin establecimiento vinculado: marcar
+        // explicitamente "no encontrado" para no quedar en "Cargando..." infinito.
+        setRestauranteNotFound(true)
       }
     } catch (err) {
       console.error('[RestContext] Error cargando restaurante:', err)
@@ -148,7 +154,7 @@ export function RestProvider({ children }) {
   }
 
   return (
-    <RestContext.Provider value={{ user, restaurante, loading, authError, setAuthError, login, registro, logout, updateRestaurante, refetch: () => fetchRestaurante(user?.id) }}>
+    <RestContext.Provider value={{ user, restaurante, restauranteNotFound, loading, authError, setAuthError, login, registro, logout, updateRestaurante, refetch: () => fetchRestaurante(user?.id) }}>
       {children}
     </RestContext.Provider>
   )

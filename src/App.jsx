@@ -9,7 +9,7 @@ import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { Browser } from '@capacitor/browser'
 import { supabase } from './lib/supabase'
-import { colors } from './lib/uiStyles'
+import { colors, ds } from './lib/uiStyles'
 import { RestProvider, useRest } from './context/RestContext'
 import { PedidoAlertProvider, usePedidoAlert } from './context/PedidoAlertContext'
 import Login from './pages/Login'
@@ -69,7 +69,7 @@ function useIsDesktop(breakpoint = 1024) {
 }
 
 function AppContent() {
-  const { user, restaurante, loading } = useRest()
+  const { user, restaurante, restauranteNotFound, loading, logout } = useRest()
   const [seccion, setSeccion] = useState(isNative ? 'pedidos' : 'historial')
 
   const handleNuevoPedido = useCallback(() => {
@@ -121,6 +121,31 @@ function AppContent() {
 
   if (!user) {
     return <div style={shell}><style>{css}</style><Login /></div>
+  }
+
+  // Cuenta autenticada pero sin establecimiento vinculado: pantalla legible con
+  // salida (evita el "Cargando restaurante..." infinito).
+  if (!restaurante && restauranteNotFound) {
+    return (
+      <div style={{ ...shell, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 32 }}>
+        <style>{css}</style>
+        <div style={{ textAlign: 'center', maxWidth: 360 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: colors.ink, marginBottom: 8 }}>
+            No encontramos un negocio vinculado a esta cuenta
+          </div>
+          <div style={{ fontSize: 13, color: colors.stone, marginBottom: 24, lineHeight: 1.5 }}>
+            Esta cuenta no tiene ningún restaurante asociado. Si crees que es un error, contacta con el equipo de Pidoo o inicia sesión con otra cuenta.
+          </div>
+          <button
+            onClick={logout}
+            style={{ ...ds.primaryBtn, height: 42, padding: '0 28px' }}
+          >
+            <LogOut size={15} strokeWidth={2} />
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!restaurante) {

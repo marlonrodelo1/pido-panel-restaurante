@@ -101,6 +101,38 @@ export default function PedidosEnVivo() {
   // ref a fetchPedidos para usarlo en listeners de foreground sin reset effect
   const fetchPedidosRef = useRef(null)
 
+  // ── Recovery de pedidos delivery en limbo ────────────────────────────────
+  // Si la app murió mientras aceptarPedido() reintentaba create-shipday-order,
+  // el pedido queda en 'preparando' (delivery) sin shipday_status y sin que
+  // el cron de reasignación lo recoja (ese cron solo mira assigned_at). Aquí
+  // detectamos ese caso y reinvocamos el dispatcher UNA sola vez por pedido.
+  const recoveryIntentadoRef = useRef(new Set())
+  async function recoverPedidosLimbo(lista) {
+    if (!Array.isArray(lista) || lista.length === 0) return
+    const ahora = Date.now()
+    for (const p of lista) {
+      if (
+        p.modo_entrega === 'delivery' &&
+        p.estado === 'preparando' &&
+        !p.shipday_status &&
+        !recoveryIntentadoRef.current.has(p.id)
+      ) {
+        const ref = p.assigned_at || p.aceptado_at
+        // Solo si han pasado >30s desde que se aceptó (margen para el IIFE normal).
+        if (ref && ahora - new Date(ref).getTime() > 30000) {
+          recoveryIntentadoRef.current.add(p.id)
+          supabase.functions
+            .invoke('create-shipday-order', { body: { pedido_id: p.id } })
+            .then(({ error }) => {
+              if (error) console.error(`[Recovery] Falló reintento dispatcher para ${p.id}:`, error)
+              else console.log(`[Recovery] Dispatcher reinvocado para pedido en limbo ${p.codigo || p.id}`)
+            })
+            .catch(err => console.error(`[Recovery] Error reintento dispatcher ${p.id}:`, err))
+        }
+      }
+    }
+  }
+
   // ── Fetch inicial + Realtime UPDATE (los INSERT los maneja el contexto) ──
   useEffect(() => {
     if (!restaurante) return
@@ -265,6 +297,9 @@ export default function PedidosEnVivo() {
       ])
       setEntrantes(nuevos || [])
       setActivos(prep || [])
+      // Recovery: reintenta el dispatcher para pedidos delivery atascados en
+      // 'preparando' sin shipday_status (app murió durante los retries).
+      recoverPedidosLimbo(prep || [])
       const t = {}
       for (const p of nuevos || []) t[p.id] = 180
       setTimers(t)
