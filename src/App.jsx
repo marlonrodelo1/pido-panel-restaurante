@@ -432,7 +432,7 @@ function Breadcrumbs({ seccion }) {
 
 function AppInner({ seccion, setSeccion, nav }) {
   const { restaurante, user, logout } = useRest()
-  const { pedidosNuevos, silenciada, silenciar } = usePedidoAlert()
+  const { pedidosNuevos } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sociosPendientes, setSociosPendientes] = useState(0)
   const [subActiva, setSubActiva] = useState(null) // null=cargando, true/false
@@ -755,57 +755,6 @@ function AppInner({ seccion, setSeccion, nav }) {
           )}
         </div>
       </div>
-
-      {/* Banner pedidos nuevos (solo nativa) */}
-      {isNative && pedidosNuevos.length > 0 && (
-        <div style={{
-          position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
-          width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100,
-          background: 'linear-gradient(135deg, #C5562C, #A8451F)',
-          borderRadius: 14, padding: '12px 14px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 10, fontFamily: 'inherit',
-          boxShadow: '0 8px 32px rgba(255,107,44,0.35)',
-          animation: silenciada ? 'none' : 'pulse 1.5s ease-in-out infinite',
-        }}>
-          <div
-            onClick={() => { if (seccion !== 'pedidos') setSeccion('pedidos') }}
-            style={{ flex: 1, cursor: seccion !== 'pedidos' ? 'pointer' : 'default', textAlign: 'left', minWidth: 0 }}
-          >
-            <div style={{ color: '#fff', fontSize: 13, fontWeight: 800 }}>
-              {pedidosNuevos.length} pedido{pedidosNuevos.length > 1 ? 's' : ''} nuevo{pedidosNuevos.length > 1 ? 's' : ''}
-            </div>
-            <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: 600 }}>
-              {silenciada ? 'Alarma silenciada' : (seccion !== 'pedidos' ? 'Toca para ver y aceptar' : 'Acepta o rechaza desde la lista')}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {!silenciada && (
-              <button
-                onClick={(e) => { e.stopPropagation(); silenciar() }}
-                style={{
-                  padding: '7px 11px', borderRadius: 8,
-                  border: '1px solid rgba(255,255,255,0.35)',
-                  background: 'rgba(0,0,0,0.25)', color: '#fff',
-                  fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                  whiteSpace: 'nowrap',
-                }}
-              >Silenciar</button>
-            )}
-            {seccion !== 'pedidos' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setSeccion('pedidos') }}
-                style={{
-                  color: '#fff', fontSize: 11, fontWeight: 700,
-                  background: 'rgba(255,255,255,0.25)', padding: '7px 11px',
-                  borderRadius: 8, border: 'none', cursor: 'pointer',
-                  fontFamily: 'inherit', whiteSpace: 'nowrap',
-                }}
-              >Ir a pedidos</button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Banner fiscal */}
       {fiscalBanner}

@@ -76,13 +76,103 @@ function useIsTabletHorizontal() {
   return isTablet
 }
 
+// ─── Aviso único de pedido nuevo (es el propio pedido) ──────────────────────
+// Un solo aviso, arriba del todo: muestra el pedido nuevo más reciente con su
+// código, tipo, total, cliente y timer, y un botón "Ver pedido" que abre el
+// detalle (donde se acepta o rechaza). Sustituye a los dos banners anteriores.
+function AlertaNuevoPedido({ entrantes, timers, silenciada, onVer, onSilenciar }) {
+  const nuevo = entrantes[0]
+  if (!nuevo) return null
+  const n = entrantes.length
+  const nombre = nuevo.usuarios?.nombre
+    ? `${nuevo.usuarios.nombre}${nuevo.usuarios.apellido ? ' ' + nuevo.usuarios.apellido : ''}`
+    : 'Cliente'
+  const isDelivery = nuevo.modo_entrega === 'delivery'
+  const timer = timers[nuevo.id]
+
+  return (
+    <div style={{
+      background: `linear-gradient(180deg, ${colors.terracotta} 0%, ${colors.terracotta2} 100%)`,
+      color: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 16,
+      boxShadow: '0 10px 28px rgba(168,69,31,0.34), inset 0 1px 0 rgba(255,255,255,0.16)',
+      animation: silenciada ? 'none' : 'pidooPulse 1.8s infinite',
+    }}>
+      <style>{`@keyframes pidooPulse{0%,100%{box-shadow:0 10px 28px rgba(168,69,31,0.30)}50%{box-shadow:0 12px 34px rgba(197,86,44,0.55)}}`}</style>
+
+      {/* Cabecera: campana + título + timer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <Bell size={18} strokeWidth={2.3} />
+          <span style={{ fontWeight: 800, fontSize: type.base, letterSpacing: '-0.01em' }}>
+            {n > 1 ? `${n} pedidos nuevos` : '¡Nuevo pedido!'}
+          </span>
+        </div>
+        {timer != null && timer > 0 && (
+          <span style={{
+            fontVariantNumeric: 'tabular-nums', fontWeight: 800, fontSize: type.sm,
+            background: 'rgba(0,0,0,0.22)', padding: '3px 10px', borderRadius: 8,
+            animation: timer < 60 ? 'pulse 0.6s ease-in-out infinite' : 'none',
+          }}>{formatTimer(timer)}</span>
+        )}
+      </div>
+
+      {/* Resumen del pedido */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <span style={{ fontFamily: type.mono, fontSize: type.xs, opacity: 0.92, fontWeight: 700 }}>{nuevo.codigo}</span>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          background: 'rgba(255,255,255,0.18)', padding: '2px 8px', borderRadius: 6,
+          fontSize: 11, fontWeight: 700,
+        }}>
+          {isDelivery ? <Bike size={11} strokeWidth={2.4} /> : <ShoppingBag size={11} strokeWidth={2.4} />}
+          {isDelivery ? 'Delivery' : 'Recogida'}
+        </span>
+        <span style={{ fontWeight: 800, fontSize: type.base }}>{(nuevo.total || 0).toFixed(2)}€</span>
+        <span style={{
+          opacity: 0.95, fontSize: type.sm, fontWeight: 600, minWidth: 0,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>· {nombre}</span>
+      </div>
+
+      {/* Acciones */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => onVer(nuevo.id)}
+          style={{
+            flex: 1, padding: '12px 0', borderRadius: 10, border: 'none',
+            background: '#fff', color: colors.terracotta2, fontWeight: 800, fontSize: type.sm,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >Ver pedido</button>
+        {!silenciada && (
+          <button
+            onClick={onSilenciar}
+            style={{
+              padding: '12px 14px', borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.18)',
+              color: '#fff', fontWeight: 700, fontSize: type.xs, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+            }}
+          ><BellOff size={13} strokeWidth={2.2} /> Silenciar</button>
+        )}
+      </div>
+
+      {n > 1 && (
+        <div style={{ marginTop: 9, fontSize: type.xxs, opacity: 0.85, fontWeight: 600 }}>
+          y {n - 1} más sin aceptar · empieza por el más reciente
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Componente principal ──────────────────────────────────────────────────
 export default function PedidosEnVivo() {
   const { restaurante } = useRest()
   // pedidosNuevos viene del contexto global (fuente única de verdad para "nuevos").
   // La suscripción realtime de INSERT vive en PedidoAlertContext, por encima
   // del router, así la alarma persiste al cambiar de sección.
-  const { pedidosNuevos } = usePedidoAlert()
+  const { pedidosNuevos, silenciar, silenciada } = usePedidoAlert()
   const [entrantes, setEntrantes] = useState([])
   const [activos, setActivos] = useState([])
   const [itemsMap, setItemsMap] = useState({})
@@ -97,6 +187,16 @@ export default function PedidosEnVivo() {
     const existe = [...entrantes, ...activos].some(p => p.id === pedidoDetalleId)
     if (!existe) setPedidoDetalleId(null)
   }, [entrantes, activos])
+
+  // ── Tablet horizontal (split): auto-seleccionar el pedido nuevo más reciente ──
+  // Así el aviso es directamente el pedido: el detalle con Aceptar/Rechazar
+  // aparece solo en la columna derecha, sin banners extra.
+  useEffect(() => {
+    if (!isTabletHorizontal) return
+    if (pedidoDetalleId) return
+    if (entrantes.length === 0) return
+    setPedidoDetalleId(entrantes[0].id)
+  }, [isTabletHorizontal, entrantes, pedidoDetalleId])
 
   // ref a fetchPedidos para usarlo en listeners de foreground sin reset effect
   const fetchPedidosRef = useRef(null)
@@ -525,47 +625,17 @@ export default function PedidosEnVivo() {
     )
   }
 
-  // ─── MOBILE PORTRAIT: lista compacta con sticky banner + secciones ──────
+  // ─── MOBILE PORTRAIT: lista compacta con aviso único + secciones ──────
   return (
     <div>
-      {/* Sticky banner terracotta cuando hay pedidos nuevos (matches bundle s1-apk) */}
-      {entrantes.length > 0 && (
-        <div style={{
-          background: `linear-gradient(180deg, ${colors.terracotta} 0%, ${colors.terracotta2} 100%)`,
-          color: '#fff',
-          padding: '10px 14px',
-          borderRadius: 12,
-          marginBottom: 16,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          boxShadow: '0 2px 8px rgba(168,69,31,0.25)',
-          animation: 'pidooPulse 1.8s infinite',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            <Bell size={18} strokeWidth={2.2} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: type.sm }}>
-                {entrantes.length} pedido{entrantes.length === 1 ? '' : 's'} nuevo{entrantes.length === 1 ? '' : 's'}
-              </div>
-              <div style={{ opacity: 0.85, fontSize: type.xxs }}>Toca uno para revisarlo</div>
-            </div>
-          </div>
-          <button
-            onClick={() => stopAlarm()}
-            style={{
-              background: 'rgba(255,255,255,0.18)',
-              border: '1px solid rgba(255,255,255,0.3)',
-              color: '#fff', padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
-              fontWeight: 600, fontSize: type.xxs, fontFamily: 'inherit',
-              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
-            }}
-          >
-            <BellOff size={12} strokeWidth={2.2} /> Silenciar
-          </button>
-        </div>
-      )}
+      {/* Aviso único: el propio pedido nuevo, con "Ver pedido" → aceptar/rechazar */}
+      <AlertaNuevoPedido
+        entrantes={entrantes}
+        timers={timers}
+        silenciada={silenciada}
+        onVer={(id) => setPedidoDetalleId(id)}
+        onSilenciar={silenciar}
+      />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
