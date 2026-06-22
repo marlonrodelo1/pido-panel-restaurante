@@ -116,8 +116,14 @@ export default function Ajustes() {
   // F4: tarifa envío fija (Plan Pidoo SaaS)
   const [tarifaEnvioFija, setTarifaEnvioFija] = useState(restaurante?.tarifa_envio_fija ?? '')
   const [guardandoTarifaFija, setGuardandoTarifaFija] = useState(false)
+  // Modo unificado de tarifa de envío: 'unica' (precio fijo único) | 'distancia'
+  // (base + km). Deriva de si tarifa_envio_fija está puesta (gana en calcular_envio)
+  // o es null (entonces se calcula por distancia).
+  const [tarifaModo, setTarifaModo] = useState(restaurante?.tarifa_envio_fija != null ? 'unica' : 'distancia')
+  const [guardandoTarifaEnvio, setGuardandoTarifaEnvio] = useState(false)
   useEffect(() => {
     setTarifaEnvioFija(restaurante?.tarifa_envio_fija ?? '')
+    setTarifaModo(restaurante?.tarifa_envio_fija != null ? 'unica' : 'distancia')
   }, [restaurante?.tarifa_envio_fija])
   async function guardarTarifaFija() {
     setGuardandoTarifaFija(true)
@@ -134,6 +140,47 @@ export default function Ajustes() {
     if (error) return toast('Error: ' + error.message, 'error')
     await updateRestaurante?.({ tarifa_envio_fija: parsed })
     toast('Tarifa de envío fija guardada', 'success')
+  }
+
+  // Guardado del selector unificado de tarifa de envío.
+  //  - 'unica': guarda tarifa_envio_fija (gana en calcular_envio → precio fijo siempre).
+  //  - 'distancia': pone tarifa_envio_fija=null (para que se calcule por distancia) y,
+  //    si la plataforma lo permite, guarda la config por km con override_activo=true.
+  async function guardarTarifaEnvio() {
+    setGuardandoTarifaEnvio(true)
+    try {
+      if (tarifaModo === 'unica') {
+        const parsed = tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija)
+        if (parsed == null || Number.isNaN(parsed) || parsed < 0) return toast('Introduce un precio de envío válido', 'error')
+        const { error } = await supabase.from('establecimientos').update({ tarifa_envio_fija: parsed }).eq('id', restaurante.id)
+        if (error) return toast('Error: ' + error.message, 'error')
+        await updateRestaurante?.({ tarifa_envio_fija: parsed })
+        toast('Tarifa de envío guardada · precio único', 'success')
+      } else {
+        const { error: e1 } = await supabase.from('establecimientos').update({ tarifa_envio_fija: null }).eq('id', restaurante.id)
+        if (e1) return toast('Error: ' + e1.message, 'error')
+        await updateRestaurante?.({ tarifa_envio_fija: null })
+        setTarifaEnvioFija('')
+        if (overrideTarifaPermitido) {
+          const payload = {
+            establecimiento_id: restaurante.id,
+            algoritmo_asignacion: deliveryCfg.algoritmo_asignacion,
+            timing_envio_rider: deliveryCfg.timing_envio_rider,
+            tarifa_base: deliveryCfg.tarifa_base === '' ? null : Number(deliveryCfg.tarifa_base),
+            tarifa_radio_base_km: deliveryCfg.tarifa_radio_base_km === '' ? null : Number(deliveryCfg.tarifa_radio_base_km),
+            tarifa_precio_km: deliveryCfg.tarifa_precio_km === '' ? null : Number(deliveryCfg.tarifa_precio_km),
+            tarifa_maxima: deliveryCfg.tarifa_maxima === '' ? null : Number(deliveryCfg.tarifa_maxima),
+            override_activo: true,
+          }
+          const { error: e2 } = await supabase.from('restaurante_config_delivery').upsert(payload, { onConflict: 'establecimiento_id' })
+          if (e2) return toast('Error: ' + e2.message, 'error')
+          updateDelivery('override_activo', true)
+        }
+        toast('Tarifa de envío guardada · por distancia', 'success')
+      }
+    } finally {
+      setGuardandoTarifaEnvio(false)
+    }
   }
 
   // Printer config
@@ -642,48 +689,8 @@ export default function Ajustes() {
         )}
       </div>
 
-      {/* ── Tarifa de envío fija de la tienda pública (todos los restaurantes) ── */}
-      {(
-        <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Tarifa de envío</h3>
-          <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-            Tarifas de envío que cobras al cliente final en <span style={{ fontFamily: 'monospace' }}>pidoo.es/{restaurante.slug || 'tu-tienda'}</span>.
-            Si lo dejas vacío, se aplica la tarifa global por distancia.
-          </div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' }}>
-            Tarifa envío fija (€)
-          </label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              value={tarifaEnvioFija ?? ''}
-              onChange={e => setTarifaEnvioFija(e.target.value)}
-              placeholder="Ej: 3.50"
-              style={{
-                flex: 1, padding: '10px 12px', borderRadius: 10,
-                background: 'var(--c-surface2)', border: '1px solid var(--c-border)',
-                color: 'var(--c-text)', fontSize: 14, fontFamily: 'monospace',
-                outline: 'none', minHeight: 40,
-              }}
-            />
-            <button
-              onClick={guardarTarifaFija}
-              disabled={guardandoTarifaFija}
-              style={{
-                padding: '0 18px', borderRadius: 10,
-                border: 'none',
-                background: guardandoTarifaFija ? 'rgba(0,0,0,0.1)' : 'var(--c-primary)',
-                color: '#fff', fontSize: 13, fontWeight: 700,
-                cursor: guardandoTarifaFija ? 'default' : 'pointer',
-                fontFamily: 'inherit', minHeight: 40,
-              }}>
-              {guardandoTarifaFija ? 'Guardando...' : 'Guardar'}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* La tarifa de envío se gestiona en una sola tarjeta unificada más abajo
+          (selector precio único / por distancia). */}
 
       {/* Estado abierto/cerrado — inmediato */}
       <div style={{ background: activo ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1147,104 +1154,119 @@ export default function Ajustes() {
           />
           <span style={{ fontSize: 13, fontWeight: 600 }}>Usar mi configuración</span>
         </label>
-      </div>
-
-      {/* Delivery — Tarifa de envío al cliente */}
-      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Tarifa de envío que cobras al cliente</h3>
-
-        {!overrideTarifaPermitido && (
-          <div style={{ padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', fontSize: 11, color: '#FBBF24', marginBottom: 12 }}>
-            Tu Pidoo no permite personalizar esto todavía. Se están usando las reglas globales.
-          </div>
-        )}
-
-        {(() => {
-          const readOnly = !overrideTarifaPermitido
-          const base = readOnly ? globalDefaults.envio_tarifa_base : deliveryCfg.tarifa_base
-          const radio = readOnly ? globalDefaults.envio_radio_base_km : deliveryCfg.tarifa_radio_base_km
-          const precio = readOnly ? globalDefaults.envio_precio_km_adicional : deliveryCfg.tarifa_precio_km
-          const maxima = readOnly ? globalDefaults.envio_tarifa_maxima : deliveryCfg.tarifa_maxima
-          const fmt = v => (v === '' || v === null || v === undefined) ? '—' : Number(v).toFixed(2)
-          return (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
-                <div>
-                  <label style={lbl}>Tarifa base (€)</label>
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={base}
-                    onChange={e => updateDelivery('tarifa_base', e.target.value)}
-                    disabled={readOnly}
-                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
-                  />
-                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Asignada a todos los pedidos</div>
-                </div>
-                <div>
-                  <label style={lbl}>Distancia base (km)</label>
-                  <input
-                    type="number" step="0.1" min="0"
-                    value={radio}
-                    onChange={e => updateDelivery('tarifa_radio_base_km', e.target.value)}
-                    disabled={readOnly}
-                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
-                  />
-                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Si se excede, se añade cargo adicional</div>
-                </div>
-                <div>
-                  <label style={lbl}>Tarifa adicional por km (€)</label>
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={precio}
-                    onChange={e => updateDelivery('tarifa_precio_km', e.target.value)}
-                    disabled={readOnly}
-                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
-                  />
-                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Esto se cobra por cada km sobre la distancia base</div>
-                </div>
-                <div>
-                  <label style={lbl}>Tarifa máxima (€)</label>
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={maxima}
-                    onChange={e => updateDelivery('tarifa_maxima', e.target.value)}
-                    disabled={readOnly}
-                    style={{ ...inp, opacity: readOnly ? 0.6 : 1 }}
-                  />
-                  <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Tope del envío</div>
-                </div>
-              </div>
-
-              <div style={{ padding: 12, borderRadius: 10, background: 'var(--c-primary-light)', border: '1px solid rgba(185,28,28,0.2)', fontSize: 12, color: 'var(--c-text)', lineHeight: 1.6, marginBottom: 12 }}>
-                A tus clientes se les cobrará <strong>{fmt(base)}€</strong> por los primeros <strong>{fmt(radio)} km</strong>. Después, <strong>{fmt(precio)}€</strong> por cada km adicional, con un máximo de <strong>{fmt(maxima)}€</strong>.
-              </div>
-            </>
-          )
-        })()}
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: overrideTarifaPermitido ? 'pointer' : 'default', opacity: overrideTarifaPermitido ? 1 : 0.6 }}>
-          <input
-            type="checkbox"
-            checked={!!deliveryCfg.override_activo}
-            onChange={e => updateDelivery('override_activo', e.target.checked)}
-            disabled={!overrideTarifaPermitido}
-            style={{ width: 18, height: 18, accentColor: 'var(--c-primary)' }}
-          />
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Usar mi configuración</span>
-        </label>
 
         <button
           onClick={guardarDelivery}
-          disabled={guardandoDelivery || (!overrideAlgoPermitido && !overrideTarifaPermitido)}
+          disabled={guardandoDelivery || !overrideAlgoPermitido}
           style={{
             width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 12, border: 'none',
             background: guardandoDelivery ? 'var(--c-muted)' : 'var(--c-primary)',
             color: '#fff', fontSize: 13, fontWeight: 800,
             cursor: guardandoDelivery ? 'default' : 'pointer', fontFamily: 'inherit',
-            opacity: (!overrideAlgoPermitido && !overrideTarifaPermitido) ? 0.5 : 1,
+            opacity: !overrideAlgoPermitido ? 0.5 : 1,
           }}
         >
-          {guardandoDelivery ? 'Guardando...' : 'Guardar configuración delivery'}
+          {guardandoDelivery ? 'Guardando...' : 'Guardar asignación'}
+        </button>
+      </div>
+
+      {/* Delivery — Tarifa de envío al cliente (selector unificado: precio único / por distancia) */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Tarifa de envío que cobras al cliente</h3>
+        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+          Elige cómo cobras el envío. Lo que elijas aquí es <strong>exactamente lo que se le suma al pedido</strong> al cliente.
+        </p>
+
+        {/* Selector de modo */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {[
+            { id: 'unica', label: 'Precio único', sub: 'Un solo precio para todo' },
+            { id: 'distancia', label: 'Por distancia', sub: 'Según los km al cliente' },
+          ].map(opt => (
+            <button key={opt.id} type="button" onClick={() => setTarifaModo(opt.id)} style={{
+              flex: 1, minWidth: 140, padding: '12px 12px', borderRadius: 12, textAlign: 'left',
+              border: tarifaModo === opt.id ? '2px solid var(--c-primary)' : '1px solid var(--c-border)',
+              background: tarifaModo === opt.id ? 'var(--c-primary-light)' : 'var(--c-surface2)',
+              color: 'var(--c-text)', cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: tarifaModo === opt.id ? 'var(--c-primary)' : 'var(--c-text)' }}>{opt.label}</div>
+              <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 2 }}>{opt.sub}</div>
+            </button>
+          ))}
+        </div>
+
+        {tarifaModo === 'unica' ? (
+          <>
+            <label style={lbl}>Precio de envío (€)</label>
+            <input
+              type="number" step="0.1" min="0"
+              value={tarifaEnvioFija ?? ''}
+              onChange={e => setTarifaEnvioFija(e.target.value)}
+              placeholder="Ej: 3.50"
+              style={inp}
+            />
+            <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 6, lineHeight: 1.5 }}>
+              Se le cobrará al cliente <strong>siempre lo mismo</strong>, sin importar la distancia.
+            </div>
+          </>
+        ) : (
+          <>
+            {!overrideTarifaPermitido && (
+              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', fontSize: 11, color: '#FBBF24', marginBottom: 12 }}>
+                Tu Pidoo no permite personalizar la tarifa por distancia todavía. Se usarán las reglas globales por distancia.
+              </div>
+            )}
+            {(() => {
+              const readOnly = !overrideTarifaPermitido
+              const base = readOnly ? globalDefaults.envio_tarifa_base : deliveryCfg.tarifa_base
+              const radio = readOnly ? globalDefaults.envio_radio_base_km : deliveryCfg.tarifa_radio_base_km
+              const precio = readOnly ? globalDefaults.envio_precio_km_adicional : deliveryCfg.tarifa_precio_km
+              const maxima = readOnly ? globalDefaults.envio_tarifa_maxima : deliveryCfg.tarifa_maxima
+              const fmt = v => (v === '' || v === null || v === undefined) ? '—' : Number(v).toFixed(2)
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={lbl}>Tarifa base (€)</label>
+                      <input type="number" step="0.01" min="0" value={base} onChange={e => updateDelivery('tarifa_base', e.target.value)} disabled={readOnly} style={{ ...inp, opacity: readOnly ? 0.6 : 1 }} />
+                      <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Asignada a todos los pedidos</div>
+                    </div>
+                    <div>
+                      <label style={lbl}>Distancia base (km)</label>
+                      <input type="number" step="0.1" min="0" value={radio} onChange={e => updateDelivery('tarifa_radio_base_km', e.target.value)} disabled={readOnly} style={{ ...inp, opacity: readOnly ? 0.6 : 1 }} />
+                      <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Si se excede, se añade cargo adicional</div>
+                    </div>
+                    <div>
+                      <label style={lbl}>Tarifa adicional por km (€)</label>
+                      <input type="number" step="0.01" min="0" value={precio} onChange={e => updateDelivery('tarifa_precio_km', e.target.value)} disabled={readOnly} style={{ ...inp, opacity: readOnly ? 0.6 : 1 }} />
+                      <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Esto se cobra por cada km sobre la distancia base</div>
+                    </div>
+                    <div>
+                      <label style={lbl}>Tarifa máxima (€)</label>
+                      <input type="number" step="0.01" min="0" value={maxima} onChange={e => updateDelivery('tarifa_maxima', e.target.value)} disabled={readOnly} style={{ ...inp, opacity: readOnly ? 0.6 : 1 }} />
+                      <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>Tope del envío</div>
+                    </div>
+                  </div>
+                  <div style={{ padding: 12, borderRadius: 10, background: 'var(--c-primary-light)', border: '1px solid rgba(185,28,28,0.2)', fontSize: 12, color: 'var(--c-text)', lineHeight: 1.6, marginBottom: 12 }}>
+                    A tus clientes se les cobrará <strong>{fmt(base)}€</strong> por los primeros <strong>{fmt(radio)} km</strong>. Después, <strong>{fmt(precio)}€</strong> por cada km adicional, con un máximo de <strong>{fmt(maxima)}€</strong>.
+                  </div>
+                </>
+              )
+            })()}
+          </>
+        )}
+
+        <button
+          onClick={guardarTarifaEnvio}
+          disabled={guardandoTarifaEnvio}
+          style={{
+            width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 12, border: 'none',
+            background: guardandoTarifaEnvio ? 'var(--c-muted)' : 'var(--c-primary)',
+            color: '#fff', fontSize: 13, fontWeight: 800,
+            cursor: guardandoTarifaEnvio ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          {guardandoTarifaEnvio ? 'Guardando...' : 'Guardar tarifa de envío'}
         </button>
       </div>
 
