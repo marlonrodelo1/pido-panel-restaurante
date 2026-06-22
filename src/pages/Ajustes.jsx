@@ -585,32 +585,13 @@ export default function Ajustes() {
         Configuración de tu negocio
       </div>
 
-      {/* ── F2: URL propia (solo Plan Pidoo SaaS) ── */}
+      {/* ── URL pública de la tienda (gratis para todos los restaurantes) ── */}
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Mi URL propia</h3>
-          {!restaurante?.plan_pro && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
-              background: '#F0E1C8', color: '#8B6126',
-              letterSpacing: '0.02em', border: '1px solid #F0E1C8',
-            }}>Plan SaaS</span>
-          )}
-        </div>
+        <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 6px' }}>Mi tienda online</h3>
         <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-          {restaurante?.plan_pro
-            ? 'Tu tienda está activa en pidoo.es/<tu-slug> con el Plan Pidoo SaaS.'
-            : 'Activa el Plan Pidoo SaaS (39€/mes, 0% comisión) para tener tu propia URL pidoo.es/<tu-slug>.'}
+          Esta es la URL pública de tu tienda. Ábrela para verla o compártela con tus clientes.
         </div>
-        {!restaurante?.plan_pro ? (
-          <div style={{
-            padding: '12px 14px', borderRadius: 10,
-            background: 'var(--c-primary-light)', border: '1px solid rgba(185,28,28,0.25)',
-            fontSize: 12, color: 'var(--c-text)', lineHeight: 1.5,
-          }}>
-            Ve al menú <strong>Más → Plan Pidoo SaaS</strong> para activarlo.
-          </div>
-        ) : restaurante?.slug ? (
+        {restaurante?.slug ? (
           <>
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
@@ -622,17 +603,17 @@ export default function Ajustes() {
                 https://pidoo.es/{restaurante.slug}
               </span>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button onClick={copiarUrl} style={{
-                flex: 1, padding: '10px 14px', borderRadius: 10,
+                flex: 1, minWidth: 120, padding: '10px 14px', borderRadius: 10,
                 border: '1px solid var(--c-border)', background: 'var(--c-surface2)',
                 color: 'var(--c-text)', fontSize: 13, fontWeight: 700,
                 cursor: 'pointer', fontFamily: 'inherit',
               }}>
-                {slugCopied ? '✓ Copiado' : 'Copiar'}
+                {slugCopied ? '✓ Copiado' : 'Copiar enlace'}
               </button>
               <button onClick={() => window.open(`https://pidoo.es/${restaurante.slug}`, '_blank', 'noopener,noreferrer')} style={{
-                flex: 1, padding: '10px 14px', borderRadius: 10,
+                flex: 1, minWidth: 120, padding: '10px 14px', borderRadius: 10,
                 border: 'none', background: 'var(--c-primary)',
                 color: '#fff', fontSize: 13, fontWeight: 700,
                 cursor: 'pointer', fontFamily: 'inherit',
