@@ -150,7 +150,9 @@ export default function Ajustes() {
       loadDeliveryConfig()
       const h = restaurante.horario || null
       setHorario(h)
-      setHorarioOriginal(h ? JSON.stringify(h) : null)
+      // Normalizado SIEMPRE a string JSON (incl. "null"), para comparar con
+      // JSON.stringify(horario) sin que el caso null dé un falso "hay cambios".
+      setHorarioOriginal(JSON.stringify(h ?? null))
     }
   }, [restaurante?.id])
 
@@ -280,6 +282,10 @@ export default function Ajustes() {
     })
   }
 
+  // Detecta cambios reales sobre TODO lo que guarda guardarTodo (info, fiscal,
+  // pagos, acceso, categorías y horario). El botón "Guardar cambios" solo aparece
+  // si esto es true. Antes solo cubría la info básica y el horario daba falso
+  // positivo cuando era null.
   const hayCambios =
     nombre !== (restaurante?.nombre || '') ||
     tipo !== (restaurante?.tipo || 'restaurante') ||
@@ -287,9 +293,19 @@ export default function Ajustes() {
     direccion !== (restaurante?.direccion || '') ||
     email !== (restaurante?.email || '') ||
     telefono !== (restaurante?.telefono || '') ||
-    radioCobertura !== (restaurante?.radio_cobertura_km || 10) ||
-    JSON.stringify(catsSeleccionadas.sort()) !== JSON.stringify(catsOriginales.sort()) ||
-    JSON.stringify(horario) !== horarioOriginal
+    Number(radioCobertura) !== Number(restaurante?.radio_cobertura_km || 10) ||
+    razonSocial !== (restaurante?.razon_social || '') ||
+    nif !== (restaurante?.nif || '') ||
+    direccionFiscal !== (restaurante?.direccion_fiscal || '') ||
+    codigoPostalFiscal !== (restaurante?.codigo_postal || '') ||
+    ciudadFiscal !== (restaurante?.ciudad_fiscal || '') ||
+    provinciaFiscal !== (restaurante?.provincia_fiscal || '') ||
+    aceptaEfectivo !== (restaurante?.acepta_efectivo ?? true) ||
+    aceptaTarjetaOnline !== (restaurante?.acepta_tarjeta_online ?? true) ||
+    aceptaDatafono !== (restaurante?.acepta_datafono ?? true) ||
+    exigeRegistro !== (restaurante?.exige_registro_cliente ?? false) ||
+    JSON.stringify([...catsSeleccionadas].sort()) !== JSON.stringify([...catsOriginales].sort()) ||
+    JSON.stringify(horario ?? null) !== horarioOriginal
 
   async function guardarTodo() {
     setGuardando(true)
@@ -331,7 +347,7 @@ export default function Ajustes() {
     }
 
     await updateRestaurante(updates)
-    setHorarioOriginal(horario ? JSON.stringify(horario) : null)
+    setHorarioOriginal(JSON.stringify(horario ?? null))
     // Guardar categorías del establecimiento (nivel 2)
     await supabase.from('establecimiento_categorias').delete().eq('establecimiento_id', restaurante.id)
     if (catsSeleccionadas.length > 0) {
@@ -504,7 +520,7 @@ export default function Ajustes() {
   const lbl = { fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.45)', marginBottom: 4, display: 'block' }
 
   return (
-    <div style={{ paddingBottom: hayCambios ? 90 : 0 }}>
+    <div style={{ paddingBottom: hayCambios ? 90 : 0, maxWidth: 760, marginLeft: 'auto', marginRight: 'auto', width: '100%' }}>
       <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--c-text)', letterSpacing: '-0.02em', margin: 0 }}>Ajustes</h2>
       <div style={{ fontSize: 14, color: 'var(--c-muted)', marginBottom: 22, marginTop: 4 }}>
         Configuración de tu negocio
@@ -1106,7 +1122,7 @@ export default function Ajustes() {
           const fmt = v => (v === '' || v === null || v === undefined) ? '—' : Number(v).toFixed(2)
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
                 <div>
                   <label style={lbl}>Tarifa base (€)</label>
                   <input
@@ -1563,7 +1579,7 @@ export default function Ajustes() {
       {hayCambios && (
         <div style={{
           position: 'fixed', bottom: 70, left: '50%', transform: 'translateX(-50%)',
-          width: '100%', padding: '0 20px', zIndex: 40,
+          width: '100%', maxWidth: 800, padding: '0 20px', zIndex: 40, boxSizing: 'border-box',
           animation: 'fadeIn 0.3s ease',
         }}>
           <button onClick={guardarTodo} disabled={guardando} style={{
