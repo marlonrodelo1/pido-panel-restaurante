@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { getPrinterConfig, savePrinterConfig, testPrint, scanPrinters, connectAndTestPrinter, disconnectPrinter, checkPrinterConnection } from '../lib/printService'
@@ -112,6 +113,7 @@ export default function Ajustes() {
     default_timing_envio_rider: 'on_accept',
   })
   const [guardandoDelivery, setGuardandoDelivery] = useState(false)
+  const [deliveryCfgOriginal, setDeliveryCfgOriginal] = useState(null) // snapshot para detectar cambios en hayCambios
 
   // F4: tarifa envío fija (Plan Pidoo SaaS)
   const [tarifaEnvioFija, setTarifaEnvioFija] = useState(restaurante?.tarifa_envio_fija ?? '')
@@ -241,23 +243,22 @@ export default function Ajustes() {
       .select('*')
       .eq('establecimiento_id', restaurante.id)
       .maybeSingle()
-    if (cfg) {
-      setDeliveryCfg({
-        algoritmo_asignacion: cfg.algoritmo_asignacion || map.default_algoritmo_asignacion || 'nearest',
-        timing_envio_rider: cfg.timing_envio_rider || map.default_timing_envio_rider || 'on_accept',
-        tarifa_base: cfg.tarifa_base ?? '',
-        tarifa_radio_base_km: cfg.tarifa_radio_base_km ?? '',
-        tarifa_precio_km: cfg.tarifa_precio_km ?? '',
-        tarifa_maxima: cfg.tarifa_maxima ?? '',
-        override_activo: !!cfg.override_activo,
-      })
-    } else {
-      setDeliveryCfg(prev => ({
-        ...prev,
-        algoritmo_asignacion: map.default_algoritmo_asignacion || 'nearest',
-        timing_envio_rider: map.default_timing_envio_rider || 'on_accept',
-      }))
+    const nuevaCfg = cfg ? {
+      algoritmo_asignacion: cfg.algoritmo_asignacion || map.default_algoritmo_asignacion || 'nearest',
+      timing_envio_rider: cfg.timing_envio_rider || map.default_timing_envio_rider || 'on_accept',
+      tarifa_base: cfg.tarifa_base ?? '',
+      tarifa_radio_base_km: cfg.tarifa_radio_base_km ?? '',
+      tarifa_precio_km: cfg.tarifa_precio_km ?? '',
+      tarifa_maxima: cfg.tarifa_maxima ?? '',
+      override_activo: !!cfg.override_activo,
+    } : {
+      algoritmo_asignacion: map.default_algoritmo_asignacion || 'nearest',
+      timing_envio_rider: map.default_timing_envio_rider || 'on_accept',
+      tarifa_base: '', tarifa_radio_base_km: '', tarifa_precio_km: '', tarifa_maxima: '',
+      override_activo: false,
     }
+    setDeliveryCfg(nuevaCfg)
+    setDeliveryCfgOriginal(nuevaCfg)
   }
 
   async function guardarDelivery() {
@@ -357,7 +358,9 @@ export default function Ajustes() {
     exigeRegistro !== (restaurante?.exige_registro_cliente ?? false) ||
     JSON.stringify([...catsSeleccionadas].sort()) !== JSON.stringify([...catsOriginales].sort()) ||
     JSON.stringify(horario ?? null) !== horarioOriginal ||
-    (coordsManual != null && (Number(coordsManual.lat) !== Number(restaurante?.latitud) || Number(coordsManual.lng) !== Number(restaurante?.longitud)))
+    (coordsManual != null && (Number(coordsManual.lat) !== Number(restaurante?.latitud) || Number(coordsManual.lng) !== Number(restaurante?.longitud))) ||
+    ((tarifaModo === 'unica' ? (tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija)) : null) !== (restaurante?.tarifa_envio_fija == null ? null : Number(restaurante.tarifa_envio_fija))) ||
+    (deliveryCfgOriginal != null && JSON.stringify(deliveryCfg) !== JSON.stringify(deliveryCfgOriginal))
 
   async function guardarTodo() {
     setGuardando(true)
@@ -382,6 +385,9 @@ export default function Ajustes() {
       acepta_tarjeta_online: aceptaTarjetaOnline,
       acepta_datafono: aceptaDatafono,
       exige_registro_cliente: exigeRegistro,
+      tarifa_envio_fija: tarifaModo === 'unica'
+        ? (tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija))
+        : null,
     }
     if (coordsManual && Number.isFinite(coordsManual.lat) && Number.isFinite(coordsManual.lng)) {
       // Ubicación exacta elegida en Google Maps (autocompletar) → tiene prioridad.
@@ -406,6 +412,21 @@ export default function Ajustes() {
 
     await updateRestaurante(updates)
     setHorarioOriginal(JSON.stringify(horario ?? null))
+    // Config de reparto (algoritmo + tarifa por distancia) — guardado unificado.
+    // En modo 'distancia' se fuerza override_activo para que calcular_envio use estos valores.
+    const finalCfg = { ...deliveryCfg, override_activo: tarifaModo === 'distancia' ? true : !!deliveryCfg.override_activo }
+    await supabase.from('restaurante_config_delivery').upsert({
+      establecimiento_id: restaurante.id,
+      algoritmo_asignacion: finalCfg.algoritmo_asignacion,
+      timing_envio_rider: finalCfg.timing_envio_rider,
+      tarifa_base: finalCfg.tarifa_base === '' ? null : Number(finalCfg.tarifa_base),
+      tarifa_radio_base_km: finalCfg.tarifa_radio_base_km === '' ? null : Number(finalCfg.tarifa_radio_base_km),
+      tarifa_precio_km: finalCfg.tarifa_precio_km === '' ? null : Number(finalCfg.tarifa_precio_km),
+      tarifa_maxima: finalCfg.tarifa_maxima === '' ? null : Number(finalCfg.tarifa_maxima),
+      override_activo: finalCfg.override_activo,
+    }, { onConflict: 'establecimiento_id' })
+    setDeliveryCfg(finalCfg)
+    setDeliveryCfgOriginal(finalCfg)
     // Guardar categorías del establecimiento (nivel 2)
     await supabase.from('establecimiento_categorias').delete().eq('establecimiento_id', restaurante.id)
     if (catsSeleccionadas.length > 0) {
@@ -1135,20 +1156,6 @@ export default function Ajustes() {
           />
           <span style={{ fontSize: 13, fontWeight: 600 }}>Usar mi configuración</span>
         </label>
-
-        <button
-          onClick={guardarDelivery}
-          disabled={guardandoDelivery || !overrideAlgoPermitido}
-          style={{
-            width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 12, border: 'none',
-            background: guardandoDelivery ? 'var(--c-muted)' : 'var(--c-primary)',
-            color: '#fff', fontSize: 13, fontWeight: 800,
-            cursor: guardandoDelivery ? 'default' : 'pointer', fontFamily: 'inherit',
-            opacity: !overrideAlgoPermitido ? 0.5 : 1,
-          }}
-        >
-          {guardandoDelivery ? 'Guardando...' : 'Guardar asignación'}
-        </button>
       </div>
 
       {/* Delivery — Tarifa de envío al cliente (selector unificado: precio único / por distancia) */}
@@ -1236,19 +1243,9 @@ export default function Ajustes() {
             })()}
           </>
         )}
-
-        <button
-          onClick={guardarTarifaEnvio}
-          disabled={guardandoTarifaEnvio}
-          style={{
-            width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 12, border: 'none',
-            background: guardandoTarifaEnvio ? 'var(--c-muted)' : 'var(--c-primary)',
-            color: '#fff', fontSize: 13, fontWeight: 800,
-            cursor: guardandoTarifaEnvio ? 'default' : 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          {guardandoTarifaEnvio ? 'Guardando...' : 'Guardar tarifa de envío'}
-        </button>
+        <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 12 }}>
+          Los cambios de tarifa y de asignación se guardan con el botón <strong>“Guardar cambios”</strong> de abajo.
+        </div>
       </div>
 
       {/* Categorías del establecimiento (nivel 2) */}
@@ -1594,8 +1591,15 @@ export default function Ajustes() {
       {/* Spinner animation + barra de guardado responsive (sticky) */}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        .pidoo-save-bar { position: sticky; bottom: 78px; z-index: 40; margin-top: 16px; }
-        @media (min-width: 900px) { .pidoo-save-bar { bottom: 20px; } }
+        .pidoo-save-bar {
+          position: fixed; left: 0; right: 0; bottom: 66px; z-index: 50;
+          display: flex; justify-content: center;
+          padding: 12px 16px; box-sizing: border-box;
+          background: var(--c-surface); border-top: 1px solid var(--c-border);
+          box-shadow: 0 -6px 22px rgba(0,0,0,0.12);
+        }
+        .pidoo-save-bar > button { width: 100%; max-width: 600px; }
+        @media (min-width: 900px) { .pidoo-save-bar { left: 248px; bottom: 0; } }
       `}</style>
 
       {/* Cerrar sesión */}
@@ -1628,8 +1632,9 @@ export default function Ajustes() {
         </div>
       </div>
 
-      {/* Botón guardar cambios flotante */}
-      {hayCambios && (
+      {/* Botón guardar cambios flotante — en portal a document.body para que el
+          position:fixed no lo rompa el transform del <main> (containing block). */}
+      {hayCambios && createPortal(
         <div className="pidoo-save-bar">
           <button onClick={guardarTodo} disabled={guardando} style={{
             width: '100%', padding: '16px 0', borderRadius: 14, border: 'none',
@@ -1640,7 +1645,8 @@ export default function Ajustes() {
           }}>
             {guardando ? 'Guardando...' : 'Guardar cambios'}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Toast confirmación */}
