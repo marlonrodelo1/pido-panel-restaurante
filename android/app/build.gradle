@@ -8,14 +8,14 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.pidoo.order"
+    namespace = "com.pidoo.restaurante"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.pidoo.order"
+        applicationId "com.pidoo.restaurante"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 14
-        versionName "2.2"
+        versionCode 1
+        versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'

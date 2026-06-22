@@ -1,4 +1,4 @@
-package com.pidoo.order;
+package com.pidoo.restaurante;
 
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;

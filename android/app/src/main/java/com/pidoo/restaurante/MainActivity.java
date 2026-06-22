@@ -1,4 +1,4 @@
-package com.pidoo.order;
+package com.pidoo.restaurante;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
