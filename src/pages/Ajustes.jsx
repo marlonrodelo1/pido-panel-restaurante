@@ -88,7 +88,6 @@ export default function Ajustes() {
   // Métodos de pago aceptados por el restaurante (default: los 3 activos)
   const [aceptaEfectivo, setAceptaEfectivo] = useState(restaurante?.acepta_efectivo ?? true)
   const [aceptaTarjetaOnline, setAceptaTarjetaOnline] = useState(restaurante?.acepta_tarjeta_online ?? true)
-  const [aceptaDatafono, setAceptaDatafono] = useState(restaurante?.acepta_datafono ?? true)
   // Si true, el cliente debe registrarse. Default false = guest checkout permitido.
   const [exigeRegistro, setExigeRegistro] = useState(restaurante?.exige_registro_cliente ?? false)
 
@@ -354,7 +353,6 @@ export default function Ajustes() {
     provinciaFiscal !== (restaurante?.provincia_fiscal || '') ||
     aceptaEfectivo !== (restaurante?.acepta_efectivo ?? true) ||
     aceptaTarjetaOnline !== (restaurante?.acepta_tarjeta_online ?? true) ||
-    aceptaDatafono !== (restaurante?.acepta_datafono ?? true) ||
     exigeRegistro !== (restaurante?.exige_registro_cliente ?? false) ||
     JSON.stringify([...catsSeleccionadas].sort()) !== JSON.stringify([...catsOriginales].sort()) ||
     JSON.stringify(horario ?? null) !== horarioOriginal ||
@@ -383,7 +381,6 @@ export default function Ajustes() {
       provincia_fiscal: provinciaFiscal.trim() || null,
       acepta_efectivo: aceptaEfectivo,
       acepta_tarjeta_online: aceptaTarjetaOnline,
-      acepta_datafono: aceptaDatafono,
       exige_registro_cliente: exigeRegistro,
       tarifa_envio_fija: tarifaModo === 'unica'
         ? (tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija))
@@ -723,13 +720,7 @@ export default function Ajustes() {
           value={aceptaTarjetaOnline}
           onChange={setAceptaTarjetaOnline}
         />
-        <PayToggle
-          label="Datáfono al entregar"
-          sub="Tú prestas tu TPV al rider y este cobra en el domicilio del cliente."
-          value={aceptaDatafono}
-          onChange={setAceptaDatafono}
-        />
-        {!aceptaEfectivo && !aceptaTarjetaOnline && !aceptaDatafono && (
+        {!aceptaEfectivo && !aceptaTarjetaOnline && (
           <div style={{
             marginTop: 10, padding: '10px 12px', borderRadius: 10,
             background: 'rgba(239,68,68,0.10)', color: '#B5564A',

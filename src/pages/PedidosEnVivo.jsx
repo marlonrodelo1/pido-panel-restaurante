@@ -46,6 +46,17 @@ const formatTimer = s => {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
+// Etiqueta del canal de venta según el origen del pedido.
+const canalVentaLabel = (origen) => {
+  if (origen === 'tienda_publica') return 'Tienda del restaurante'
+  if (origen === 'marketplace_socio') return 'Marketplace del socio'
+  return 'App Pidoo'
+}
+
+// Solo dos métodos de pago: tarjeta (online) o efectivo. Cualquier valor legacy
+// (p.ej. 'datafono') se trata como efectivo a efectos de visualización.
+const metodoPagoLabel = (m) => (m === 'tarjeta' ? 'Tarjeta (online)' : 'Efectivo')
+
 // ─── Hook: detectar tablet horizontal (>=900px, landscape) ─────────────────
 // Calcula isTabletHorizontal solo en resize/orientationchange (debounced 120ms)
 // para no re-renderizar en cada scroll/repaint. Devuelve false en SSR.
@@ -1540,12 +1551,12 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Método de Pago</div>
-            <div style={{ fontSize: 12, color: 'var(--c-text)', fontWeight: 600 }}>{pedido.metodo_pago === 'tarjeta' ? 'Tarjeta (Online)' : 'Efectivo'}</div>
-            {pedido.metodo_pago === 'efectivo' && <div style={{ fontSize: 10, color: '#C99551', marginTop: 2 }}>Cobrar en mano</div>}
+            <div style={{ fontSize: 12, color: 'var(--c-text)', fontWeight: 600 }}>{metodoPagoLabel(pedido.metodo_pago)}</div>
+            {pedido.metodo_pago !== 'tarjeta' && <div style={{ fontSize: 10, color: '#C99551', marginTop: 2 }}>Cobrar en mano</div>}
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Canal de Venta</div>
-            <div style={{ fontSize: 12, color: 'var(--c-text)', fontWeight: 600 }}>App Móvil PIDO</div>
+            <div style={{ fontSize: 12, color: 'var(--c-text)', fontWeight: 600 }}>{canalVentaLabel(pedido.origen_pedido)}</div>
           </div>
         </div>
       </div>
