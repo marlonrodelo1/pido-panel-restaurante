@@ -1610,8 +1610,12 @@ export default function Ajustes() {
       </div>
       )}
 
-      {/* Spinner animation */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {/* Spinner animation + barra de guardado responsive (sticky) */}
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .pidoo-save-bar { position: sticky; bottom: 78px; z-index: 40; margin-top: 16px; }
+        @media (min-width: 900px) { .pidoo-save-bar { bottom: 20px; } }
+      `}</style>
 
       {/* Cerrar sesión */}
       <button onClick={logout} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#B5564A', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 20 }}>Cerrar sesión</button>
@@ -1645,11 +1649,7 @@ export default function Ajustes() {
 
       {/* Botón guardar cambios flotante */}
       {hayCambios && (
-        <div style={{
-          position: 'fixed', bottom: 70, left: '50%', transform: 'translateX(-50%)',
-          width: '100%', maxWidth: 800, padding: '0 20px', zIndex: 40, boxSizing: 'border-box',
-          animation: 'fadeIn 0.3s ease',
-        }}>
+        <div className="pidoo-save-bar">
           <button onClick={guardarTodo} disabled={guardando} style={{
             width: '100%', padding: '16px 0', borderRadius: 14, border: 'none',
             background: guardando ? 'var(--c-muted)' : 'var(--c-primary)', color: '#fff',
