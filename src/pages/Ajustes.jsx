@@ -5,6 +5,7 @@ import { getPrinterConfig, savePrinterConfig, testPrint, scanPrinters, connectAn
 import { Capacitor } from '@capacitor/core'
 import { DIAS_ORDEN, DIAS_LABEL, DIAS_CORTO, horarioVacio, horarioEstandar, estaAbierto, horarioHoyTexto } from '../lib/horario'
 import { toast } from '../App'
+import AddressInput from '../components/AddressInput'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -79,6 +80,9 @@ export default function Ajustes() {
   const [subiendoImg, setSubiendoImg] = useState(null) // 'logo' | 'banner' | null
   const [obteniendoUbi, setObteniendoUbi] = useState(false)
   const [ubiOk, setUbiOk] = useState(!!restaurante?.latitud)
+  // Coordenadas exactas elegidas en Google Maps (autocompletar de dirección).
+  // Si está set, tiene prioridad sobre el geocoding al guardar.
+  const [coordsManual, setCoordsManual] = useState(null)
 
   // Métodos de pago aceptados por el restaurante (default: los 3 activos)
   const [aceptaEfectivo, setAceptaEfectivo] = useState(restaurante?.acepta_efectivo ?? true)
@@ -305,7 +309,8 @@ export default function Ajustes() {
     aceptaDatafono !== (restaurante?.acepta_datafono ?? true) ||
     exigeRegistro !== (restaurante?.exige_registro_cliente ?? false) ||
     JSON.stringify([...catsSeleccionadas].sort()) !== JSON.stringify([...catsOriginales].sort()) ||
-    JSON.stringify(horario ?? null) !== horarioOriginal
+    JSON.stringify(horario ?? null) !== horarioOriginal ||
+    (coordsManual != null && (Number(coordsManual.lat) !== Number(restaurante?.latitud) || Number(coordsManual.lng) !== Number(restaurante?.longitud)))
 
   async function guardarTodo() {
     setGuardando(true)
@@ -331,7 +336,13 @@ export default function Ajustes() {
       acepta_datafono: aceptaDatafono,
       exige_registro_cliente: exigeRegistro,
     }
-    if (direccion.trim() && direccion.trim() !== (restaurante?.direccion || '')) {
+    if (coordsManual && Number.isFinite(coordsManual.lat) && Number.isFinite(coordsManual.lng)) {
+      // Ubicación exacta elegida en Google Maps (autocompletar) → tiene prioridad.
+      updates.latitud = coordsManual.lat
+      updates.longitud = coordsManual.lng
+      setUbiOk(true)
+    } else if (direccion.trim() && direccion.trim() !== (restaurante?.direccion || '')) {
+      // Fallback: si escribió la dirección a mano (sin elegir de la lista), geocodificar.
       try {
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
         if (apiKey) {
@@ -356,6 +367,7 @@ export default function Ajustes() {
       )
     }
     setCatsOriginales([...catsSeleccionadas])
+    setCoordsManual(null)
     setGuardando(false)
     setGuardado(true)
     setTimeout(() => setGuardado(false), 2500)
@@ -789,7 +801,19 @@ export default function Ajustes() {
 
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>Dirección</label>
-          <input value={direccion} onChange={e => setDireccion(e.target.value)} style={inp} />
+          <AddressInput
+            value={direccion}
+            onChange={(v) => { setDireccion(v); setCoordsManual(null) }}
+            onSelect={({ direccion: addr, lat, lng }) => {
+              setDireccion(addr)
+              if (Number.isFinite(lat) && Number.isFinite(lng)) { setCoordsManual({ lat, lng }); setUbiOk(true) }
+            }}
+            placeholder="Escribe y elige tu dirección en Google Maps"
+            style={inp}
+          />
+          <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>
+            Empieza a escribir y <strong>elige la dirección de la lista</strong> para fijar la ubicación exacta. Luego pulsa "Guardar cambios".
+          </div>
         </div>
 
         {/* Ubicación GPS */}
@@ -813,8 +837,30 @@ export default function Ajustes() {
               {obteniendoUbi ? 'Obteniendo...' : ubiOk ? '✅ Ubicación guardada' : '📍 Obtener ubicación actual'}
             </button>
           </div>
-          {!ubiOk && <div style={{ fontSize: 11, color: '#F59E0B', marginTop: 6, fontWeight: 600 }}>⚠️ Sin ubicación GPS — los clientes no podrán calcular envío ni verte en el mapa.</div>}
-          {ubiOk && restaurante?.latitud && <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>📍 {restaurante.latitud.toFixed(5)}, {restaurante.longitud.toFixed(5)}</div>}
+          {!ubiOk && !coordsManual && <div style={{ fontSize: 11, color: '#F59E0B', marginTop: 6, fontWeight: 600 }}>⚠️ Sin ubicación GPS — los clientes no podrán calcular envío ni verte en el mapa.</div>}
+          {(() => {
+            const lat = coordsManual?.lat ?? restaurante?.latitud
+            const lng = coordsManual?.lng ?? restaurante?.longitud
+            const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+            if (lat == null || lng == null) return null
+            return (
+              <>
+                <div style={{ fontSize: 10, color: 'var(--c-muted)', marginTop: 4 }}>
+                  📍 {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}{coordsManual ? ' · sin guardar' : ''}
+                </div>
+                {key && (
+                  <div style={{ marginTop: 10, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--c-border)' }}>
+                    <img
+                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=16&size=600x180&scale=2&markers=color:0xC5562C%7C${lat},${lng}&key=${key}`}
+                      alt="Ubicación en el mapa"
+                      style={{ width: '100%', height: 'auto', display: 'block' }}
+                      loading="lazy"
+                    />
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
 
         <div style={{ marginBottom: 12 }}>
