@@ -7,6 +7,13 @@ function fmtEur(n) {
   return v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
 }
 
+export function fmtPct(n) {
+  if (n === null || n === undefined || n === '') return '—'
+  const v = Number(n)
+  if (Number.isNaN(v)) return '—'
+  return v.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' %'
+}
+
 function isTarifaCompleta(t) {
   if (!t) return false
   return [t.tarifa_base, t.tarifa_radio_base_km, t.tarifa_precio_km, t.tarifa_maxima]
@@ -27,6 +34,7 @@ export function compararTarifas(actual, propuesta) {
     { campo: 'tarifa_radio_base_km', label: 'Radio base (km)' },
     { campo: 'tarifa_precio_km', label: '€/km adicional' },
     { campo: 'tarifa_maxima', label: 'Tarifa máxima' },
+    { campo: 'comision_pct', label: 'Comisión (%)' },
   ]
   return campos.map(({ campo, label }) => {
     const a = actual?.[campo]

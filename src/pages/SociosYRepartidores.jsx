@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { toast } from '../App'
 import { colors, type, ds } from '../lib/uiStyles'
-import { formatTarifa, compararTarifas, formatCuentaAtras, formatFechaCorta } from '../lib/tarifas'
+import { formatTarifa, compararTarifas, formatCuentaAtras, formatFechaCorta, fmtPct } from '../lib/tarifas'
 
 const SUPABASE_URL = 'https://rmrbxrabngdmpgpfmjbo.supabase.co'
 
@@ -226,6 +226,9 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
               <div style={{ fontSize: type.sm, color: colors.text, fontWeight: 600 }}>
                 {formatTarifa(row) || <span style={{ color: colors.textMute, fontWeight: 500 }}>Por defecto de la plataforma</span>}
               </div>
+              <div style={{ fontSize: type.sm, color: colors.text, fontWeight: 600, marginTop: 4 }}>
+                Comisión del socio: <span style={{ color: colors.terracotta }}>{fmtPct(row.comision_pct ?? 10)}</span> del pedido
+              </div>
               {row.tarifa_aceptada_en && formatTarifa(row) && (
                 <div style={{ fontSize: type.xxs, color: colors.textFaint, marginTop: 4 }}>
                   Aceptada el {formatFechaCorta(row.tarifa_aceptada_en)}
@@ -262,7 +265,7 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
               })()}
 
               <div style={{ fontSize: type.xxs, color: colors.textFaint, marginTop: 10, lineHeight: 1.5 }}>
-                La tarifa la propone el socio. Si quieres cambiarla, pídeselo al socio para que te envíe una nueva propuesta.
+                La tarifa y la comisión las propone el socio. Si quieres cambiarlas, pídeselo para que te envíe una nueva propuesta y la aceptas o rechazas aquí.
               </div>
             </div>
           </div>
@@ -293,7 +296,7 @@ export default function SociosYRepartidores() {
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
     try {
-      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, en_servicio, activo)'
+      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, comision_pct, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, en_servicio, activo)'
       const { data: rows, error } = await supabase
         .from('socio_establecimiento')
         .select(selectStr)
