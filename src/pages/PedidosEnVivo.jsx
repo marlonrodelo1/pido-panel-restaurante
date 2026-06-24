@@ -1428,6 +1428,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
   const [rechazando, setRechazando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [minutosSel, setMinutosSel] = useState(20)
+  const [aceptando, setAceptando] = useState(false)
   const [reasignando, setReasignando] = useState(false)
   const [sociosVinc, setSociosVinc] = useState([])
   const [cambiarSocio, setCambiarSocio] = useState(false)
@@ -1641,8 +1642,8 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
                 <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 8, border: '1px solid var(--c-border)', background: 'transparent', color: 'var(--c-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Rechazar
                 </button>
-                <button onClick={() => { onAceptar(pedido, minutosSel); afterAction() }} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: colors.primary, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Aceptar pedido
+                <button onClick={() => { if (aceptando) return; setAceptando(true); onAceptar(pedido, minutosSel); afterAction() }} disabled={aceptando} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: colors.primary, color: '#fff', fontSize: 14, fontWeight: 800, cursor: aceptando ? 'wait' : 'pointer', opacity: aceptando ? 0.7 : 1, fontFamily: 'inherit' }}>
+                  {aceptando ? 'Aceptando…' : 'Aceptar pedido'}
                 </button>
               </div>
             </>

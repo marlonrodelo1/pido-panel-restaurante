@@ -57,7 +57,7 @@ export default function EliminarCuenta({ onBack }) {
   }
 
   const itemsQuePasa = [
-    'La suscripción Pidoo se cancela inmediatamente',
+    'Tu cuenta se desvincula de Pidoo y dejas de recibir pedidos',
     'Tu URL pública se desactiva al instante',
     'Todos los datos del perfil se borran',
     'No hay forma de recuperar la cuenta',

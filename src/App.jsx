@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, Component } from 'react'
 import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
-  MoreHorizontal, MessageCircle, CreditCard, Handshake, Bike, History,
+  MoreHorizontal, MessageCircle, Handshake, Bike, History,
   BarChart3, Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
@@ -27,7 +27,6 @@ import Activacion from './pages/Activacion'
 import SociosYRepartidores from './pages/SociosYRepartidores'
 import FinanzasRiders from './pages/FinanzasRiders'
 import LiquidacionPido from './pages/LiquidacionPido'
-import PlanSaaS from './pages/PlanSaaS'
 import EliminarCuenta from './pages/EliminarCuenta'
 
 const isNative = Capacitor.isNativePlatform()
@@ -43,7 +42,6 @@ const SECCION_LABELS = {
   ajustes: 'Ajustes',
   soporte: 'Soporte',
   'socios-riders': 'Socios y repartidores',
-  'plan-saas': 'Suscripción',
   'finanzas-riders': 'Finanzas con el socio',
   'liquidacion-pido': 'Liquidación con Pido',
   'eliminar-cuenta': 'Eliminar cuenta',
@@ -256,7 +254,6 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
   ]
   const more = [
     { id: 'socios-riders', Icon: Users, label: 'Socios y repartidores', badge: sociosPendientes },
-    { id: 'plan-saas', Icon: CreditCard, label: 'Suscripción' },
     { id: 'finanzas-riders', Icon: Wallet, label: 'Finanzas con el socio' },
     { id: 'liquidacion-pido', Icon: Receipt, label: 'Liquidación con Pido' },
     { id: 'soporte', Icon: LifeBuoy, label: 'Soporte' },
@@ -435,7 +432,6 @@ function AppInner({ seccion, setSeccion, nav }) {
   const { pedidosNuevos } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sociosPendientes, setSociosPendientes] = useState(0)
-  const [subActiva, setSubActiva] = useState(null) // null=cargando, true/false
   const menuRef = useRef(null)
   const isDesktop = useIsDesktop(900)
 
@@ -462,24 +458,6 @@ function AppInner({ seccion, setSeccion, nav }) {
     return () => { cancel = true; clearInterval(id) }
   }, [restaurante?.id, seccion])
 
-  // ¿Tiene suscripción activa? (para el banner de "añade tu tarjeta")
-  useEffect(() => {
-    if (!restaurante?.id || isNative) return
-    let cancel = false
-    ;(async () => {
-      const { data } = await supabase
-        .from('suscripciones_tienda')
-        .select('estado')
-        .eq('establecimiento_id', restaurante.id)
-        .maybeSingle()
-      // Modelo 19-jun: sin cuota mensual salvo casos puntuales. El banner solo
-      // tiene sentido si existe una suscripción REAL lapsada (past_due/unpaid).
-      // Sin fila de suscripción => tratado como OK (no banner).
-      if (!cancel) setSubActiva(!data || ['active', 'trialing'].includes(data?.estado))
-    })()
-    return () => { cancel = true }
-  }, [restaurante?.id, seccion])
-
   async function abrirPanelWeb() {
     try {
       await Browser.open({ url: 'https://panel.pidoo.es' })
@@ -501,7 +479,6 @@ function AppInner({ seccion, setSeccion, nav }) {
 
   const extraOpciones = [
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
-    { id: 'plan-saas', label: 'Suscripción', Icon: CreditCard },
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
     { id: 'liquidacion-pido', label: 'Liquidación con Pido', Icon: Receipt },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
@@ -544,48 +521,6 @@ function AppInner({ seccion, setSeccion, nav }) {
     </div>
   ) : null
 
-  // ── Banner trial / añadir tarjeta (web). Se oculta solo cuando hay suscripción activa.
-  const diasTrial = restaurante?.trial_gratis_hasta
-    ? Math.max(0, Math.ceil((new Date(restaurante.trial_gratis_hasta).getTime() - Date.now()) / 86400000))
-    : null
-  const showTrialBanner = !isNative && subActiva === false && seccion !== 'plan-saas'
-  const trialExpirado = diasTrial === 0
-  const trialBanner = showTrialBanner ? (
-    <div
-      onClick={() => setSeccion('plan-saas')}
-      style={{
-        margin: isDesktop ? '0 0 18px' : '12px 16px 0',
-        padding: '12px 14px', borderRadius: 12,
-        background: trialExpirado ? 'rgba(181,86,74,0.12)' : 'rgba(197,86,44,0.10)',
-        border: `1px solid ${trialExpirado ? 'rgba(181,86,74,0.35)' : 'rgba(197,86,44,0.30)'}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 10, cursor: 'pointer', flexWrap: 'wrap',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 13, color: trialExpirado ? '#7A2E22' : colors.terracotta2 }}>
-          {trialExpirado
-            ? 'Tu periodo gratis ha terminado'
-            : diasTrial === null
-              ? 'Activa tu suscripción · 7 días de prueba gratis'
-              : `Tienes ${diasTrial} día${diasTrial === 1 ? '' : 's'} gratis`}
-        </div>
-        <div style={{ fontSize: 11, color: colors.stone, marginTop: 2 }}>
-          {trialExpirado
-            ? 'Añade tu tarjeta para reactivar tu suscripción y no perder el servicio.'
-            : 'Añade tu tarjeta cuando quieras para activar tu suscripción. No se te cobra hasta terminar la prueba.'}
-        </div>
-      </div>
-      <span style={{
-        padding: '7px 12px', borderRadius: 8,
-        background: colors.terracotta, color: '#fff',
-        fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
-      }}>
-        Añadir tarjeta
-      </span>
-    </div>
-  ) : null
-
   // Contenido de la sección (compartido)
   const seccionContent = (
     <>
@@ -598,7 +533,6 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'promos' && <Promociones />}
       {seccion === 'soporte' && <Soporte />}
       {seccion === 'socios-riders' && <SociosYRepartidores />}
-      {seccion === 'plan-saas' && <PlanSaaS />}
       {seccion === 'finanzas-riders' && <FinanzasRiders />}
       {seccion === 'liquidacion-pido' && <LiquidacionPido />}
       {seccion === 'ajustes' && <Ajustes />}
@@ -631,7 +565,6 @@ function AppInner({ seccion, setSeccion, nav }) {
           <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%' }}>
             <Breadcrumbs seccion={seccion} />
             {fiscalBanner}
-            {trialBanner}
             <div>
               {seccionContent}
             </div>
@@ -758,9 +691,6 @@ function AppInner({ seccion, setSeccion, nav }) {
 
       {/* Banner fiscal */}
       {fiscalBanner}
-
-      {/* Banner trial / añadir tarjeta */}
-      {trialBanner}
 
       {/* Contenido */}
       <div style={{ padding: 20, animation: 'fadeIn 0.3s ease' }}>

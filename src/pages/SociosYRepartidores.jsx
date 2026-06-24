@@ -93,9 +93,12 @@ function ModalMotivo({ titulo, textoBoton, onClose, onConfirm }) {
   )
 }
 
-function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onResponderTarifa }) {
+function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onResponderTarifa, accionando }) {
   const socio = row.socios || {}
   const estadoInfo = ESTADOS[row.estado] || ESTADOS.pendiente
+  // Feedback de clic: hay una acción en curso sobre ESTA tarjeta.
+  const busy = !!accionando && accionando.id === row.id
+  const enCurso = (tipo) => busy && accionando.tipo === tipo
   // Estado REAL del repartidor (socio = rider): la verdad es socios.en_servicio
   // (online/offline) y socios.activo (desactivado). rider_status quedó legacy.
   const desactivado = socio.activo === false
@@ -161,11 +164,13 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
       {/* Acciones según estado (siempre visibles para pendiente) */}
       {isPendiente && (
         <div style={{ padding: '0 16px 14px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => onAceptar(row.id)} style={{
+          <button onClick={() => onAceptar(row.id)} disabled={busy} style={{
             ...ds.primaryBtn, background: colors.stateOk, borderColor: colors.stateOk,
-          }}>Aceptar</button>
-          <button onClick={() => onRechazar(row.id)} style={{
+            opacity: busy ? 0.6 : 1, cursor: busy ? 'wait' : 'pointer',
+          }}>{enCurso('aceptar') ? 'Aceptando…' : 'Aceptar'}</button>
+          <button onClick={() => onRechazar(row.id)} disabled={busy} style={{
             ...ds.secondaryBtn, color: colors.danger, borderColor: colors.danger,
+            opacity: busy ? 0.6 : 1, cursor: busy ? 'wait' : 'pointer',
           }}>Rechazar</button>
         </div>
       )}
@@ -256,8 +261,8 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
                     </div>
                     {!propio && (
                       <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                        <button onClick={() => onResponderTarifa(row.id, 'aceptar')} style={{ ...ds.primaryBtn, background: colors.stateOk, borderColor: colors.stateOk }}>Aceptar tarifa</button>
-                        <button onClick={() => onResponderTarifa(row.id, 'rechazar')} style={{ ...ds.secondaryBtn, color: colors.danger, borderColor: colors.danger }}>Rechazar</button>
+                        <button onClick={() => onResponderTarifa(row.id, 'aceptar')} disabled={busy} style={{ ...ds.primaryBtn, background: colors.stateOk, borderColor: colors.stateOk, opacity: busy ? 0.6 : 1, cursor: busy ? 'wait' : 'pointer' }}>{enCurso('tarifa-aceptar') ? 'Aceptando…' : 'Aceptar tarifa'}</button>
+                        <button onClick={() => onResponderTarifa(row.id, 'rechazar')} disabled={busy} style={{ ...ds.secondaryBtn, color: colors.danger, borderColor: colors.danger, opacity: busy ? 0.6 : 1, cursor: busy ? 'wait' : 'pointer' }}>{enCurso('tarifa-rechazar') ? 'Rechazando…' : 'Rechazar'}</button>
                       </div>
                     )}
                   </div>
@@ -292,6 +297,7 @@ export default function SociosYRepartidores() {
   const [expanded, setExpanded] = useState({})
   const [modalRechazar, setModalRechazar] = useState(null)
   const [modalDesvincular, setModalDesvincular] = useState(null)
+  const [accionando, setAccionando] = useState(null) // { id, tipo } acción en curso (feedback de clic)
 
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
@@ -346,10 +352,25 @@ export default function SociosYRepartidores() {
     return () => supabase.removeChannel(channel)
   }, [restaurante?.id, cargar])
 
+  // fetch con timeout (AbortController) para que un edge lento/caído no deje el
+  // botón colgado para siempre. Lanza Error('timeout') al agotarse.
+  async function fetchConTimeout(url, options, ms = 12000) {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), ms)
+    try {
+      return await fetch(url, { ...options, signal: ctrl.signal })
+    } catch (err) {
+      if (err?.name === 'AbortError') throw new Error('La operación tardó demasiado. Inténtalo de nuevo.')
+      throw err
+    } finally {
+      clearTimeout(t)
+    }
+  }
+
   async function callFunction(vinculacion_id, accion, motivo) {
     const { data: sess } = await supabase.auth.getSession()
     const token = sess?.session?.access_token
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/aprobar-vinculacion-socio`, {
+    const resp = await fetchConTimeout(`${SUPABASE_URL}/functions/v1/aprobar-vinculacion-socio`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -365,12 +386,16 @@ export default function SociosYRepartidores() {
   }
 
   async function handleAceptar(id) {
+    if (accionando) return
+    setAccionando({ id, tipo: 'aceptar' })
     try {
       await callFunction(id, 'aceptar')
       toast('Socio aceptado', 'success')
       cargar()
     } catch (err) {
       toast(err.message || 'Error al aceptar', 'error')
+    } finally {
+      setAccionando(null)
     }
   }
 
@@ -386,24 +411,30 @@ export default function SociosYRepartidores() {
   }
 
   async function handleResponderTarifa(vinculacion_id, accion, motivo) {
-    const { data: sess } = await supabase.auth.getSession()
-    const token = sess?.session?.access_token
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/responder-tarifa-pendiente`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ socio_establecimiento_id: vinculacion_id, accion, ...(motivo ? { motivo } : {}) }),
-    })
-    const body = await resp.json().catch(() => ({}))
-    if (!resp.ok || !body?.ok) {
-      const msg = body?.error || 'Error al responder la propuesta'
-      toast(msg, 'error')
-      throw new Error(msg)
+    if (accionando) return
+    setAccionando({ id: vinculacion_id, tipo: `tarifa-${accion}` })
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
+      const resp = await fetchConTimeout(`${SUPABASE_URL}/functions/v1/responder-tarifa-pendiente`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ socio_establecimiento_id: vinculacion_id, accion, ...(motivo ? { motivo } : {}) }),
+      })
+      const body = await resp.json().catch(() => ({}))
+      if (!resp.ok || !body?.ok) {
+        throw new Error(body?.error || 'Error al responder la propuesta')
+      }
+      toast(accion === 'aceptar' ? 'Tarifa del socio aceptada' : 'Propuesta del socio rechazada', 'success')
+      cargar()
+    } catch (err) {
+      toast(err.message || 'Error al responder la propuesta', 'error')
+    } finally {
+      setAccionando(null)
     }
-    toast(accion === 'aceptar' ? 'Tarifa del socio aceptada' : 'Propuesta del socio rechazada', 'success')
-    cargar()
   }
 
   async function handleDesvincular(id, motivo) {
@@ -504,6 +535,7 @@ export default function SociosYRepartidores() {
               onRechazar={(id) => setModalRechazar({ id })}
               onDesvincular={(id) => setModalDesvincular({ id })}
               onResponderTarifa={handleResponderTarifa}
+              accionando={accionando}
             />
           ))}
         </div>
