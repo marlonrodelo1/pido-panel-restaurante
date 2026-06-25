@@ -439,7 +439,7 @@ export default function SociosYRepartidores() {
 
   async function handleDesvincular(id, motivo) {
     try {
-      await callFunction(id, 'rechazar', motivo || 'Desvinculado por restaurante')
+      await callFunction(id, 'desvincular', motivo || 'Desvinculado por restaurante')
       toast('Socio desvinculado', 'success')
       cargar()
     } catch (err) {

@@ -128,3 +128,10 @@ body {
   max-height: 90vh;
   overflow-y: auto;
 }
+
+/* Dropdown del autocompletado de Google Places (.pac-container): se inyecta en
+   <body>; forzamos z-index altísimo para que NUNCA quede detrás de paneles,
+   sidebars o modales (causa típica de "no sale el autocompletado"). */
+.pac-container {
+  z-index: 100000 !important;
+}

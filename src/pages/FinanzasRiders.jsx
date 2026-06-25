@@ -63,7 +63,7 @@ export default function FinanzasRiders() {
   const { restaurante } = useRest()
   const [rango, setRango] = useState('semana_actual')
   const [pedidos, setPedidos] = useState([])
-  const [riderEarnings, setRiderEarnings] = useState([])
+  const [sociosMap, setSociosMap] = useState({})
   const [resenas, setResenas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -83,7 +83,7 @@ export default function FinanzasRiders() {
     try {
       const { data: peds, error: e1 } = await supabase
         .from('pedidos')
-        .select('id, codigo, subtotal, coste_envio, propina, total, descuento, promo_titulo, metodo_pago, estado, entregado_at, created_at, minutos_preparacion, canal, modo_entrega, rider_account_id')
+        .select('id, codigo, subtotal, coste_envio, propina, total, descuento, promo_titulo, metodo_pago, estado, entregado_at, created_at, minutos_preparacion, canal, modo_entrega, origen_pedido, socio_id, rider_account_id')
         .eq('establecimiento_id', restaurante.id)
         .eq('canal', 'pido')
         .gte('created_at', desde.toISOString())
@@ -92,27 +92,21 @@ export default function FinanzasRiders() {
       if (e1) throw e1
       setPedidos(peds || [])
 
-      const { data: earnings } = await supabase
-        .from('rider_earnings')
-        .select('*, rider_accounts(id, nombre, shipday_api_key)')
-        .eq('establecimiento_id', restaurante.id)
-        .gte('created_at', desde.toISOString())
-        .lt('created_at', hasta.toISOString())
-
-      const apiKeys = [...new Set((earnings || []).map(e => e.rider_accounts?.shipday_api_key).filter(Boolean))]
-      let sociosByKey = {}
-      if (apiKeys.length > 0) {
-        const { data: socios } = await supabase
-          .from('socios')
-          .select('id, nombre_comercial, logo_url, slug, shipday_api_key')
-          .in('shipday_api_key', apiKeys)
-        ;(socios || []).forEach(s => { sociosByKey[s.shipday_api_key] = s })
+      // Info de socios + comisión PACTADA por socio para este restaurante.
+      // (Antes leía `rider_earnings`, tabla que ya no existe → la sección quedaba
+      // siempre vacía. Ahora se calcula en vivo desde `pedidos`, como la app del socio.)
+      const socioIds = [...new Set((peds || []).map(p => p.socio_id).filter(Boolean))]
+      const map = {}
+      if (socioIds.length > 0) {
+        const [{ data: socios }, { data: vinc }] = await Promise.all([
+          supabase.from('socios').select('id, nombre_comercial, logo_url').in('id', socioIds),
+          supabase.from('socio_establecimiento').select('socio_id, comision_pct')
+            .eq('establecimiento_id', restaurante.id).in('socio_id', socioIds),
+        ])
+        ;(socios || []).forEach(s => { map[s.id] = { nombre: s.nombre_comercial, logo: s.logo_url, comision_pct: 10 } })
+        ;(vinc || []).forEach(v => { if (map[v.socio_id]) map[v.socio_id].comision_pct = Number(v.comision_pct ?? 10) })
       }
-      const enriched = (earnings || []).map(e => ({
-        ...e,
-        socio: e.rider_accounts?.shipday_api_key ? sociosByKey[e.rider_accounts.shipday_api_key] || null : null,
-      }))
-      setRiderEarnings(enriched)
+      setSociosMap(map)
 
       const { data: resenasData } = await supabase
         .from('resenas').select('*')
@@ -146,48 +140,47 @@ export default function FinanzasRiders() {
   }, [entregados])
 
   const socioRows = useMemo(() => {
-    const pedidoMap = {}
-    for (const p of pedidos) pedidoMap[p.id] = p
-
     const grouped = {}
-    for (const e of riderEarnings) {
-      // Agrupamos por socio si existe; si no, usamos rider_account_id como fallback (riders legacy)
-      const key = e.socio?.id || `rider:${e.rider_account_id}`
+    for (const p of entregados) {
+      if (!p.socio_id) continue // solo pedidos con socio asignado
+      const key = p.socio_id
+      const info = sociosMap[key] || {}
+      const comisionPct = Number(info.comision_pct ?? 10)
+      const isDelivery = p.modo_entrega === 'delivery'
+      const envio = isDelivery ? Number(p.coste_envio || 0) : 0
+      const propina = isDelivery ? Number(p.propina || 0) : 0
+      const comision = Number(p.subtotal || 0) * comisionPct / 100
+      const neto = envio + comision + propina
       if (!grouped[key]) {
         grouped[key] = {
           key,
-          socio: e.socio || null,
-          rider_nombre: e.rider_accounts?.nombre || '—',
+          socio: info.nombre ? { id: key, nombre_comercial: info.nombre, logo_url: info.logo } : null,
+          rider_nombre: info.nombre || 'Socio',
+          comision_pct: comisionPct,
           pedidos: 0,
           total_envios: 0,
           total_comision_rider: 0,
           total_propinas: 0,
           total_neto: 0,
           total_descuentos: 0,
-          pendiente: 0,
           pedidos_list: [],
         }
       }
       const g = grouped[key]
-      const ped = pedidoMap[e.pedido_id]
       g.pedidos += 1
-      g.total_envios += Number(e.coste_envio || 0)
-      g.total_comision_rider += Number(e.comision_rider_sobre_subtotal || 0)
-      g.total_propinas += Number(e.propina || 0)
-      g.total_neto += Number(e.neto_rider || 0)
-      g.total_descuentos += Number(ped?.descuento || 0)
-      if (e.estado_pago === 'pendiente') g.pendiente += Number(e.neto_rider || 0)
-      g.pedidos_list.push({ earning: e, pedido: ped || null })
+      g.total_envios += envio
+      g.total_comision_rider += comision
+      g.total_propinas += propina
+      g.total_neto += neto
+      g.total_descuentos += Number(p.descuento || 0)
+      g.pedidos_list.push({ pedido: p, envio, propina, comision, neto })
     }
     for (const g of Object.values(grouped)) {
-      g.pedidos_list.sort((a, b) => {
-        const da = new Date(a.pedido?.entregado_at || a.pedido?.created_at || a.earning.created_at)
-        const db = new Date(b.pedido?.entregado_at || b.pedido?.created_at || b.earning.created_at)
-        return db - da
-      })
+      g.pedidos_list.sort((a, b) =>
+        new Date(b.pedido.entregado_at || b.pedido.created_at) - new Date(a.pedido.entregado_at || a.pedido.created_at))
     }
     return Object.values(grouped).sort((a, b) => b.total_neto - a.total_neto)
-  }, [riderEarnings, pedidos])
+  }, [entregados, sociosMap])
 
   const porDia = useMemo(() => {
     const map = new Map()
@@ -219,7 +212,7 @@ export default function FinanzasRiders() {
     if (entregados.length === 0) return toast('No hay pedidos para exportar', 'error')
     const cabecera = ['Fecha', 'Código', 'Método pago', 'Subtotal', 'Envío', 'Propina', 'Total cobrado', 'Rider']
     const riderMap = {}
-    for (const e of riderEarnings) riderMap[e.pedido_id] = e.rider_accounts?.nombre || ''
+    for (const p of entregados) riderMap[p.id] = sociosMap[p.socio_id]?.nombre || ''
     const filas = entregados.map(p => [
       fmtFechaHora(p.entregado_at || p.created_at),
       p.codigo,
@@ -439,15 +432,9 @@ export default function FinanzasRiders() {
                         <MiniKv label="Propinas" value={fmtMoney(r.total_propinas)} />
                         <MiniKv label="Neto" value={fmtMoney(r.total_neto)} color={colors.stateOk} />
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          {r.pendiente > 0 ? (
-                            <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
-                              Pendiente {fmtMoney(r.pendiente)}
-                            </span>
-                          ) : (
-                            <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.stateOkSoft, color: colors.stateOk, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              Pagado
-                            </span>
-                          )}
+                          <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: type.xxs, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                            A pagar {fmtMoney(r.total_neto)}
+                          </span>
                           <span style={{
                             fontSize: type.base, color: colors.textMute,
                             transition: 'transform 0.2s',
@@ -474,14 +461,12 @@ export default function FinanzasRiders() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {r.pedidos_list.map(({ earning, pedido }) => {
+                                  {r.pedidos_list.map(({ pedido, envio, propina, comision, neto }) => {
                                     const esTarjeta = pedido?.metodo_pago === 'tarjeta'
                                     const descuento = Number(pedido?.descuento || 0)
-                                    const neto = Number(earning.neto_rider || 0)
-                                    const comision = Number(earning.comision_rider_sobre_subtotal || 0)
                                     return (
-                                      <tr key={earning.id} style={{ borderTop: `1px solid ${colors.border}` }}>
-                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: colors.textMute }}>{fmtFechaHora(pedido?.entregado_at || pedido?.created_at || earning.created_at)}</td>
+                                      <tr key={pedido.id} style={{ borderTop: `1px solid ${colors.border}` }}>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: colors.textMute }}>{fmtFechaHora(pedido?.entregado_at || pedido?.created_at)}</td>
                                         <td style={{ padding: '8px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{pedido?.codigo || '—'}</td>
                                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                                           <span style={{
@@ -498,17 +483,13 @@ export default function FinanzasRiders() {
                                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: descuento > 0 ? colors.danger : colors.textMute }}>
                                           {descuento > 0 ? `− ${fmtMoney(descuento)}` : '—'}
                                         </td>
-                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(earning.coste_envio || 0)}</td>
-                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(earning.propina || 0)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(envio)}</td>
+                                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(propina)}</td>
                                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontWeight: 700 }}>{fmtMoney(pedido?.total || 0)}</td>
                                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(comision)}</td>
                                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontWeight: 800, color: colors.stateOk }}>{fmtMoney(neto)}</td>
                                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                                          {earning.estado_pago === 'pagado' ? (
-                                            <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, background: colors.stateOkSoft, color: colors.stateOk }}>Pagado</span>
-                                          ) : (
-                                            <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep }}>Pendiente</span>
-                                          )}
+                                          <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, background: colors.statePrepSoft, color: colors.statePrep }}>A pagar</span>
                                         </td>
                                       </tr>
                                     )

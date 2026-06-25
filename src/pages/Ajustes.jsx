@@ -716,7 +716,7 @@ export default function Ajustes() {
         />
         <PayToggle
           label="Pago online (tarjeta)"
-          sub="Cobro inmediato con Stripe en el checkout. Pidoo retiene 5% del subtotal."
+          sub="Cobro inmediato con Stripe en el checkout. Pidoo retiene 10% del subtotal."
           value={aceptaTarjetaOnline}
           onChange={setAceptaTarjetaOnline}
         />

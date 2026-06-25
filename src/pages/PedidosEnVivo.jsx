@@ -1536,8 +1536,13 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
       <div style={seccionCard}>
         <span style={seccionLabel}>Cliente</span>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-text)', marginBottom: 4 }}>{nombre}</div>
-        {pedido.usuarios?.telefono && (
-          <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: pedido.direccion_entrega ? 8 : 0 }}>{pedido.usuarios.telefono}</div>
+        {(pedido.cliente_telefono || pedido.usuarios?.telefono) && (
+          <a
+            href={`tel:${pedido.cliente_telefono || pedido.usuarios.telefono}`}
+            style={{ display: 'inline-block', fontSize: 12, color: 'var(--c-primary)', fontWeight: 600, textDecoration: 'none', marginBottom: pedido.direccion_entrega ? 8 : 0 }}
+          >
+            📞 {pedido.cliente_telefono || pedido.usuarios.telefono}
+          </a>
         )}
         {pedido.direccion_entrega && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--c-border)' }}>
