@@ -710,7 +710,7 @@ export default function Ajustes() {
         </div>
         <PayToggle
           label="Pago en efectivo"
-          sub="El rider cobra al entregar (sin comisión Pidoo)."
+          sub="El rider cobra el total al cliente al entregar. Pidoo retiene su 10% del subtotal igual que en tarjeta (se ajusta en la liquidación semanal)."
           value={aceptaEfectivo}
           onChange={setAceptaEfectivo}
         />
