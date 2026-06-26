@@ -14,6 +14,7 @@ import { RestProvider, useRest } from './context/RestContext'
 import { PedidoAlertProvider, usePedidoAlert } from './context/PedidoAlertContext'
 import Login from './pages/Login'
 import CompletarRegistro from './pages/CompletarRegistro'
+import ConfirmarAlta from './pages/ConfirmarAlta'
 import PedidosEnVivo from './pages/PedidosEnVivo'
 import Historial from './pages/Historial'
 import HistorialMovil from './pages/HistorialMovil'
@@ -835,5 +836,12 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
+  // Ruta dedicada de confirmación de alta (restaurante invitado por un socio).
+  // Cae aquí por el enlace del email → panel.pidoo.es/confirmar-alta. Va FUERA de
+  // RestProvider para no chocar con la verificación de rol mientras pone su contraseña.
+  const path = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') : ''
+  if (path === '/confirmar-alta') {
+    return <ErrorBoundary><ConfirmarAlta /><ToastNotification /></ErrorBoundary>
+  }
   return <ErrorBoundary><RestProvider><AppContent /><ConfirmModal /><ToastNotification /></RestProvider></ErrorBoundary>
 }
