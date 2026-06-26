@@ -22,6 +22,11 @@ export default function ConfirmarAlta() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    // Si el enlace llega con error en el hash (caducado o ya usado), mostrar
+    // "Enlace no válido" al instante en vez de esperar al timeout.
+    const hash = typeof window !== 'undefined' ? window.location.hash : ''
+    if (/error=|error_code=/.test(hash)) { setEstado('invalido'); return }
+
     let done = false
     const aplicarSesion = (session) => {
       if (done || !session?.user) return
