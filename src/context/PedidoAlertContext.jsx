@@ -170,6 +170,18 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
     }
   }, [restaurante?.id, fetchNuevos])
 
+  // Polling de respaldo (SOLO nativo): red de seguridad por si el canal realtime
+  // muere en silencio (blip de red con la app en primer plano, sin evento
+  // focus/online que dispare el refetch). En un tablet de restaurante abierto
+  // todo el día eso = pedidos que no aparecen → ventas perdidas. Un poll cada
+  // 25s garantiza que un pedido pagado se vea y suene la alarma aunque el
+  // realtime esté caído. Coste mínimo: 1 query de pocas filas.
+  useEffect(() => {
+    if (!restaurante || !isNative) return
+    const id = setInterval(() => { fetchNuevos() }, 25000)
+    return () => clearInterval(id)
+  }, [restaurante?.id, fetchNuevos])
+
   // Guardia: si hay pedidos nuevos y no está silenciada, la alarma debe estar
   // sonando. Cubre casos extremos (recarga con pedidos ya en BD, o stopAlarm
   // llamado desde otro punto).
