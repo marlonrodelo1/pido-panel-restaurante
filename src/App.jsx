@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Component } from 'react'
 import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
-  BarChart3, Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt,
+  Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -13,7 +13,6 @@ import { colors, ds } from './lib/uiStyles'
 import { RestProvider, useRest } from './context/RestContext'
 import { PedidoAlertProvider, usePedidoAlert } from './context/PedidoAlertContext'
 import Login from './pages/Login'
-import CompletarRegistro from './pages/CompletarRegistro'
 import ConfirmarAlta from './pages/ConfirmarAlta'
 import PedidosEnVivo from './pages/PedidosEnVivo'
 import Historial from './pages/Historial'
@@ -24,7 +23,6 @@ import Promociones from './pages/Promociones'
 import Soporte from './pages/Soporte'
 import DisponibilidadProductos from './pages/DisponibilidadProductos'
 import ConfigImpresora from './pages/ConfigImpresora'
-import Activacion from './pages/Activacion'
 import SociosYRepartidores from './pages/SociosYRepartidores'
 import FinanzasRiders from './pages/FinanzasRiders'
 import LiquidacionPido from './pages/LiquidacionPido'

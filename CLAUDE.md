@@ -1,13 +1,23 @@
 # Panel Restaurante - Documentacion Completa
 
+> **⚠️ CORRECCIONES 1 jul 2026 (auditoría pre-Play). Esto SUPERSEDE lo que diga abajo:**
+> - **Package Android real: `com.pidoo.restaurante`** (NO `com.pidoo.order`). versionCode 5 / versionName 1.4. Dominio web: **`panel.pidoo.es`** (NO `partner.pidoo.es`).
+> - **Theme real:** light tipo Claude (cream/terracotta `#C5562C` + Plus Jakarta Sans), NO dark `#B91C1C`/DM Sans.
+> - **Reparto = DISPATCHER PROPIO**, no Shipday. La edge `create-shipday-order` conserva el nombre pero asigna localmente al socio más cercano (Haversine, 3 intentos, reasignación por cron). Donde abajo diga "Shipday asigna automáticamente", léase dispatcher propio. Las columnas/estados `shipday_*` son legacy y NO llaman a api.shipday.com.
+> - **`Metricas.jsx` NO existe.** La analítica vive en `FinanzasRiders.jsx` (Finanzas con el socio). No hay botón "Métricas".
+> - **`Activacion.jsx` y `CompletarRegistro.jsx` ELIMINADAS** (eran código muerto, nunca se renderizaban). El onboarding vive en `ConfirmarAlta.jsx` (alta por socio) + registro directo en `RestContext`.
+> - **Páginas nuevas no listadas abajo:** `LiquidacionPido.jsx`, `FinanzasRiders.jsx`, `SociosYRepartidores.jsx`, `ConfirmarAlta.jsx`, `EliminarCuenta.jsx`, `HistorialMovil.jsx`.
+> - **RLS de `pedidos`:** ya NO es `pedidos_select_all` abierto; está acotada por `_user_owns_establecimiento(...)` (restaurante ve solo lo suyo).
+> - Detalle completo: `memory/auditoria_panel_restaurante_1jul2026.md`.
+
 ## Resumen
 App de gestion para restaurantes de la plataforma PIDOO. Funciona como **APP nativa** (Capacitor Android) para pedidos en tiempo real + impresora termica, y como **web** (partner.pidoo.es) para gestion completa del negocio.
 
 **Stack:** React 19.2 + Vite 8 + Capacitor 8 (Android/iOS) + Supabase 2.100
-**Theme:** Dark mode, color primario #B91C1C, tipografia DM Sans
-**App ID Android:** com.pidoo.order · versionCode 9 · versionName 1.7
+**Theme:** Light tipo Claude — cream/terracotta (#C5562C primary, #1A1815 tinta), Plus Jakarta Sans
+**App ID Android:** com.pidoo.restaurante · versionCode 5 · versionName 1.4
 **Puerto impresora:** TCP 9100 (ESC/POS 80mm)
-**Web:** https://partner.pidoo.es (Dokploy auto-deploy)
+**Web:** https://panel.pidoo.es (Dokploy auto-deploy)
 **Supabase proyecto:** `rmrbxrabngdmpgpfmjbo`
 
 **Canal único:** todos los pedidos son canal `pido`. No existe canal "pidogo".

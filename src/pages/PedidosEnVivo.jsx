@@ -236,7 +236,6 @@ export default function PedidosEnVivo() {
             .invoke('create-shipday-order', { body: { pedido_id: p.id } })
             .then(({ error }) => {
               if (error) console.error(`[Recovery] Falló reintento dispatcher para ${p.id}:`, error)
-              else console.log(`[Recovery] Dispatcher reinvocado para pedido en limbo ${p.codigo || p.id}`)
             })
             .catch(err => console.error(`[Recovery] Error reintento dispatcher ${p.id}:`, err))
         }
@@ -431,12 +430,22 @@ export default function PedidosEnVivo() {
   // ── Acciones ───────────────────────────────────────────────────────────────
   async function aceptarPedido(pedido, minutos) {
     const now = new Date().toISOString()
-    const { error: updateError } = await supabase.from('pedidos').update({
+    // Concurrencia optimista: solo transiciona si sigue en 'nuevo'. Evita que dos
+    // dispositivos del restaurante acepten a la vez y disparen el dispatcher dos veces.
+    const { data: updRows, error: updateError } = await supabase.from('pedidos').update({
       estado: 'preparando', minutos_preparacion: minutos, aceptado_at: now,
-    }).eq('id', pedido.id)
+    }).eq('id', pedido.id).eq('estado', 'nuevo').select('id')
     if (updateError) {
       console.error('[aceptarPedido] Error actualizando BD:', updateError)
       toast('Error al aceptar el pedido. Intenta de nuevo.', 'error')
+      return
+    }
+    if (!updRows || updRows.length === 0) {
+      // Otro dispositivo (o el auto-cancelado) ya gestionó este pedido: no dispares el dispatcher.
+      toast('Este pedido ya fue gestionado desde otro dispositivo.', 'error')
+      setEntrantes(prev => { const r = prev.filter(p => p.id !== pedido.id); if (!r.length) stopAlarm(); return r })
+      setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
+      setPedidoDetalleId(null)
       return
     }
     setEntrantes(prev => { const r = prev.filter(p => p.id !== pedido.id); if (!r.length) stopAlarm(); return r })
@@ -455,7 +464,7 @@ export default function PedidosEnVivo() {
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
             const { data, error } = await supabase.functions.invoke('create-shipday-order', { body: { pedido_id: pedido.id } })
-            if (!error) { console.log(`[Dispatcher] Pedido ${pedido.codigo} enviado correctamente`, data); return }
+            if (!error) { return }
             throw error
           } catch (err) {
             console.error(`[Dispatcher] Intento ${attempt + 1}/${MAX_RETRIES + 1} fallido para pedido ${pedido.id}:`, err)
@@ -486,49 +495,69 @@ export default function PedidosEnVivo() {
     }
   }
 
+  // Reembolso Stripe con aviso visible si falla (antes se tragaba el error en silencio → cliente sin devolver).
+  function reembolsarConAviso(pedidoId) {
+    supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: pedidoId } })
+      .then(({ error }) => { if (error) { console.error('[Reembolso] Error:', error); toast('Pedido cancelado, pero el reembolso automático falló. Revísalo en Stripe.', 'error') } })
+      .catch(err => { console.error('[Reembolso] Error:', err); toast('Pedido cancelado, pero el reembolso automático falló. Revísalo en Stripe.', 'error') })
+  }
+
   async function rechazarPedido(id, motivo) {
     const pedido = entrantes.find(p => p.id === id)
     const motivoTexto = MOTIVOS_RECHAZO.find(m => m.id === motivo)?.label || motivo || 'El restaurante no pudo aceptar tu pedido'
-    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', id)
+    if (error) {
+      console.error('[rechazarPedido] Error actualizando BD:', error)
+      toast('No se pudo rechazar el pedido. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
     setTimers(prev => { const n = { ...prev }; delete n[id]; return n })
     setPedidoDetalleId(prev => prev === id ? null : prev)
     if (pedido?.usuario_id) {
       sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido rechazado', body: `Tu pedido ${pedido.codigo} fue rechazado: ${motivoTexto}. Disculpa las molestias.` })
     }
-    if (pedido?.metodo_pago === 'tarjeta') {
-      supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: id } }).catch(err => console.error('[Reembolso] Error:', err))
-    }
+    if (pedido?.metodo_pago === 'tarjeta') reembolsarConAviso(id)
   }
 
   async function autoCancelarPedido(id) {
     const { data: pedido } = await supabase.from('pedidos').select('id, codigo, usuario_id, estado, metodo_pago').eq('id', id).single()
     if (!pedido || pedido.estado !== 'nuevo') return
-    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: 'El restaurante no respondió a tiempo', cancelado_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: 'El restaurante no respondió a tiempo', cancelado_at: new Date().toISOString() }).eq('id', id).eq('estado', 'nuevo')
+    if (error) {
+      console.error('[autoCancelarPedido] Error actualizando BD:', error)
+      return
+    }
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
     setTimers(prev => { const n = { ...prev }; delete n[id]; return n })
     setPedidoDetalleId(prev => prev === id ? null : prev)
     if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado porque el restaurante no respondió a tiempo` })
-    if (pedido?.metodo_pago === 'tarjeta') {
-      supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: id } }).catch(err => console.error('[Reembolso] Error:', err))
-    }
+    if (pedido?.metodo_pago === 'tarjeta') reembolsarConAviso(id)
   }
 
   async function cancelarPedidoActivo(pedido, motivoId) {
     const motivoTexto = MOTIVOS_CANCELACION.find(m => m.id === motivoId)?.label || 'Cancelado por el restaurante'
-    await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', pedido.id)
+    const { error } = await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', pedido.id)
+    if (error) {
+      console.error('[cancelarPedidoActivo] Error actualizando BD:', error)
+      toast('No se pudo cancelar el pedido. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
     setActivos(prev => prev.filter(p => p.id !== pedido.id))
     setTimers(prev => { const n = { ...prev }; delete n[pedido.id]; return n })
     setPedidoDetalleId(prev => prev === pedido.id ? null : prev)
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido cancelado', body: `Tu pedido ${pedido.codigo} fue cancelado: ${motivoTexto}` })
-    if (pedido.metodo_pago === 'tarjeta') {
-      supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: pedido.id } }).catch(err => console.error('[Reembolso] Error:', err))
-    }
+    if (pedido.metodo_pago === 'tarjeta') reembolsarConAviso(pedido.id)
   }
 
   async function marcarListo(id) {
     const pedido = activos.find(p => p.id === id)
-    await supabase.from('pedidos').update({ estado: 'listo' }).eq('id', id)
+    const { error } = await supabase.from('pedidos').update({ estado: 'listo' }).eq('id', id)
+    if (error) {
+      console.error('[marcarListo] Error actualizando BD:', error)
+      toast('No se pudo marcar como listo. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'listo' } : p))
     if (pedido?.usuario_id) {
       const esRecogida = pedido.modo_entrega === 'recogida'
@@ -545,7 +574,12 @@ export default function PedidosEnVivo() {
 
   async function marcarRecogido(id) {
     const pedido = activos.find(p => p.id === id)
-    await supabase.from('pedidos').update({ estado: 'recogido', recogido_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('pedidos').update({ estado: 'recogido', recogido_at: new Date().toISOString() }).eq('id', id)
+    if (error) {
+      console.error('[marcarRecogido] Error actualizando BD:', error)
+      toast('No se pudo marcar como recogido. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'recogido' } : p))
     if (pedido?.usuario_id && pedido.modo_entrega !== 'recogida') {
       sendPush({
@@ -559,7 +593,12 @@ export default function PedidosEnVivo() {
 
   async function marcarEntregado(id) {
     const pedido = activos.find(p => p.id === id)
-    await supabase.from('pedidos').update({ estado: 'entregado', entregado_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('pedidos').update({ estado: 'entregado', entregado_at: new Date().toISOString() }).eq('id', id)
+    if (error) {
+      console.error('[marcarEntregado] Error actualizando BD:', error)
+      toast('No se pudo marcar como entregado. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
     setActivos(prev => prev.filter(p => p.id !== id))
     if (pedido?.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido entregado', body: `Tu pedido ${pedido.codigo} ha sido entregado. ¡Gracias!` })
   }
@@ -1647,7 +1686,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
                 <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 8, border: '1px solid var(--c-border)', background: 'transparent', color: 'var(--c-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Rechazar
                 </button>
-                <button onClick={() => { if (aceptando) return; setAceptando(true); onAceptar(pedido, minutosSel); afterAction() }} disabled={aceptando} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: colors.primary, color: '#fff', fontSize: 14, fontWeight: 800, cursor: aceptando ? 'wait' : 'pointer', opacity: aceptando ? 0.7 : 1, fontFamily: 'inherit' }}>
+                <button onClick={async () => { if (aceptando) return; setAceptando(true); try { await onAceptar(pedido, minutosSel) } finally { setAceptando(false) } afterAction() }} disabled={aceptando} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: colors.primary, color: '#fff', fontSize: 14, fontWeight: 800, cursor: aceptando ? 'wait' : 'pointer', opacity: aceptando ? 0.7 : 1, fontFamily: 'inherit' }}>
                   {aceptando ? 'Aceptando…' : 'Aceptar pedido'}
                 </button>
               </div>

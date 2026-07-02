@@ -60,7 +60,6 @@ async function sendRawToIp(ip, port, data) {
 async function sendToThermalPrinter(data) {
   const config = getPrinterConfig()
   if (!config.ip || !config.enabled) {
-    console.log('[Print] Impresora no configurada o desactivada')
     return false
   }
   return sendRawToIp(config.ip, config.port, data)

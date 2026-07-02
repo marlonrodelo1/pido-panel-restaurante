@@ -127,16 +127,22 @@ export default function FinanzasRiders() {
   const cancelados = useMemo(() => pedidos.filter(p => p.estado === 'cancelado').length, [pedidos])
 
   const stats = useMemo(() => {
-    const ventas = entregados.reduce((s, p) => s + Number(p.total || 0), 0)
-    const ventasTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').reduce((s, p) => s + Number(p.total || 0), 0)
-    const ventasEfectivo = entregados.filter(p => p.metodo_pago === 'efectivo').reduce((s, p) => s + Number(p.total || 0), 0)
+    // Venta real de comida del restaurante = SUBTOTAL (sin envío ni propina, que son del rider/socio).
+    const ventasComida = entregados.reduce((s, p) => s + Number(p.subtotal || 0), 0)
+    // Lo que pagó el cliente (incluye envío + propina del rider): NO es ingreso del restaurante.
+    const cobradoCliente = entregados.reduce((s, p) => s + Number(p.total || 0), 0)
+    // Pidoo retiene el 10% del subtotal.
+    const comisionPido = ventasComida * 0.10
+    const cobradoTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').reduce((s, p) => s + Number(p.total || 0), 0)
+    const cobradoEfectivo = entregados.filter(p => p.metodo_pago === 'efectivo').reduce((s, p) => s + Number(p.total || 0), 0)
     const pedTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').length
     const pedEfectivo = entregados.filter(p => p.metodo_pago === 'efectivo').length
-    const ticketMedio = entregados.length > 0 ? (entregados.reduce((s, p) => s + Number(p.total || 0), 0) / entregados.length) : 0
+    // Ticket medio = ticket de comida (subtotal), no el total cobrado.
+    const ticketMedio = entregados.length > 0 ? (ventasComida / entregados.length) : 0
     const tiempos = entregados.filter(p => p.minutos_preparacion).map(p => p.minutos_preparacion)
     const tiempoMedio = tiempos.length > 0 ? Math.round(tiempos.reduce((s, t) => s + t, 0) / tiempos.length) : 0
     const propinas = entregados.reduce((s, p) => s + Number(p.propina || 0), 0)
-    return { ventas, ventasTarjeta, ventasEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
+    return { ventasComida, cobradoCliente, comisionPido, cobradoTarjeta, cobradoEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
   }, [entregados])
 
   const socioRows = useMemo(() => {
@@ -300,24 +306,30 @@ export default function FinanzasRiders() {
             borderRadius: 16, padding: 28, marginBottom: 18,
             color: '#fff',
           }}>
-            <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.85, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Ventas entregadas</div>
+            <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.85, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Ventas de comida (subtotal)</div>
             <div style={{
               fontFamily: 'ui-monospace, monospace', fontSize: 48, fontWeight: 800,
               color: '#fff', marginTop: 6, letterSpacing: '-0.02em',
-            }}>{fmtMoney(stats.ventas)}</div>
+            }}>{fmtMoney(stats.ventasComida)}</div>
+            <div style={{ fontSize: 12, opacity: 0.92, marginTop: 6, lineHeight: 1.5 }}>
+              Comisión Pido (10%): −{fmtMoney(stats.comisionPido)} · Cobrado al cliente: {fmtMoney(stats.cobradoCliente)}
+            </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 background: 'rgba(255,255,255,0.18)', color: '#fff',
                 border: '1px solid rgba(255,255,255,0.25)',
                 borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 700,
-              }}>💳 Tarjeta · {fmtMoney(stats.ventasTarjeta)} · {stats.pedTarjeta} pedidos</span>
+              }}>💳 Cobrado tarjeta · {fmtMoney(stats.cobradoTarjeta)} · {stats.pedTarjeta} pedidos</span>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 background: 'rgba(255,255,255,0.18)', color: '#fff',
                 border: '1px solid rgba(255,255,255,0.25)',
                 borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 700,
-              }}>💵 Efectivo · {fmtMoney(stats.ventasEfectivo)} · {stats.pedEfectivo} pedidos</span>
+              }}>💵 Cobrado efectivo · {fmtMoney(stats.cobradoEfectivo)} · {stats.pedEfectivo} pedidos</span>
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 12 }}>
+              Tu neto real se liquida al 80% del subtotal (Pidoo 10% · rider/socio 10% + envío + propina). Consúltalo en «Liquidación con Pido».
             </div>
           </div>
 
@@ -333,8 +345,8 @@ export default function FinanzasRiders() {
           {/* Gráfico ventas por día */}
           <div style={{ marginBottom: 22 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-              <h2 style={{ ...ds.h2, margin: 0 }}>Ventas por día</h2>
-              <span style={{ fontSize: type.xxs, color: colors.textMute }}>Total diario</span>
+              <h2 style={{ ...ds.h2, margin: 0 }}>Cobrado por día</h2>
+              <span style={{ fontSize: type.xxs, color: colors.textMute }}>Total cobrado al cliente</span>
             </div>
             {porDia.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 12, color: colors.textMute, fontSize: type.xs }}>

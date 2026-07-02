@@ -31,3 +31,10 @@ google-services.json
 android/app/google-services.json
 GoogleService-Info.plist
 ios/App/App/GoogleService-Info.plist
+
+# Keystores de firma Android — NUNCA commitear
+*.jks
+*.keystore
+Keystorepath
+keystore.properties
+android/keystore.properties

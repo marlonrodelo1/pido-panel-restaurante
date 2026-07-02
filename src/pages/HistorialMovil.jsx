@@ -386,9 +386,15 @@ function DetalleModal({ pedido, items, loading, onClose }) {
               <>
                 <Row label="Nombre" value={rider.nombre} />
                 {rider.telefono && <Row label="Teléfono" value={rider.telefono} />}
-                {pedido.shipday_status && (
-                  <Row label="Estado entrega" value={pedido.shipday_status} />
-                )}
+                {(() => {
+                  const label = {
+                    created: 'Asignado', assigned: 'Asignado', accepted: 'Aceptado',
+                    picked_up: 'Recogido', pickedup: 'Recogido', on_the_way: 'En camino',
+                    delivered: 'Entregado', no_rider: 'Sin rider disponible',
+                    error_crear_orden: 'Error de asignación',
+                  }[pedido.shipday_status]
+                  return label ? <Row label="Estado entrega" value={label} /> : null
+                })()}
               </>
             ) : (
               <div style={{ fontSize: type.sm, color: colors.textMute }}>Sin rider asignado</div>
