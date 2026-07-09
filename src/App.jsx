@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Component } from 'react'
 import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
-  Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt,
+  Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -27,6 +27,7 @@ import SociosYRepartidores from './pages/SociosYRepartidores'
 import FinanzasRiders from './pages/FinanzasRiders'
 import LiquidacionPido from './pages/LiquidacionPido'
 import EliminarCuenta from './pages/EliminarCuenta'
+import Resenas from './pages/Resenas'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -38,6 +39,7 @@ const SECCION_LABELS = {
   historial: 'Historial',
   carta: 'Carta',
   promos: 'Promociones',
+  resenas: 'Reseñas',
   ajustes: 'Ajustes',
   soporte: 'Soporte',
   'socios-riders': 'Socios y repartidores',
@@ -249,6 +251,7 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
     { id: 'historial', Icon: ClipboardList, label: 'Historial' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
     { id: 'promos', Icon: Tag, label: 'Promociones' },
+    { id: 'resenas', Icon: Star, label: 'Reseñas' },
     { id: 'ajustes', Icon: Settings, label: 'Ajustes' },
   ]
   const more = [
@@ -477,6 +480,7 @@ function AppInner({ seccion, setSeccion, nav }) {
   const navIcons = isNative ? NAV_ICONS_NATIVE : NAV_ICONS_WEB
 
   const extraOpciones = [
+    { id: 'resenas', label: 'Reseñas', Icon: Star },
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
     { id: 'liquidacion-pido', label: 'Liquidación con Pido', Icon: Receipt },
@@ -530,6 +534,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'historial' && <Historial />}
       {seccion === 'carta' && <Carta />}
       {seccion === 'promos' && <Promociones />}
+      {seccion === 'resenas' && <Resenas />}
       {seccion === 'soporte' && <Soporte />}
       {seccion === 'socios-riders' && <SociosYRepartidores />}
       {seccion === 'finanzas-riders' && <FinanzasRiders />}

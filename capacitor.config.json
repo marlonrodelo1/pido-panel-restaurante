@@ -5,7 +5,7 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 1500,
-      "backgroundColor": "#FAFAF7",
+      "backgroundColor": "#4D4D4D",
       "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": true
@@ -16,7 +16,11 @@
       "overlaysWebView": false
     },
     "PushNotifications": {
-      "presentationOptions": ["badge", "sound", "alert"]
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
     },
     "LocalNotifications": {
       "smallIcon": "ic_stat_icon",
