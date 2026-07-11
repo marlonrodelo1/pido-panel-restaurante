@@ -131,8 +131,13 @@ export default function FinanzasRiders() {
     const ventasComida = entregados.reduce((s, p) => s + Number(p.subtotal || 0), 0)
     // Lo que pagó el cliente (incluye envío + propina del rider): NO es ingreso del restaurante.
     const cobradoCliente = entregados.reduce((s, p) => s + Number(p.total || 0), 0)
-    // Pidoo retiene el 10% del subtotal.
-    const comisionPido = ventasComida * 0.10
+    // Pidoo retiene el 10% del subtotal — EXCEPTO pedidos telefónicos, que pagan
+    // 1 € fijo por envío gestionado (sin % sobre la comida).
+    const telefonicos = entregados.filter(p => p.origen_pedido === 'telefonico')
+    const ventasNoTelefonicas = entregados.filter(p => p.origen_pedido !== 'telefonico')
+      .reduce((s, p) => s + Number(p.subtotal || 0), 0)
+    const comisionPido = ventasNoTelefonicas * 0.10 + telefonicos.length * 1.00
+    const pedTelefonicos = telefonicos.length
     const cobradoTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').reduce((s, p) => s + Number(p.total || 0), 0)
     const cobradoEfectivo = entregados.filter(p => p.metodo_pago === 'efectivo').reduce((s, p) => s + Number(p.total || 0), 0)
     const pedTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').length
@@ -142,7 +147,7 @@ export default function FinanzasRiders() {
     const tiempos = entregados.filter(p => p.minutos_preparacion).map(p => p.minutos_preparacion)
     const tiempoMedio = tiempos.length > 0 ? Math.round(tiempos.reduce((s, t) => s + t, 0) / tiempos.length) : 0
     const propinas = entregados.reduce((s, p) => s + Number(p.propina || 0), 0)
-    return { ventasComida, cobradoCliente, comisionPido, cobradoTarjeta, cobradoEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
+    return { ventasComida, cobradoCliente, comisionPido, pedTelefonicos, cobradoTarjeta, cobradoEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
   }, [entregados])
 
   const socioRows = useMemo(() => {
@@ -155,7 +160,8 @@ export default function FinanzasRiders() {
       const isDelivery = p.modo_entrega === 'delivery'
       const envio = isDelivery ? Number(p.coste_envio || 0) : 0
       const propina = isDelivery ? Number(p.propina || 0) : 0
-      const comision = Number(p.subtotal || 0) * comisionPct / 100
+      // Pedido telefónico: el socio cobra SOLO el envío pactado, sin % del subtotal.
+      const comision = p.origen_pedido === 'telefonico' ? 0 : Number(p.subtotal || 0) * comisionPct / 100
       const neto = envio + comision + propina
       if (!grouped[key]) {
         grouped[key] = {
@@ -312,7 +318,7 @@ export default function FinanzasRiders() {
               color: '#fff', marginTop: 6, letterSpacing: '-0.02em',
             }}>{fmtMoney(stats.ventasComida)}</div>
             <div style={{ fontSize: 12, opacity: 0.92, marginTop: 6, lineHeight: 1.5 }}>
-              Comisión Pido (10%): −{fmtMoney(stats.comisionPido)} · Cobrado al cliente: {fmtMoney(stats.cobradoCliente)}
+              Comisión Pido: −{fmtMoney(stats.comisionPido)}{stats.pedTelefonicos > 0 ? ` (10% app + ${stats.pedTelefonicos} telefónico${stats.pedTelefonicos > 1 ? 's' : ''} × 1 €)` : ' (10%)'} · Cobrado al cliente: {fmtMoney(stats.cobradoCliente)}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
               <span style={{

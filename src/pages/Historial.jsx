@@ -82,18 +82,19 @@ export default function Historial() {
     setExportando(true)
     try {
       let query = supabase.from('pedidos')
-        .select('codigo, estado, canal, metodo_pago, subtotal, coste_envio, total, created_at')
+        .select('codigo, estado, canal, origen_pedido, metodo_pago, subtotal, coste_envio, total, created_at')
       query = buildQuery(query)
 
       const { data, error: err } = await query
       if (err) throw err
       if (!data?.length) { setExportando(false); return }
 
-      const headers = ['Codigo', 'Estado', 'Canal', 'Metodo Pago', 'Subtotal', 'Envio', 'Total', 'Fecha']
+      const headers = ['Codigo', 'Estado', 'Canal', 'Origen', 'Metodo Pago', 'Subtotal', 'Envio', 'Total', 'Fecha']
       const rows = data.map(p => [
         p.codigo,
         p.estado,
         'PIDO',
+        p.origen_pedido === 'telefonico' ? 'Telefonico' : (p.origen_pedido || 'pido'),
         p.metodo_pago || '',
         (p.subtotal || 0).toFixed(2),
         (p.coste_envio || 0).toFixed(2),
@@ -271,10 +272,15 @@ export default function Historial() {
               {/* Estado */}
               <span style={sbStyle}>{_label}</span>
 
+              {/* Origen telefónico */}
+              {p.origen_pedido === 'telefonico' && (
+                <span style={chip('terracotta')}>Teléfono</span>
+              )}
+
               {/* Pago */}
-              <span style={chip(p.metodo_pago === 'tarjeta' ? 'paper' : 'warning', { dot: true })}>
+              <span style={chip(p.metodo_pago === 'tarjeta' || p.metodo_pago === 'pagado_local' ? 'paper' : 'warning', { dot: true })}>
                 <span style={chipDot} />
-                {p.metodo_pago === 'tarjeta' ? 'Tarjeta' : 'Efectivo'}
+                {p.metodo_pago === 'tarjeta' ? 'Tarjeta' : p.metodo_pago === 'pagado_local' ? 'Ya pagado' : 'Efectivo'}
               </span>
 
               {/* Total */}

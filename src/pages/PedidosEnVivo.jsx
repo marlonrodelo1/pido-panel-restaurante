@@ -13,8 +13,11 @@ import { colors, type, ds, stateBadge } from '../lib/uiStyles'
 
 // ─── Badges ────────────────────────────────────────────────────────────────
 function PagoBadge({ pago }) {
-  const t = pago === 'tarjeta'
-  return <span style={{ background: t ? colors.infoSoft : colors.stateOkSoft, color: t ? colors.info : colors.stateOk, fontSize: type.xxs, fontWeight: 700, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.04em' }}>{t ? 'Tarjeta' : 'Efectivo'}</span>
+  // 'pagado_local' = pedido telefónico ya cobrado por el restaurante (bizum/local):
+  // el rider NO cobra nada. Se muestra como "Ya pagado" igual que tarjeta.
+  const pagado = pago === 'tarjeta' || pago === 'pagado_local'
+  const label = pago === 'tarjeta' ? 'Tarjeta' : pago === 'pagado_local' ? 'Ya pagado' : 'Efectivo'
+  return <span style={{ background: pagado ? colors.infoSoft : colors.stateOkSoft, color: pagado ? colors.info : colors.stateOk, fontSize: type.xxs, fontWeight: 700, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.04em' }}>{label}</span>
 }
 function CanalBadge() {
   return <span style={{ background: colors.primarySoft, color: colors.primary, fontSize: type.xxs, fontWeight: 700, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.04em' }}>PIDO</span>
@@ -50,12 +53,14 @@ const formatTimer = s => {
 const canalVentaLabel = (origen) => {
   if (origen === 'tienda_publica') return 'Tienda del restaurante'
   if (origen === 'marketplace_socio') return 'Marketplace del socio'
+  if (origen === 'telefonico') return 'Pedido telefónico'
   return 'App Pidoo'
 }
 
-// Solo dos métodos de pago: tarjeta (online) o efectivo. Cualquier valor legacy
-// (p.ej. 'datafono') se trata como efectivo a efectos de visualización.
-const metodoPagoLabel = (m) => (m === 'tarjeta' ? 'Tarjeta (online)' : 'Efectivo')
+// Métodos de pago: tarjeta (online), efectivo, o 'pagado_local' (telefónico ya
+// cobrado por el restaurante). Cualquier valor legacy (p.ej. 'datafono') se trata
+// como efectivo a efectos de visualización.
+const metodoPagoLabel = (m) => (m === 'tarjeta' ? 'Tarjeta (online)' : m === 'pagado_local' ? 'Ya pagado (bizum/local)' : 'Efectivo')
 
 // ─── Hook: detectar tablet horizontal (>=900px, landscape) ─────────────────
 // Calcula isTabletHorizontal solo en resize/orientationchange (debounced 120ms)

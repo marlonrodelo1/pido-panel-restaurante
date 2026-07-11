@@ -96,7 +96,7 @@ export default function LiquidacionPido() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 10, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
                   <Mini label="Ventas (subtotal)" v={euro(r.subtotal_total)} />
-                  <Mini label="Comisión Pido (10%)" v={euro(r.comision_pido)} />
+                  <Mini label="Comisión Pido" v={euro(r.comision_pido)} />
                   <Mini label="Cobrado efectivo" v={euro(r.efectivo_total)} />
                   <Mini label="Cobrado tarjeta" v={euro(r.tarjeta_total)} />
                   <Mini label="Envíos + propinas" v={euro(Number(r.envios_total || 0) + Number(r.propinas_total || 0))} />

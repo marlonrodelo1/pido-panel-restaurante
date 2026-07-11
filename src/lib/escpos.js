@@ -111,13 +111,15 @@ export function generarComandaCocina(pedido, items, restaurante) {
     ...separator('-'),
   ]
 
-  // Cliente info
+  // Cliente info — pedidos telefónicos no tienen `usuarios` anidado (usuario_id
+  // null): caer a guest_nombre / cliente_telefono / guest_telefono.
   const cliente = pedido.usuarios
-  if (cliente) {
-    const nombreCliente = [cliente.nombre, cliente.apellido].filter(Boolean).join(' ')
-    if (nombreCliente) bytes.push(...boldOn(), ...line('Cliente: ' + nombreCliente), ...boldOff())
-    if (cliente.telefono) bytes.push(...line('Tel: ' + cliente.telefono))
-  }
+  const nombreCliente = cliente
+    ? [cliente.nombre, cliente.apellido].filter(Boolean).join(' ')
+    : (pedido.guest_nombre || '')
+  const telCliente = cliente?.telefono || pedido.cliente_telefono || pedido.guest_telefono
+  if (nombreCliente) bytes.push(...boldOn(), ...line('Cliente: ' + nombreCliente), ...boldOff())
+  if (telCliente) bytes.push(...line('Tel: ' + telCliente))
   if (pedido.direccion_entrega) {
     bytes.push(...line('Dir: ' + pedido.direccion_entrega))
   }
@@ -147,6 +149,17 @@ export function generarComandaCocina(pedido, items, restaurante) {
     if (item.extras) {
       bytes.push(...line('   + ' + item.extras))
     }
+  }
+
+  // Pedido telefónico: sin items detallados — el pedido va en las notas y el
+  // importe acordado por teléfono debe quedar visible para cocina/rider.
+  if (pedido.origen_pedido === 'telefonico') {
+    bytes.push(
+      ...tallSize(), ...boldOn(),
+      ...line('PEDIDO TELEFONICO'),
+      ...line('IMPORTE ACORDADO: ' + Number(pedido.subtotal || 0).toFixed(2) + ' EUR'),
+      ...normalSize(), ...boldOff(),
+    )
   }
 
   bytes.push(...feed(1))
@@ -229,17 +242,18 @@ export function generarTicketCliente(pedido, items, restaurante) {
     ...twoColumns('Pedido:', pedido.codigo || '---'),
     ...twoColumns('Fecha:', formatDate(pedido.created_at)),
     ...twoColumns('Canal:', 'PIDO'),
-    ...twoColumns('Pago:', pedido.metodo_pago === 'efectivo' ? 'Efectivo' : 'Tarjeta'),
+    ...twoColumns('Pago:', pedido.metodo_pago === 'efectivo' ? 'Efectivo' : pedido.metodo_pago === 'pagado_local' ? 'Ya pagado' : 'Tarjeta'),
     ...separator('-'),
   )
 
-  // Cliente info
+  // Cliente info (con fallback guest para pedidos telefónicos)
   const cliente = pedido.usuarios
-  if (cliente) {
-    const nombreCliente = [cliente.nombre, cliente.apellido].filter(Boolean).join(' ')
-    if (nombreCliente) bytes.push(...twoColumns('Cliente:', nombreCliente))
-    if (cliente.telefono) bytes.push(...twoColumns('Tel:', cliente.telefono))
-  }
+  const nombreCliente = cliente
+    ? [cliente.nombre, cliente.apellido].filter(Boolean).join(' ')
+    : (pedido.guest_nombre || '')
+  const telCliente = cliente?.telefono || pedido.cliente_telefono || pedido.guest_telefono
+  if (nombreCliente) bytes.push(...twoColumns('Cliente:', nombreCliente))
+  if (telCliente) bytes.push(...twoColumns('Tel:', telCliente))
   if (pedido.direccion_entrega) {
     bytes.push(...line('Entrega: ' + pedido.direccion_entrega))
   }

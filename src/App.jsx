@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Component } from 'react'
 import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
-  Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star,
+  Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star, PhoneCall,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -28,15 +28,17 @@ import FinanzasRiders from './pages/FinanzasRiders'
 import LiquidacionPido from './pages/LiquidacionPido'
 import EliminarCuenta from './pages/EliminarCuenta'
 import Resenas from './pages/Resenas'
+import CrearEnvio from './pages/CrearEnvio'
 
 const isNative = Capacitor.isNativePlatform()
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings }
-const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer }
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall }
+const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer }
 
 // Etiquetas legibles para breadcrumbs y títulos
 const SECCION_LABELS = {
   historial: 'Historial',
+  'crear-envio': 'Pedido telefónico',
   carta: 'Carta',
   promos: 'Promociones',
   resenas: 'Reseñas',
@@ -159,6 +161,7 @@ function AppContent() {
   const nav = isNative
     ? [
         { id: 'pedidos', label: 'Pedidos' },
+        { id: 'crear-envio', label: 'Teléfono' },
         { id: 'historial-movil', label: 'Historial' },
         { id: 'disponibilidad', label: 'Carta' },
         { id: 'impresora', label: 'Config' },
@@ -249,6 +252,7 @@ function NavItem({ Icon, label, active, badge, onClick }) {
 function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onLogout }) {
   const main = [
     { id: 'historial', Icon: ClipboardList, label: 'Historial' },
+    { id: 'crear-envio', Icon: PhoneCall, label: 'Pedido telefónico' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
     { id: 'promos', Icon: Tag, label: 'Promociones' },
     { id: 'resenas', Icon: Star, label: 'Reseñas' },
@@ -480,6 +484,7 @@ function AppInner({ seccion, setSeccion, nav }) {
   const navIcons = isNative ? NAV_ICONS_NATIVE : NAV_ICONS_WEB
 
   const extraOpciones = [
+    { id: 'crear-envio', label: 'Pedido telefónico', Icon: PhoneCall },
     { id: 'resenas', label: 'Reseñas', Icon: Star },
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
@@ -531,6 +536,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'historial-movil' && <HistorialMovil />}
       {seccion === 'disponibilidad' && <DisponibilidadProductos />}
       {seccion === 'impresora' && <ConfigImpresora />}
+      {seccion === 'crear-envio' && <CrearEnvio />}
       {seccion === 'historial' && <Historial />}
       {seccion === 'carta' && <Carta />}
       {seccion === 'promos' && <Promociones />}

@@ -65,7 +65,7 @@ export default function HistorialMovil() {
     try {
       const { data, error: qErr } = await supabase
         .from('pedidos')
-        .select('id, codigo, estado, modo_entrega, created_at, total, minutos_preparacion, shipday_status, shipday_tracking_url, rider_account_id, metodo_pago, rider_accounts(id, nombre, telefono), usuarios(nombre, apellido, telefono)')
+        .select('id, codigo, estado, modo_entrega, origen_pedido, created_at, total, minutos_preparacion, shipday_status, shipday_tracking_url, rider_account_id, metodo_pago, guest_nombre, cliente_telefono, rider_accounts(id, nombre, telefono), usuarios(nombre, apellido, telefono)')
         .eq('establecimiento_id', restaurante.id)
         .gte('created_at', desde)
         .order('created_at', { ascending: false })
@@ -438,8 +438,11 @@ function DetalleModal({ pedido, items, loading, onClose }) {
           {pedido.minutos_preparacion != null && (
             <Row label="Tiempo prep" value={`${pedido.minutos_preparacion} min`} />
           )}
+          {pedido.origen_pedido === 'telefonico' && (
+            <Row label="Origen" value="Pedido telefónico" />
+          )}
           {pedido.metodo_pago && (
-            <Row label="Pago" value={pedido.metodo_pago === 'tarjeta' ? 'Tarjeta' : 'Efectivo'} />
+            <Row label="Pago" value={pedido.metodo_pago === 'tarjeta' ? 'Tarjeta' : pedido.metodo_pago === 'pagado_local' ? 'Ya pagado (bizum/local)' : 'Efectivo'} />
           )}
           <Row label="Total" value={`${(pedido.total || 0).toFixed(2)} €`} bold />
         </Section>
