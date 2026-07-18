@@ -134,8 +134,13 @@ export default function CrearEnvio() {
   const refreshOnline = useCallback(async () => {
     if (!restaurante?.id) return
     try {
+      // fuente:'telefonico' (check v11) — el contador DEBE usar el mismo filtro que
+      // crear-pedido-telefonico (socios.acepta_telefonicos). Sin este parámetro la edge
+      // filtraba por acepta_app: un socio con "app" apagada y "telefónicos" encendida
+      // dejaba el botón "Crear envío" bloqueado en falso, y el caso inverso daba contador
+      // verde y luego 409 sin_riders_online tras rellenar todo el formulario.
       const { data } = await supabase.functions.invoke('check-socio-availability-now', {
-        body: { establecimiento_id: restaurante.id },
+        body: { establecimiento_id: restaurante.id, fuente: 'telefonico' },
       })
       if (typeof data?.online_count === 'number') setOnlineCount(data.online_count)
     } catch { /* mantiene el último valor */ }

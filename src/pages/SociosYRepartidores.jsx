@@ -161,6 +161,36 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
         )}
       </div>
 
+      {/* Tarifa que propone el repartidor: el restaurante debe verla ANTES de aceptar
+          la vinculación (18-jul-2026, solicitar-vinculacion-socio v8). */}
+      {isPendiente && row.tarifa_pendiente && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <div style={{
+            padding: '11px 13px', borderRadius: 10,
+            background: colors.surface2, border: `1px solid ${colors.border}`,
+          }}>
+            <div style={{
+              fontSize: 10.5, fontWeight: 700, color: colors.textMute,
+              letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 5,
+            }}>
+              Cómo cobra este repartidor
+            </div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: colors.text, lineHeight: 1.45 }}>
+              {row.tarifa_pendiente.tarifa_modo === 'fija'
+                ? `${Number(row.tarifa_pendiente.tarifa_fija ?? 0).toFixed(2).replace('.', ',')} € fijos por entrega`
+                : `${Number(row.tarifa_pendiente.tarifa_base ?? 0).toFixed(2).replace('.', ',')} € hasta ${Number(row.tarifa_pendiente.tarifa_radio_base_km ?? 0)} km · +${Number(row.tarifa_pendiente.tarifa_precio_km ?? 0).toFixed(2).replace('.', ',')} €/km`
+                  + (row.tarifa_pendiente.tarifa_maxima != null ? ` · máx ${Number(row.tarifa_pendiente.tarifa_maxima).toFixed(2).replace('.', ',')} €` : '')}
+              {row.tarifa_pendiente.comision_pct != null && (
+                <> · {Number(row.tarifa_pendiente.comision_pct)} % de comisión</>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: colors.textMute, marginTop: 4 }}>
+              Si aceptas la vinculación, aceptas también esta tarifa.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Acciones según estado (siempre visibles para pendiente) */}
       {isPendiente && (
         <div style={{ padding: '0 16px 14px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -302,7 +332,7 @@ export default function SociosYRepartidores() {
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
     try {
-      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, comision_pct, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, en_servicio, activo)'
+      const selectStr = 'id, socio_id, estado, solicitado_at, aceptado_at, destacado, orden_destacado, tarifa_modo, tarifa_fija, tarifa_base, tarifa_radio_base_km, tarifa_precio_km, tarifa_maxima, comision_pct, tarifa_aceptada_en, tarifa_pendiente, tarifa_pendiente_at, tarifa_pendiente_origen, tarifa_pendiente_expira_en, socios(id, nombre_comercial, logo_url, slug, rating, descripcion, en_servicio, activo)'
       const { data: rows, error } = await supabase
         .from('socio_establecimiento')
         .select(selectStr)
