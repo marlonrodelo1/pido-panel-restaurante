@@ -63,6 +63,8 @@ export default function Ajustes() {
   const [email, setEmail] = useState(restaurante?.email || '')
   const [telefono, setTelefono] = useState(restaurante?.telefono || '')
   const [radioCobertura, setRadioCobertura] = useState(restaurante?.radio_cobertura_km || 10)
+  // Pedido mínimo (subtotal de productos) que el restaurante acepta. 0 = sin mínimo.
+  const [pedidoMinimo, setPedidoMinimo] = useState(restaurante?.pedido_minimo ?? '')
   const [razonSocial, setRazonSocial] = useState(restaurante?.razon_social || '')
   const [nif, setNif] = useState(restaurante?.nif || '')
   const [direccionFiscal, setDireccionFiscal] = useState(restaurante?.direccion_fiscal || '')
@@ -345,6 +347,7 @@ export default function Ajustes() {
     email !== (restaurante?.email || '') ||
     telefono !== (restaurante?.telefono || '') ||
     Number(radioCobertura) !== Number(restaurante?.radio_cobertura_km || 10) ||
+    Number(pedidoMinimo || 0) !== Number(restaurante?.pedido_minimo || 0) ||
     razonSocial !== (restaurante?.razon_social || '') ||
     nif !== (restaurante?.nif || '') ||
     direccionFiscal !== (restaurante?.direccion_fiscal || '') ||
@@ -372,6 +375,7 @@ export default function Ajustes() {
       email: email.trim() || null,
       telefono: telefono.trim() || null,
       radio_cobertura_km: radioCobertura,
+      pedido_minimo: pedidoMinimo === '' || pedidoMinimo == null ? 0 : Number(pedidoMinimo),
       horario: horario,
       razon_social: razonSocial.trim() || null,
       nif: nif.trim() ? nif.trim().toUpperCase() : null,
@@ -1236,6 +1240,25 @@ export default function Ajustes() {
         )}
         <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 12 }}>
           Los cambios de tarifa y de asignación se guardan con el botón <strong>“Guardar cambios”</strong> de abajo.
+        </div>
+      </div>
+
+      {/* Pedido mínimo (aplica a domicilio y recogida) */}
+      <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Pedido mínimo</h3>
+        <p style={{ fontSize: 11, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+          Importe mínimo en productos para que un cliente pueda completar un pedido. Aplica a <strong>domicilio y recogida</strong>. Déjalo en <strong>0</strong> si no quieres mínimo.
+        </p>
+        <label style={lbl}>Pedido mínimo (€)</label>
+        <input
+          type="number" step="0.5" min="0"
+          value={pedidoMinimo}
+          onChange={e => setPedidoMinimo(e.target.value)}
+          placeholder="Ej: 15"
+          style={inp}
+        />
+        <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 8 }}>
+          Se guarda con el botón <strong>“Guardar cambios”</strong> de abajo.
         </div>
       </div>
 
