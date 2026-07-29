@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
-import { Printer, Wifi, LogOut, AlertTriangle } from 'lucide-react'
+import { Browser } from '@capacitor/browser'
+import { Printer, Wifi, LogOut, AlertTriangle, Globe } from 'lucide-react'
 import { useRest } from '../context/RestContext'
 import { colors, type, ds } from '../lib/uiStyles'
 import {
@@ -77,6 +78,14 @@ export default function ConfigImpresora() {
     if (!ip) return
     await handleConnect(ip, printerPort)
     setManualIp('')
+  }
+
+  async function abrirPanelWeb() {
+    try {
+      await Browser.open({ url: 'https://panel.pidoo.es' })
+    } catch {
+      window.open('https://panel.pidoo.es', '_blank')
+    }
   }
 
   async function handleRetest() {
@@ -463,6 +472,33 @@ export default function ConfigImpresora() {
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Panel web completo (abre el navegador) */}
+      <button
+        onClick={abrirPanelWeb}
+        style={{
+          width: '100%', padding: '14px 16px', borderRadius: 12,
+          border: `1px solid ${colors.border}`,
+          background: colors.paper,
+          cursor: 'pointer', fontFamily: 'inherit',
+          display: 'flex', alignItems: 'center', gap: 12,
+          marginBottom: 12, textAlign: 'left',
+        }}
+      >
+        <div style={{
+          width: 40, height: 40, borderRadius: 10, background: colors.cream2,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: colors.stone, flexShrink: 0,
+        }}>
+          <Globe size={20} strokeWidth={2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, color: colors.ink, fontSize: type.sm }}>Panel web completo</div>
+          <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 2, fontWeight: 500 }}>
+            Carta, promociones, finanzas y ajustes en el navegador.
+          </div>
+        </div>
+      </button>
 
       {/* Cerrar sesión */}
       <button

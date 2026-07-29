@@ -17,6 +17,124 @@ const ESTADOS = {
   arrastrada: { label: 'Incluida en la siguiente', color: colors.stone, bg: colors.cream2 },
 }
 
+// ── Tarjeta "dónde cobras": onboarding de Stripe Connect.
+// Estados que escribe el backend: null (sin cuenta) → onboarding → pendiente → activa
+const CONNECT_UI = {
+  sin_cuenta: {
+    titulo: 'Aún no nos has dicho dónde cobrar',
+    texto: 'Registra tu cuenta bancaria para que podamos enviarte el dinero de tus ventas cada lunes. Los datos los guarda Stripe, nuestro proveedor de pagos, no Pidoo.',
+    cta: 'Configurar cuenta de cobro',
+    color: colors.terracotta,
+    bg: 'rgba(197,86,44,0.08)',
+  },
+  onboarding: {
+    titulo: 'Te faltan datos por rellenar',
+    texto: 'Empezaste el registro pero quedó a medias. Hasta que lo termines no podemos enviarte los pagos.',
+    cta: 'Continuar donde lo dejaste',
+    color: colors.warning,
+    bg: 'rgba(201,149,81,0.15)',
+  },
+  pendiente: {
+    titulo: 'Stripe está verificando tus datos',
+    texto: 'Ya has enviado todo. La verificación suele tardar unos minutos, a veces algún día. Te avisaremos en cuanto esté.',
+    cta: 'Revisar mis datos',
+    color: colors.warning,
+    bg: 'rgba(201,149,81,0.15)',
+  },
+  activa: {
+    titulo: 'Todo listo, cobras sin problema',
+    texto: 'Tu cuenta está verificada. Cada lunes te enviamos ahí el dinero de tus ventas.',
+    cta: 'Ver o cambiar mis datos',
+    color: colors.sage2,
+    bg: colors.sageSoft,
+  },
+}
+
+function CobroCard() {
+  const { restaurante } = useRest()
+  const [estado, setEstado] = useState(restaurante?.stripe_connect_status || null)
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState('')
+
+  // Al volver de Stripe (?connect=ok) preguntamos el estado REAL a Stripe en vez
+  // de fiarnos del webhook, que puede tardar o no estar configurado.
+  useEffect(() => {
+    if (!restaurante?.id) return
+    let volviendo = false
+    try {
+      volviendo = new URLSearchParams(window.location.search).get('connect') === 'ok'
+    } catch {}
+    if (!volviendo) return
+    let cancel = false
+    ;(async () => {
+      setCargando(true)
+      const { data, error: err } = await supabase.functions.invoke('stripe-connect-onboarding', {
+        body: { establecimiento_id: restaurante.id, action: 'status' },
+      })
+      if (cancel) return
+      if (!err && data?.estado) setEstado(data.estado)
+      setCargando(false)
+    })()
+    return () => { cancel = true }
+  }, [restaurante?.id])
+
+  async function abrirOnboarding() {
+    if (!restaurante?.id) return
+    setCargando(true)
+    setError('')
+    try {
+      const base = `${window.location.origin}/?seccion=liquidacion-pido`
+      const { data, error: err } = await supabase.functions.invoke('stripe-connect-onboarding', {
+        body: {
+          establecimiento_id: restaurante.id,
+          return_url: `${base}&connect=ok`,
+          refresh_url: `${base}&connect=refresh`,
+        },
+      })
+      if (err) {
+        // El detalle del fallo viene en el cuerpo de la respuesta, no en err.message
+        let msg = err.message || 'No se pudo abrir la configuración'
+        try { const body = await err.context?.json(); if (body?.error) msg = body.error } catch {}
+        throw new Error(msg)
+      }
+      if (!data?.url) throw new Error('Stripe no devolvió un enlace válido')
+      window.location.href = data.url
+    } catch (e) {
+      setError(e.message || String(e))
+      setCargando(false)
+    }
+  }
+
+  const ui = CONNECT_UI[estado] || CONNECT_UI.sin_cuenta
+  const verificada = estado === 'activa'
+
+  return (
+    <div style={{ ...ds.card, padding: 18, marginBottom: 18, borderLeft: `3px solid ${ui.color}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: type.base, fontWeight: 800, color: colors.ink }}>{ui.titulo}</span>
+            <span style={{ fontSize: type.xxs, fontWeight: 700, padding: '3px 9px', borderRadius: 999, color: ui.color, background: ui.bg }}>
+              {verificada ? 'Verificada' : 'Acción necesaria'}
+            </span>
+          </div>
+          <div style={{ fontSize: type.sm, color: colors.stone, lineHeight: 1.5, maxWidth: 620 }}>{ui.texto}</div>
+          {error && (
+            <div style={{ fontSize: type.xs, color: colors.danger, marginTop: 8, fontWeight: 600 }}>{error}</div>
+          )}
+        </div>
+        <button
+          onClick={abrirOnboarding}
+          disabled={cargando}
+          style={{ ...(verificada ? ds.ghostBtn : ds.primaryBtn), opacity: cargando ? 0.6 : 1, whiteSpace: 'nowrap' }}
+        >
+          {cargando ? 'Abriendo…' : ui.cta}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function LiquidacionPido() {
   const { restaurante } = useRest()
   const [rows, setRows] = useState([])
@@ -48,6 +166,8 @@ export default function LiquidacionPido() {
           Cada lunes calculamos tu corte: te enviamos el 90% de tus ventas (descontando lo cobrado en efectivo) y nuestra comisión del 10%. Si cobraste mucho en efectivo, la diferencia la pagas tú.
         </div>
       </div>
+
+      <CobroCard />
 
       {/* Resumen */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12, marginBottom: 18 }}>

@@ -69,9 +69,20 @@ function useIsDesktop(breakpoint = 1024) {
   return isDesktop
 }
 
+// Secciones a las que se puede aterrizar por URL (?seccion=...). Lista cerrada:
+// la usa el retorno de Stripe Connect para volver justo donde estabas.
+const SECCIONES_DEEPLINK = ['liquidacion-pido']
+
 function AppContent() {
   const { user, restaurante, restauranteNotFound, loading, logout } = useRest()
-  const [seccion, setSeccion] = useState(isNative ? 'pedidos' : 'historial')
+  const [seccion, setSeccion] = useState(() => {
+    if (isNative) return 'pedidos'
+    try {
+      const s = new URLSearchParams(window.location.search).get('seccion')
+      if (s && SECCIONES_DEEPLINK.includes(s)) return s
+    } catch {}
+    return 'historial'
+  })
 
   const handleNuevoPedido = useCallback(() => {
     setSeccion('pedidos')
@@ -161,7 +172,6 @@ function AppContent() {
   const nav = isNative
     ? [
         { id: 'pedidos', label: 'Pedidos' },
-        { id: 'crear-envio', label: 'Teléfono' },
         { id: 'historial-movil', label: 'Historial' },
         { id: 'disponibilidad', label: 'Carta' },
         { id: 'impresora', label: 'Config' },
@@ -464,14 +474,6 @@ function AppInner({ seccion, setSeccion, nav }) {
     return () => { cancel = true; clearInterval(id) }
   }, [restaurante?.id, seccion])
 
-  async function abrirPanelWeb() {
-    try {
-      await Browser.open({ url: 'https://panel.pidoo.es' })
-    } catch {
-      window.open('https://panel.pidoo.es', '_blank')
-    }
-  }
-
   useEffect(() => {
     if (!menuOpen) return
     function onDocClick(e) {
@@ -619,13 +621,14 @@ function AppInner({ seccion, setSeccion, nav }) {
             </button>
           )}
           {isNative ? (
-            <button onClick={abrirPanelWeb} style={{
-              padding: '7px 12px', borderRadius: 10,
-              border: '1px solid var(--c-border)',
-              background: 'var(--c-surface2)', fontSize: 11, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'inherit', color: 'var(--c-text-soft)',
+            <button onClick={() => setSeccion('crear-envio')} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '7px 12px', borderRadius: 10, border: 'none',
+              background: 'var(--c-primary)', color: '#fff', fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
             }}>
-              Panel web
+              <PhoneCall size={13} strokeWidth={2.3} />
+              Pedido telefónico
             </button>
           ) : (
             <div ref={menuRef} style={{ position: 'relative' }}>
