@@ -135,10 +135,107 @@ function CobroCard() {
   )
 }
 
+// ── Tarjeta "debes a Pido": cobra el saldo con tarjeta.
+// Solo aparece cuando el corte sale negativo, que pasa cuando el restaurante
+// cobro mucho en efectivo y la comision no cabe en lo que paso por tarjeta.
+function DeudaCard({ debe, onSaldado }) {
+  const { restaurante } = useRest()
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState('')
+  const [pagado, setPagado] = useState(null)
+
+  // Al volver de Stripe (?cobro=ok) confirmamos contra Stripe y saldamos.
+  useEffect(() => {
+    if (!restaurante?.id) return
+    let params
+    try { params = new URLSearchParams(window.location.search) } catch { return }
+    if (params.get('cobro') !== 'ok') return
+    const sid = params.get('session_id')
+    if (!sid) return
+    let cancel = false
+    ;(async () => {
+      setCargando(true)
+      const { data } = await supabase.functions.invoke('cobrar-saldo-restaurante', {
+        body: { establecimiento_id: restaurante.id, action: 'confirmar', session_id: sid },
+      })
+      if (cancel) return
+      setCargando(false)
+      if (data?.pagado) {
+        setPagado(data.importe)
+        onSaldado?.()
+      }
+    })()
+    return () => { cancel = true }
+  }, [restaurante?.id])
+
+  async function pagar() {
+    if (!restaurante?.id) return
+    setCargando(true)
+    setError('')
+    try {
+      const base = `${window.location.origin}/?seccion=liquidacion-pido`
+      const { data, error: err } = await supabase.functions.invoke('cobrar-saldo-restaurante', {
+        body: { establecimiento_id: restaurante.id, return_url: base },
+      })
+      if (err) {
+        let msg = err.message || 'No se pudo abrir el pago'
+        try { const b = await err.context?.json(); if (b?.error) msg = b.error } catch {}
+        throw new Error(msg)
+      }
+      if (data?.ya_pagado) { setPagado(0); onSaldado?.(); setCargando(false); return }
+      if (!data?.url) throw new Error('Stripe no devolvio un enlace de pago')
+      window.location.href = data.url
+    } catch (e) {
+      setError(e.message || String(e))
+      setCargando(false)
+    }
+  }
+
+  if (pagado !== null) {
+    return (
+      <div style={{ ...ds.card, padding: 18, marginBottom: 18, borderLeft: `3px solid ${colors.sage2}` }}>
+        <div style={{ fontSize: type.base, fontWeight: 800, color: colors.ink }}>Saldo liquidado</div>
+        <div style={{ fontSize: type.sm, color: colors.stone, marginTop: 4 }}>
+          Hemos recibido tu pago. Tu cuenta con Pido queda al día.
+        </div>
+      </div>
+    )
+  }
+
+  if (!debe || debe <= 0) return null
+
+  return (
+    <div style={{ ...ds.card, padding: 18, marginBottom: 18, borderLeft: `3px solid ${colors.terracotta}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <div style={{ fontSize: type.base, fontWeight: 800, color: colors.ink, marginBottom: 4 }}>
+            Tienes {euro(debe)} pendientes de pagar a Pido
+          </div>
+          <div style={{ fontSize: type.sm, color: colors.stone, lineHeight: 1.5, maxWidth: 620 }}>
+            Cobraste en efectivo más de lo que pasó por tarjeta, así que nuestra comisión
+            no se pudo descontar. Puedes saldarlo ahora con tarjeta.
+          </div>
+          {error && (
+            <div style={{ fontSize: type.xs, color: colors.danger, marginTop: 8, fontWeight: 600 }}>{error}</div>
+          )}
+        </div>
+        <button
+          onClick={pagar}
+          disabled={cargando}
+          style={{ ...ds.primaryBtn, opacity: cargando ? 0.6 : 1, whiteSpace: 'nowrap' }}
+        >
+          {cargando ? 'Abriendo…' : 'Liquidar saldo a Pido'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function LiquidacionPido() {
   const { restaurante } = useRest()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [recarga, setRecarga] = useState(0)
 
   useEffect(() => {
     if (!restaurante?.id) return
@@ -153,10 +250,14 @@ export default function LiquidacionPido() {
       if (!cancel) { setRows(data || []); setLoading(false) }
     })()
     return () => { cancel = true }
-  }, [restaurante?.id])
+  }, [restaurante?.id, recarga])
 
-  const pendientePido = rows.filter(r => r.direccion === 'pido_paga' && r.estado === 'pendiente').reduce((s, r) => s + Number(r.neto_a_pagar || 0), 0)
-  const pendienteDebes = rows.filter(r => r.direccion === 'restaurante_paga' && r.estado === 'pendiente').reduce((s, r) => s + Math.abs(Number(r.neto_a_pagar || 0)), 0)
+  // Se decide por el IMPORTE, no por la columna 'direccion': hay filas historicas
+  // con esa columna corrupta (llego a contener una direccion postal dentro).
+  const pendientePido = rows.filter(r => r.estado === 'pendiente' && Number(r.neto_a_pagar) > 0)
+    .reduce((s, r) => s + Number(r.neto_a_pagar || 0), 0)
+  const pendienteDebes = rows.filter(r => r.estado === 'pendiente' && Number(r.neto_a_pagar) < 0)
+    .reduce((s, r) => s + Math.abs(Number(r.neto_a_pagar || 0)), 0)
 
   return (
     <div>
@@ -168,6 +269,7 @@ export default function LiquidacionPido() {
       </div>
 
       <CobroCard />
+      <DeudaCard debe={pendienteDebes} onSaldado={() => setRecarga(n => n + 1)} />
 
       {/* Resumen */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12, marginBottom: 18 }}>
