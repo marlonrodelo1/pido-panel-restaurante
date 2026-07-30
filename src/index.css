@@ -118,19 +118,29 @@ body {
    y cualquier tarjeta que deba ir a ancho completo lleva la clase .pidoo-col-full.
    30 jul 2026 — petición de Marlon: aprovechar el espacio en todas las páginas. */
 @media (min-width: 1100px) {
+  /* Mosaico, NO rejilla. Con `grid` las tarjetas van emparejadas por filas, así que
+     una tarjeta larga (el horario, los datos del negocio) dejaba un hueco enorme
+     debajo de su pareja. Con columnas CSS cada tarjeta sube a rellenar el hueco que
+     encuentra y no queda aire muerto. */
   .pidoo-form-2col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    align-items: start;
+    columns: 2;
+    column-gap: 16px;
   }
+  /* OJO: el selector excluye <style> y <script>. Ponerles `display: block` los saca
+     a la pantalla y el dueño del restaurante acaba viendo el CSS escrito como texto. */
+  .pidoo-form-2col > *:not(style):not(script) {
+    /* Que una tarjeta no se parta por la mitad entre las dos columnas. */
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 16px !important;
+    display: block;
+    width: 100%;
+  }
+  /* Título, subtítulo y lo que lleve .pidoo-col-full (el mapa) ocupan todo el ancho. */
   .pidoo-form-2col > *:nth-child(1),
   .pidoo-form-2col > .pidoo-col-full {
-    grid-column: 1 / -1;
-  }
-  /* Las tarjetas traen marginBottom inline; con grid el hueco ya lo pone el gap. */
-  .pidoo-form-2col > * {
-    margin-bottom: 0 !important;
+    column-span: all;
   }
 }
 
