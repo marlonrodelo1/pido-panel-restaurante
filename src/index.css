@@ -108,9 +108,32 @@ body {
 /* Contenedor de página centrado y acotado (evita estiramiento en escritorio ancho) */
 .pidoo-page {
   width: 100%;
-  max-width: 1100px;
+  max-width: 1600px;
   margin-inline: auto;
+  min-width: 0;
 }
+/* Formularios de tarjetas apiladas (Ajustes, Crear envío): en móvil y tablet siguen
+   en una columna, y a partir de 1100px se reparten en dos para no dejar media
+   pantalla vacía. Las dos primeras filas (título y subtítulo) ocupan todo el ancho,
+   y cualquier tarjeta que deba ir a ancho completo lleva la clase .pidoo-col-full.
+   30 jul 2026 — petición de Marlon: aprovechar el espacio en todas las páginas. */
+@media (min-width: 1100px) {
+  .pidoo-form-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .pidoo-form-2col > *:nth-child(1),
+  .pidoo-form-2col > .pidoo-col-full {
+    grid-column: 1 / -1;
+  }
+  /* Las tarjetas traen marginBottom inline; con grid el hueco ya lo pone el gap. */
+  .pidoo-form-2col > * {
+    margin-bottom: 0 !important;
+  }
+}
+
 /* Grids que pasan de 1 columna (móvil) a 2/3 (tablet+) */
 .pidoo-grid-2,
 .pidoo-grid-3 {

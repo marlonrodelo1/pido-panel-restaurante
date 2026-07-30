@@ -377,7 +377,7 @@ export default function CrearEnvio() {
 
   // ═══════════════ Formulario ═══════════════
   return (
-    <div style={{ maxWidth: 520, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 8 }}>
+    <div className="pidoo-form-2col" style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gap: 14, paddingBottom: 8 }}>
       {/* Cabecera: título + contador de repartidores en vivo */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

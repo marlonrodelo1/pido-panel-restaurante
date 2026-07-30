@@ -574,7 +574,11 @@ function AppInner({ seccion, setSeccion, nav }) {
           overflowX: 'hidden',
           animation: 'fadeIn 0.3s ease',
         }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%' }}>
+          {/* 30 jul 2026: 1100 -> 1600. En un monitor de 1920 se desperdiciaban ~800 px
+              a los lados. Mismo criterio que se aplicó en pido-super-admin el 24 jul.
+              El <main> ya lleva minWidth: 0, necesario para que las tablas anchas no
+              provoquen scroll horizontal en tablet. */}
+          <div style={{ maxWidth: 1600, margin: '0 auto', width: '100%', minWidth: 0 }}>
             <Breadcrumbs seccion={seccion} />
             {fiscalBanner}
             <div>
