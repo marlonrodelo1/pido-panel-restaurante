@@ -7,7 +7,7 @@ import { Capacitor } from '@capacitor/core'
 import { DIAS_ORDEN, DIAS_LABEL, DIAS_CORTO, horarioVacio, horarioEstandar, estaAbierto, horarioHoyTexto } from '../lib/horario'
 import { toast } from '../App'
 import AddressInput from '../components/AddressInput'
-import ZonaRepartoMap from '../components/ZonaRepartoMap'
+import ZonasReparto from '../components/ZonasReparto'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -64,11 +64,8 @@ export default function Ajustes() {
   const [email, setEmail] = useState(restaurante?.email || '')
   const [telefono, setTelefono] = useState(restaurante?.telefono || '')
   const [radioCobertura, setRadioCobertura] = useState(restaurante?.radio_cobertura_km || 10)
-  // Zona de reparto dibujada en el mapa (GeoJSON). null = no hay zona y manda el radio.
-  // Se guarda con la RPC guardar_zona_reparto, no con el update normal, porque la
-  // columna es geometry de PostGIS.
-  const [zonaReparto, setZonaReparto] = useState(restaurante?.zona_reparto_geojson || null)
-  const [zonaOriginal, setZonaOriginal] = useState(JSON.stringify(restaurante?.zona_reparto_geojson || null))
+  // Las zonas de reparto las gestiona el componente ZonasReparto: se guardan una a una
+  // con su propio botón (RPC guardar_zona), no con el "Guardar cambios" general.
   // Pedido mínimo (subtotal de productos) que el restaurante acepta. 0 = sin mínimo.
   const [pedidoMinimo, setPedidoMinimo] = useState(restaurante?.pedido_minimo ?? '')
   const [razonSocial, setRazonSocial] = useState(restaurante?.razon_social || '')
@@ -367,8 +364,7 @@ export default function Ajustes() {
     JSON.stringify(horario ?? null) !== horarioOriginal ||
     (coordsManual != null && (Number(coordsManual.lat) !== Number(restaurante?.latitud) || Number(coordsManual.lng) !== Number(restaurante?.longitud))) ||
     ((tarifaModo === 'unica' ? (tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija)) : null) !== (restaurante?.tarifa_envio_fija == null ? null : Number(restaurante.tarifa_envio_fija))) ||
-    (deliveryCfgOriginal != null && JSON.stringify(deliveryCfg) !== JSON.stringify(deliveryCfgOriginal)) ||
-    JSON.stringify(zonaReparto || null) !== zonaOriginal
+    (deliveryCfgOriginal != null && JSON.stringify(deliveryCfg) !== JSON.stringify(deliveryCfgOriginal))
 
   async function guardarTodo() {
     setGuardando(true)
@@ -443,22 +439,6 @@ export default function Ajustes() {
       )
     }
     setCatsOriginales([...catsSeleccionadas])
-
-    // Zona de reparto: va por RPC porque la columna es geometry (PostGIS). Si el dibujo
-    // no ha cambiado no se toca. La RPC valida y devuelve un mensaje entendible.
-    if (JSON.stringify(zonaReparto || null) !== zonaOriginal) {
-      const { error: zonaErr } = await supabase.rpc('guardar_zona_reparto', {
-        p_establecimiento_id: restaurante.id,
-        p_geojson: zonaReparto || null,
-      })
-      if (zonaErr) {
-        toast(zonaErr.message || 'No se ha podido guardar la zona de reparto', 'error')
-      } else {
-        setZonaOriginal(JSON.stringify(zonaReparto || null))
-        toast(zonaReparto ? 'Zona de reparto guardada' : 'Zona borrada: se vuelve a tu radio', 'success')
-      }
-    }
-
     setCoordsManual(null)
     setGuardando(false)
     setGuardado(true)
@@ -949,46 +929,49 @@ export default function Ajustes() {
         </div>
       </div>
 
-      {/* Zona de reparto — mapa dibujable (30 jul 2026). Sustituye al slider de radio
-          a secas: el círculo no se parece a la realidad del Norte (barrancos, carreteras
-          que no cruzan). El radio se queda como respaldo mientras no haya zona dibujada. */}
+      {/* Zonas de reparto — mapa con varias zonas, cada una con su envío y su mínimo
+          (30 jul 2026). Sustituye al slider de radio: un círculo no se parece a la
+          realidad del Norte (barrancos, carreteras que no cruzan). El radio sigue
+          existiendo por debajo, pero se esconde: solo decide si no hay ninguna zona,
+          y tenerlo a la vista confundía más que ayudaba. */}
       <div className="pidoo-col-full" style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Zona de reparto</h3>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Zonas de reparto</h3>
         <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-          Marca en el mapa hasta dónde llevas los pedidos. Solo los clientes dentro de la zona
-          podrán pedirte a domicilio.
+          Marca en el mapa a dónde llevas los pedidos. Puedes tener varias zonas y cobrar un
+          envío distinto en cada una, o pedir un mínimo distinto. Quien esté fuera de todas
+          tus zonas no podrá pedirte a domicilio.
         </div>
 
         {Number.isFinite(Number(restaurante?.latitud)) && Number.isFinite(Number(restaurante?.longitud)) ? (
-          <ZonaRepartoMap
+          <ZonasReparto
+            establecimientoId={restaurante.id}
             lat={Number(restaurante.latitud)}
             lng={Number(restaurante.longitud)}
             radioKm={Number(radioCobertura) || 10}
-            zona={zonaReparto}
-            onChange={setZonaReparto}
           />
         ) : (
           <div style={{ padding: 14, borderRadius: 10, background: 'var(--c-surface2)', border: '1px solid var(--c-border)', fontSize: 12, color: 'var(--c-muted)' }}>
-            Para dibujar tu zona primero necesitamos la ubicación de tu negocio: rellena la
+            Para dibujar tus zonas primero necesitamos la ubicación de tu negocio: rellena la
             dirección más arriba y guarda.
           </div>
         )}
 
-        {/* El radio sigue vivo: es lo que se usa mientras no haya zona dibujada. */}
-        <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--c-border)' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 2 }}>
-            Radio de respaldo
+        {/* El radio queda escondido: es solo el respaldo de cuando no hay zonas. */}
+        <details style={{ marginTop: 16 }}>
+          <summary style={{ fontSize: 12, color: 'var(--c-muted)', cursor: 'pointer', listStyle: 'revert' }}>
+            Ajustar el alcance por defecto ({radioCobertura} km)
+          </summary>
+          <div style={{ marginTop: 10, paddingTop: 12, borderTop: '1px solid var(--c-border)' }}>
+            <div style={{ fontSize: 11.5, color: 'var(--c-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+              Es hasta dónde repartes <b>mientras no tengas ninguna zona marcada</b>. En cuanto
+              marques una zona, deja de usarse.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <input type="range" min="1" max="30" value={radioCobertura} onChange={e => setRadioCobertura(Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--c-primary)' }} />
+              <span style={{ minWidth: 50, textAlign: 'center', fontWeight: 800, fontSize: 16, color: 'var(--c-primary)' }}>{radioCobertura} km</span>
+            </div>
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--c-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-            {zonaReparto
-              ? 'Tienes zona dibujada, así que manda el mapa. Este radio solo volvería a usarse si borras la zona.'
-              : 'Ahora mismo es lo que decide quién puede pedirte, hasta que dibujes tu zona arriba.'}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <input type="range" min="1" max="30" value={radioCobertura} onChange={e => setRadioCobertura(Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--c-primary)' }} />
-            <span style={{ minWidth: 50, textAlign: 'center', fontWeight: 800, fontSize: 16, color: zonaReparto ? 'var(--c-muted)' : 'var(--c-primary)' }}>{radioCobertura} km</span>
-          </div>
-        </div>
+        </details>
       </div>
 
       {/* Horario semanal */}
