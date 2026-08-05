@@ -2,7 +2,7 @@
  * ESC/POS command builder for 80mm thermal printers
  * Generates byte arrays that can be sent via TCP to port 9100
  */
-import { textoTicket } from './metodoPago'
+import { textoTicket } from './metodoPago.js'
 
 const ESC = 0x1B
 const GS = 0x1D
@@ -294,9 +294,15 @@ export function generarTicketCliente(pedido, items, restaurante) {
   )
 
   // Totals
+  // La PROPINA va sumada dentro de pedido.total (lo calcula enforce_pedido_total
+  // en BD), pero antes no se imprimía en ninguna línea: el papel sumaba menos
+  // que el TOTAL. Como el 100% de las propinas son en efectivo y este ticket es
+  // con el que el rider cobra en la puerta, el cliente pagaba lo que sumaban las
+  // líneas y ese euro lo acababa poniendo el socio.
   const envio = pedido.coste_envio || 0
   const descuento = pedido.descuento || 0
-  const total = pedido.total || subtotal + envio - descuento
+  const propina = pedido.propina || 0
+  const total = pedido.total || (subtotal + envio + propina - descuento)
 
   bytes.push(
     ...twoColumns('Subtotal:', subtotal.toFixed(2) + ' EUR'),
@@ -309,6 +315,11 @@ export function generarTicketCliente(pedido, items, restaurante) {
   if (envio > 0) {
     bytes.push(
       ...twoColumns('Envio:', envio.toFixed(2) + ' EUR'),
+    )
+  }
+  if (propina > 0) {
+    bytes.push(
+      ...twoColumns('Propina:', propina.toFixed(2) + ' EUR'),
     )
   }
 
