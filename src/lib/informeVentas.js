@@ -10,15 +10,16 @@
 //   · El % se aplica al subtotal BRUTO (antes de descuentos), igual que en BD.
 // Si cambia esa función en Supabase, hay que revisar este archivo.
 
+import { METODOS } from './metodoPago.js'
+
 export const ESTADOS_VENTA = ['entregado', 'recogido']
 export const ESTADOS_NO_VENTA = ['cancelado', 'fallido']
 
-export const LABEL_PAGO = {
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta (online)',
-  datafono: 'Datáfono',
-  pagado_local: 'Pagado en el local',
-}
+// Las etiquetas viven en lib/metodoPago.js, que es quien decide además qué
+// cuenta como cobrado. Aquí solo se re-exporta el mapa para no duplicarlo.
+export const LABEL_PAGO = Object.fromEntries(
+  Object.entries(METODOS).map(([k, v]) => [k, v.etiqueta])
+)
 
 export const LABEL_ORIGEN = {
   pido: 'App Pidoo',

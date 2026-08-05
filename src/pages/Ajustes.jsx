@@ -93,6 +93,9 @@ export default function Ajustes() {
   // Métodos de pago aceptados por el restaurante (default: los 3 activos)
   const [aceptaEfectivo, setAceptaEfectivo] = useState(restaurante?.acepta_efectivo ?? true)
   const [aceptaTarjetaOnline, setAceptaTarjetaOnline] = useState(restaurante?.acepta_tarjeta_online ?? true)
+  // Datáfono: el TPV físico. Lo pasa el repartidor en la puerta o el propio
+  // restaurante en el local. Se liquida como el efectivo (no pasa por Stripe).
+  const [aceptaDatafono, setAceptaDatafono] = useState(restaurante?.acepta_datafono ?? false)
   // Si true, el cliente debe registrarse. Default false = guest checkout permitido.
   const [exigeRegistro, setExigeRegistro] = useState(restaurante?.exige_registro_cliente ?? false)
 
@@ -359,6 +362,7 @@ export default function Ajustes() {
     provinciaFiscal !== (restaurante?.provincia_fiscal || '') ||
     aceptaEfectivo !== (restaurante?.acepta_efectivo ?? true) ||
     aceptaTarjetaOnline !== (restaurante?.acepta_tarjeta_online ?? true) ||
+    aceptaDatafono !== (restaurante?.acepta_datafono ?? false) ||
     exigeRegistro !== (restaurante?.exige_registro_cliente ?? false) ||
     JSON.stringify([...catsSeleccionadas].sort()) !== JSON.stringify([...catsOriginales].sort()) ||
     JSON.stringify(horario ?? null) !== horarioOriginal ||
@@ -388,6 +392,7 @@ export default function Ajustes() {
       provincia_fiscal: provinciaFiscal.trim() || null,
       acepta_efectivo: aceptaEfectivo,
       acepta_tarjeta_online: aceptaTarjetaOnline,
+      acepta_datafono: aceptaDatafono,
       exige_registro_cliente: exigeRegistro,
       tarifa_envio_fija: tarifaModo === 'unica'
         ? (tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija))
@@ -722,18 +727,34 @@ export default function Ajustes() {
           onChange={setAceptaEfectivo}
         />
         <PayToggle
+          label="Datáfono"
+          sub="El cliente paga con tarjeta en mano: el repartidor lleva el TPV a la puerta, o lo cobras tú en el local si viene a recoger. El dinero no pasa por Pidoo, así que se liquida igual que el efectivo. Actívalo solo si de verdad hay un datáfono."
+          value={aceptaDatafono}
+          onChange={setAceptaDatafono}
+        />
+        <PayToggle
           label="Pago online (tarjeta)"
           sub="Cobro inmediato con Stripe en el checkout. Pidoo retiene 10% del subtotal."
           value={aceptaTarjetaOnline}
           onChange={setAceptaTarjetaOnline}
         />
-        {!aceptaEfectivo && !aceptaTarjetaOnline && (
+        {!aceptaEfectivo && !aceptaTarjetaOnline && !aceptaDatafono && (
           <div style={{
             marginTop: 10, padding: '10px 12px', borderRadius: 10,
             background: 'rgba(239,68,68,0.10)', color: '#B5564A',
             fontSize: 12, fontWeight: 600,
           }}>
             ⚠️ Has desactivado todos los métodos de pago. El cliente no podrá pedir.
+          </div>
+        )}
+        {!aceptaTarjetaOnline && (aceptaEfectivo || aceptaDatafono) && (
+          <div style={{
+            marginTop: 10, padding: '10px 12px', borderRadius: 10,
+            background: 'rgba(201,149,81,0.14)', color: '#8B6126',
+            fontSize: 12, fontWeight: 600,
+          }}>
+            Sin pago online, todo se cobra en mano: la comisión de Pidoo se te queda a deber
+            y se salda en la liquidación de los lunes.
           </div>
         )}
       </div>

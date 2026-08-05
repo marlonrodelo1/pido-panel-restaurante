@@ -2,6 +2,7 @@
  * ESC/POS command builder for 80mm thermal printers
  * Generates byte arrays that can be sent via TCP to port 9100
  */
+import { textoTicket } from './metodoPago'
 
 const ESC = 0x1B
 const GS = 0x1D
@@ -193,7 +194,7 @@ export function generarComandaCocina(pedido, items, restaurante) {
     ...feed(1),
     ...center(),
     ...boldOn(),
-    ...line('Pago: ' + (pedido.metodo_pago === 'efectivo' ? 'EFECTIVO' : 'TARJETA')),
+    ...line('Pago: ' + textoTicket(pedido.metodo_pago)),
     ...boldOff(),
     ...separator('='),
     ...feed(3),
@@ -242,7 +243,7 @@ export function generarTicketCliente(pedido, items, restaurante) {
     ...twoColumns('Pedido:', pedido.codigo || '---'),
     ...twoColumns('Fecha:', formatDate(pedido.created_at)),
     ...twoColumns('Canal:', 'PIDO'),
-    ...twoColumns('Pago:', pedido.metodo_pago === 'efectivo' ? 'Efectivo' : pedido.metodo_pago === 'pagado_local' ? 'Ya pagado' : 'Tarjeta'),
+    ...twoColumns('Pago:', textoTicket(pedido.metodo_pago)),
     ...separator('-'),
   )
 

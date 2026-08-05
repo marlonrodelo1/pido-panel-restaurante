@@ -10,6 +10,7 @@ import { App as CapApp } from '@capacitor/app'
 import { toast } from '../App'
 import { Truck, Bell, BellOff, Bike, ShoppingBag } from 'lucide-react'
 import { colors, type, ds, stateBadge } from '../lib/uiStyles'
+import { etiquetaPago, hayQueCobrar } from '../lib/metodoPago'
 
 // ─── Badges ────────────────────────────────────────────────────────────────
 function PagoBadge({ pago }) {
@@ -60,7 +61,8 @@ const canalVentaLabel = (origen) => {
 // Métodos de pago: tarjeta (online), efectivo, o 'pagado_local' (telefónico ya
 // cobrado por el restaurante). Cualquier valor legacy (p.ej. 'datafono') se trata
 // como efectivo a efectos de visualización.
-const metodoPagoLabel = (m) => (m === 'tarjeta' ? 'Tarjeta (online)' : m === 'pagado_local' ? 'Ya pagado (bizum/local)' : 'Efectivo')
+// Las etiquetas y quién debe cobrar viven en lib/metodoPago.js
+const metodoPagoLabel = etiquetaPago
 
 // ─── Hook: detectar tablet horizontal (>=900px, landscape) ─────────────────
 // Calcula isTabletHorizontal solo en resize/orientationchange (debounced 120ms)
@@ -1602,7 +1604,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Método de Pago</div>
             <div style={{ fontSize: 12, color: 'var(--c-text)', fontWeight: 600 }}>{metodoPagoLabel(pedido.metodo_pago)}</div>
-            {pedido.metodo_pago !== 'tarjeta' && <div style={{ fontSize: 10, color: '#C99551', marginTop: 2 }}>Cobrar en mano</div>}
+            {hayQueCobrar(pedido.metodo_pago) && <div style={{ fontSize: 10, color: '#C99551', marginTop: 2 }}>Cobrar en mano</div>}
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Canal de Venta</div>
