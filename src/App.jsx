@@ -3,6 +3,7 @@ import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
   Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star, PhoneCall,
+  TrendingUp,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -17,6 +18,7 @@ import ConfirmarAlta from './pages/ConfirmarAlta'
 import PedidosEnVivo from './pages/PedidosEnVivo'
 import Historial from './pages/Historial'
 import HistorialMovil from './pages/HistorialMovil'
+import Finanzas from './pages/Finanzas'
 import Carta from './pages/Carta'
 import Ajustes from './pages/Ajustes'
 import Promociones from './pages/Promociones'
@@ -38,6 +40,7 @@ const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'hi
 // Etiquetas legibles para breadcrumbs y títulos
 const SECCION_LABELS = {
   historial: 'Historial',
+  finanzas: 'Finanzas',
   'crear-envio': 'Pedido telefónico',
   carta: 'Carta',
   promos: 'Promociones',
@@ -262,6 +265,7 @@ function NavItem({ Icon, label, active, badge, onClick }) {
 function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onLogout }) {
   const main = [
     { id: 'historial', Icon: ClipboardList, label: 'Historial' },
+    { id: 'finanzas', Icon: TrendingUp, label: 'Finanzas' },
     { id: 'crear-envio', Icon: PhoneCall, label: 'Pedido telefónico' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
     { id: 'promos', Icon: Tag, label: 'Promociones' },
@@ -486,6 +490,7 @@ function AppInner({ seccion, setSeccion, nav }) {
   const navIcons = isNative ? NAV_ICONS_NATIVE : NAV_ICONS_WEB
 
   const extraOpciones = [
+    { id: 'finanzas', label: 'Finanzas', Icon: TrendingUp },
     { id: 'crear-envio', label: 'Pedido telefónico', Icon: PhoneCall },
     { id: 'resenas', label: 'Reseñas', Icon: Star },
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
@@ -540,6 +545,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'impresora' && <ConfigImpresora />}
       {seccion === 'crear-envio' && <CrearEnvio />}
       {seccion === 'historial' && <Historial />}
+      {seccion === 'finanzas' && !isNative && <Finanzas />}
       {seccion === 'carta' && <Carta />}
       {seccion === 'promos' && <Promociones />}
       {seccion === 'resenas' && <Resenas />}
