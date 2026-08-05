@@ -33,7 +33,17 @@ export default function Ajustes() {
     setSlugError(null)
     const s = slugify(slugDraft)
     if (!s || s.length < 3) { setSlugError('Mínimo 3 caracteres'); return }
-    const RESERVED = ['terminos','privacidad','reset-password','landing-repartidores','perfil','home','carrito','mis-pedidos','favoritos','mapa','notificaciones','admin','panel','api','login','registro','tracking','tienda','pedido']
+    // La tienda del restaurante vive en pidoo.es/<slug>, que es la ULTIMA ruta
+    // que prueba el router. Un slug que choque con algo de arriba deja la
+    // tienda inaccesible, asi que aqui van:
+    //  - rutas reales de pido-app/src/App.jsx: app, s, auth, abrir, contacto,
+    //    soporte, eliminar-cuenta, terminos, privacidad, reset-password
+    //    ('abrir' es ademas la pagina puente del deep link a la app)
+    //  - carpetas que nginx sirve ANTES del SPA (try_files $uri $uri/):
+    //    assets, badges, hero, logos, descargar
+    // Los ficheros con punto (sw.js, manifest.json...) no hacen falta: slugify
+    // convierte el punto en guion, asi que son inalcanzables como slug.
+    const RESERVED = ['terminos','privacidad','reset-password','landing-repartidores','perfil','home','carrito','mis-pedidos','favoritos','mapa','notificaciones','admin','panel','api','login','registro','tracking','tienda','pedido','abrir','app','s','auth','contacto','soporte','eliminar-cuenta','assets','badges','hero','logos','descargar']
     if (RESERVED.includes(s)) { setSlugError('Ese nombre está reservado'); return }
     setSlugSaving(true)
     const { error } = await supabase.from('establecimientos').update({ slug: s }).eq('id', restaurante.id)
