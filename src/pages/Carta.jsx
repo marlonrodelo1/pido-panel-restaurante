@@ -5,6 +5,7 @@ import { useRest } from '../context/RestContext'
 import { confirmar, toast } from '../App'
 import { colors, type, ds, chip } from '../lib/uiStyles'
 import { FoodChip } from '../lib/food.jsx'
+import QrCartaLocal from '../components/QrCartaLocal'
 
 // Subida de imágenes vía Edge Function: Storage no valida el JWT de sesión actual
 // (claves asimétricas), así que la subida se hace en el servidor con permisos de
@@ -30,8 +31,21 @@ async function subirImagenViaFuncion(file, path) {
   return out.publicUrl
 }
 
+/** Precio de local a enseñar en el listado, o null si no lo han diferenciado. */
+function precioLocalListado(p, tamanos) {
+  if (tamanos && tamanos.length > 0) {
+    if (!tamanos.some(t => t.precio_local !== null && t.precio_local !== undefined)) return null
+    return Math.min(...tamanos.map(t =>
+      t.precio_local !== null && t.precio_local !== undefined ? Number(t.precio_local) : Number(t.precio)))
+  }
+  return (p.precio_local !== null && p.precio_local !== undefined) ? Number(p.precio_local) : null
+}
+
 export default function Carta() {
   const { restaurante } = useRest()
+  // Lo enciende Pidoo desde el super-admin (el trigger
+  // guard_establecimientos_protected_fields impide activarlo desde aquí).
+  const cartaLocal = !!restaurante?.carta_local_activa
   const [categoriasRest, setCategoriasRest] = useState([])
   const [productos, setProductos] = useState([])
   const [gruposExtras, setGruposExtras] = useState([])
@@ -44,12 +58,14 @@ export default function Carta() {
   // Crear/editar producto
   const [showAddProd, setShowAddProd] = useState(false)
   const [editProd, setEditProd] = useState(null)
-  const [prodForm, setProdForm] = useState({ nombre: '', descripcion: '', precio: '', categoria_id: '', imagen_url: '' })
+  const [prodForm, setProdForm] = useState({ nombre: '', descripcion: '', precio: '', precio_local: '', categoria_id: '', imagen_url: '' })
   const [saving, setSaving] = useState(false)
   const [extrasAsignados, setExtrasAsignados] = useState([])
   const [tamanos, setTamanos] = useState([])
   const [prodTamanosMap, setProdTamanosMap] = useState({})
   const [busqueda, setBusqueda] = useState('')
+  const [pctRelleno, setPctRelleno] = useState('10')
+  const [rellenando, setRellenando] = useState(false)
   const imgRef = useRef()
   const imgTargetRef = useRef(null)
 
@@ -79,7 +95,10 @@ export default function Carta() {
     }
     setProdExtrasMap(map)
     if (productIds.length > 0) {
-      const { data: tamData } = await supabase.from('producto_tamanos').select('id, producto_id, nombre, precio, orden').in('producto_id', productIds).order('orden')
+      // `precio_local` es obligatorio en este select: guardarProducto() borra y
+      // reinserta los tamaños, así que lo que no se lea aquí se pierde al
+      // guardar el producto por cualquier otro motivo.
+      const { data: tamData } = await supabase.from('producto_tamanos').select('id, producto_id, nombre, precio, precio_local, orden').in('producto_id', productIds).order('orden')
       const tamMap = {}
       for (const t of (tamData || [])) {
         if (!tamMap[t.producto_id]) tamMap[t.producto_id] = []
@@ -126,7 +145,7 @@ export default function Carta() {
   }
 
   function abrirCrearProducto() {
-    setProdForm({ nombre: '', descripcion: '', precio: '', categoria_id: catFiltro || categoriasRest[0]?.id || '', imagen_url: '' })
+    setProdForm({ nombre: '', descripcion: '', precio: '', precio_local: '', categoria_id: catFiltro || categoriasRest[0]?.id || '', imagen_url: '' })
     setEditProd(null)
     setExtrasAsignados([])
     setTamanos([])
@@ -134,11 +153,19 @@ export default function Carta() {
   }
 
   async function abrirEditarProducto(p) {
-    setProdForm({ nombre: p.nombre, descripcion: p.descripcion || '', precio: p.precio, categoria_id: p.categoria_id || '', imagen_url: p.imagen_url || '' })
+    setProdForm({
+      nombre: p.nombre, descripcion: p.descripcion || '', precio: p.precio,
+      // vacío (no 0) cuando no hay precio de local: el vacío significa
+      // "el mismo precio", y un 0 sería un producto regalado.
+      precio_local: p.precio_local ?? '',
+      categoria_id: p.categoria_id || '', imagen_url: p.imagen_url || '',
+    })
     setEditProd(p)
     const { data } = await supabase.from('producto_extras').select('grupo_id').eq('producto_id', p.id)
     setExtrasAsignados((data || []).map(d => d.grupo_id))
-    setTamanos((prodTamanosMap[p.id] || []).map(t => ({ id: t.id, nombre: t.nombre, precio: t.precio })))
+    setTamanos((prodTamanosMap[p.id] || []).map(t => ({
+      id: t.id, nombre: t.nombre, precio: t.precio, precio_local: t.precio_local ?? '',
+    })))
     setShowAddProd(true)
   }
 
@@ -161,12 +188,20 @@ export default function Carta() {
       setErrorCarta('Precio inválido. Usa punto como decimal (ej: 0.50)')
       return
     }
+    // Precio de la carta del local (QR de mesa). Vacío = null = usa el precio
+    // normal. NUNCA se usa para cobrar: solo lo lee pidoo.es/<slug>/carta.
+    const precioLocal = parsePrecio(prodForm.precio_local)
+    if (precioLocal !== null && (Number.isNaN(precioLocal) || precioLocal < 0)) {
+      setErrorCarta('Precio de local inválido. Déjalo vacío si es el mismo precio.')
+      return
+    }
     setSaving(true)
     setErrorCarta(null)
     const baseData = {
       nombre: prodForm.nombre.trim(),
       descripcion: prodForm.descripcion.trim() || null,
       precio,
+      precio_local: precioLocal,
       categoria_id: prodForm.categoria_id || null,
       imagen_url: prodForm.imagen_url || null,
     }
@@ -192,7 +227,16 @@ export default function Carta() {
       const tamanosValidos = tamanos.filter(t => t.nombre.trim() && t.precio !== '' && Number(t.precio) >= 0)
       if (tamanosValidos.length > 0) {
         await supabase.from('producto_tamanos').insert(
-          tamanosValidos.map((t, i) => ({ producto_id: productoId, nombre: t.nombre.trim(), precio: Number(t.precio), orden: i }))
+          tamanosValidos.map((t, i) => {
+            const pl = parsePrecio(t.precio_local)
+            return {
+              producto_id: productoId,
+              nombre: t.nombre.trim(),
+              precio: Number(t.precio),
+              precio_local: (pl === null || Number.isNaN(pl) || pl < 0) ? null : pl,
+              orden: i,
+            }
+          })
         )
       }
     }
@@ -200,6 +244,57 @@ export default function Carta() {
     setEditProd(null)
     setSaving(false)
     fetchCarta()
+  }
+
+  /* Relleno masivo del precio de local. Con 100+ productos, rellenar a mano es
+     lo que hace que la carta del local se quede a medias — y una carta a medias
+     enseña precios de domicilio en la mesa, que es justo lo que no se quiere. */
+  async function rellenarPreciosLocal() {
+    const pct = Number(pctRelleno)
+    if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) {
+      toast('Pon un porcentaje entre 1 y 99')
+      return
+    }
+    const factor = 1 - pct / 100
+    // Redondeo a 5 céntimos: un 8,4735 € en una carta impresa queda fatal.
+    const calcular = (base) => Math.max(0, Math.round(Number(base) * factor * 20) / 20)
+
+    const conTamanos = new Set(Object.keys(prodTamanosMap).filter(id => (prodTamanosMap[id] || []).length > 0))
+    const prodsVacios = productos.filter(p => p.precio_local === null || p.precio_local === undefined)
+      .filter(p => !conTamanos.has(p.id))
+    const tamsVacios = Object.values(prodTamanosMap).flat()
+      .filter(t => t.precio_local === null || t.precio_local === undefined)
+
+    if (prodsVacios.length === 0 && tamsVacios.length === 0) {
+      toast('Todos los productos ya tienen precio de local', 'success')
+      return
+    }
+    const ok = await confirmar(
+      `Se pondrá un precio de local un ${pct}% más barato en ${prodsVacios.length} productos` +
+      (tamsVacios.length ? ` y ${tamsVacios.length} tamaños` : '') +
+      '. Los que ya tienen precio propio no se tocan. ¿Seguir?'
+    )
+    if (!ok) return
+
+    setRellenando(true)
+    try {
+      const tareas = [
+        ...prodsVacios.map(p => () => supabase.from('productos')
+          .update({ precio_local: calcular(p.precio) }).eq('id', p.id)),
+        ...tamsVacios.map(t => () => supabase.from('producto_tamanos')
+          .update({ precio_local: calcular(t.precio) }).eq('id', t.id)),
+      ]
+      let fallos = 0
+      for (let i = 0; i < tareas.length; i += 10) {
+        const res = await Promise.all(tareas.slice(i, i + 10).map(f => f()))
+        fallos += res.filter(r => r?.error).length
+      }
+      if (fallos > 0) toast(`${fallos} no se pudieron guardar. Revisa e inténtalo de nuevo.`)
+      else toast('Precios del local rellenados', 'success')
+      await fetchCarta()
+    } finally {
+      setRellenando(false)
+    }
   }
 
   async function eliminarProducto(id) {
@@ -225,6 +320,10 @@ export default function Carta() {
       toast('No se pudo subir la imagen: ' + e.message)
     }
   }
+
+  // Cuántos tienen precio propio de local (contando por tamaños si los tiene).
+  const conPrecioLocal = productos.filter(p =>
+    precioLocalListado(p, prodTamanosMap[p.id]) !== null).length
 
   const filtrados = productos.filter(p => {
     if (catFiltro && p.categoria_id !== catFiltro) return false
@@ -454,6 +553,38 @@ export default function Carta() {
         </button>
       </div>
 
+      {/* Carta del local (QR de mesa) — solo si Pidoo se lo ha activado */}
+      {cartaLocal && (
+        <>
+          <QrCartaLocal restaurante={restaurante} />
+          <div style={{ ...ds.card, marginBottom: 18 }}>
+            <div style={{ fontSize: type.base, fontWeight: 700, color: colors.ink, marginBottom: 4 }}>
+              Precios del local
+            </div>
+            <p style={{ fontSize: type.sm, color: colors.stone, margin: '0 0 12px', lineHeight: 1.45 }}>
+              <strong>{conPrecioLocal}</strong> de {productos.length} productos tienen precio propio para el
+              local. El resto se muestra en el QR con el precio de domicilio.
+            </p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: type.sm, color: colors.stone }}>Rellenar los vacíos un</span>
+              <input
+                type="number" min="1" max="99" step="1"
+                value={pctRelleno}
+                onChange={e => setPctRelleno(e.target.value)}
+                style={{ ...ds.formInput, width: 74 }}
+              />
+              <span style={{ fontSize: type.sm, color: colors.stone }}>% más barato</span>
+              <button onClick={rellenarPreciosLocal} disabled={rellenando} style={{ ...ds.ghostBtn, opacity: rellenando ? 0.5 : 1 }}>
+                {rellenando ? 'Aplicando…' : 'Aplicar'}
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: colors.stone2, margin: '8px 0 0' }}>
+              Solo toca los que están vacíos. Luego puedes ajustar cualquiera a mano.
+            </p>
+          </div>
+        </>
+      )}
+
       {/* Buscador */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: 340 }}>
@@ -549,6 +680,15 @@ export default function Carta() {
                 }}>
                   {desdeFlag ? 'Desde ' : ''}{(minPrecio || 0).toFixed(2)} €
                 </span>
+                {cartaLocal && precioLocalListado(p, prodTamanosMap[p.id]) !== null && (
+                  <span style={{
+                    fontFamily: 'ui-monospace, monospace',
+                    fontSize: type.xs, fontWeight: 700, color: colors.stone,
+                    marginTop: -4,
+                  }}>
+                    local {precioLocalListado(p, prodTamanosMap[p.id]).toFixed(2)} €
+                  </span>
+                )}
                 <button onClick={() => toggleDisponible(p.id, p.disponible)} style={{
                   width: 48, height: 28, borderRadius: 14, border: 'none',
                   background: p.disponible ? colors.sage : colors.cream2,
@@ -630,10 +770,29 @@ export default function Carta() {
                 <label style={ds.label}>Nombre</label>
                 <input value={prodForm.nombre} onChange={e => setProdForm({ ...prodForm, nombre: e.target.value })} placeholder="Ej: Pizza Margarita" style={ds.formInput} />
               </div>
-              <div>
-                <label style={ds.label}>Precio (€)</label>
-                <input type="number" step="0.01" value={prodForm.precio} onChange={e => setProdForm({ ...prodForm, precio: e.target.value })} placeholder="9.50" style={ds.formInput} />
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 150 }}>
+                  <label style={ds.label}>{cartaLocal ? 'Precio a domicilio (€)' : 'Precio (€)'}</label>
+                  <input type="number" step="0.01" value={prodForm.precio} onChange={e => setProdForm({ ...prodForm, precio: e.target.value })} placeholder="9.50" style={ds.formInput} />
+                </div>
+                {cartaLocal && (
+                  <div style={{ flex: 1, minWidth: 150 }}>
+                    <label style={ds.label}>Precio en el local (€)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={prodForm.precio_local}
+                      onChange={e => setProdForm({ ...prodForm, precio_local: e.target.value })}
+                      placeholder="El mismo"
+                      style={ds.formInput}
+                    />
+                  </div>
+                )}
               </div>
+              {cartaLocal && (
+                <p style={{ fontSize: 11, color: colors.stone, margin: '-6px 0 0' }}>
+                  El precio del local solo se ve en el QR de las mesas. Déjalo vacío si cobras lo mismo.
+                </p>
+              )}
               <div>
                 <label style={ds.label}>Descripción</label>
                 <textarea value={prodForm.descripcion} onChange={e => setProdForm({ ...prodForm, descripcion: e.target.value })} placeholder="Descripción opcional…" rows={3} style={{ ...ds.formInput, height: 'auto', padding: '12px 14px', resize: 'vertical', fontFamily: 'inherit' }} />
@@ -694,14 +853,25 @@ export default function Carta() {
                 <p style={{ fontSize: 11, color: colors.stone, margin: '0 0 10px' }}>
                   Si añades tamaños, el cliente <strong>debe elegir uno</strong>.
                 </p>
+                {cartaLocal && tamanos.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 10.5, color: colors.stone2, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase' }}>
+                    <span style={{ flex: 2 }}>Nombre</span>
+                    <span style={{ flex: 1 }}>Domicilio</span>
+                    <span style={{ flex: 1 }}>Local</span>
+                    <span style={{ width: 34 }} />
+                  </div>
+                )}
                 {tamanos.map((t, i) => (
                   <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <input value={t.nombre} onChange={e => { const n = [...tamanos]; n[i] = { ...n[i], nombre: e.target.value }; setTamanos(n) }} placeholder="Ej: Mediano" style={{ ...ds.formInput, flex: 2 }} />
                     <input type="number" step="0.01" min="0" value={t.precio} onChange={e => { const n = [...tamanos]; n[i] = { ...n[i], precio: e.target.value }; setTamanos(n) }} placeholder="€" style={{ ...ds.formInput, flex: 1 }} />
+                    {cartaLocal && (
+                      <input type="number" step="0.01" min="0" value={t.precio_local ?? ''} onChange={e => { const n = [...tamanos]; n[i] = { ...n[i], precio_local: e.target.value }; setTamanos(n) }} placeholder="El mismo" style={{ ...ds.formInput, flex: 1 }} />
+                    )}
                     <button onClick={() => setTamanos(prev => prev.filter((_, idx) => idx !== i))} style={ds.miniBtnDanger}><X size={12}/></button>
                   </div>
                 ))}
-                <button onClick={() => setTamanos(prev => [...prev, { nombre: '', precio: '' }])} style={{
+                <button onClick={() => setTamanos(prev => [...prev, { nombre: '', precio: '', precio_local: '' }])} style={{
                   width: '100%', padding: '10px 0', borderRadius: 10,
                   border: `1px dashed ${colors.borderStrong}`,
                   background: 'transparent', color: colors.stone,
