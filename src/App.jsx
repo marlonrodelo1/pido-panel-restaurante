@@ -3,7 +3,7 @@ import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
   Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star, PhoneCall,
-  TrendingUp,
+  TrendingUp, Video,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -31,6 +31,7 @@ import LiquidacionPido from './pages/LiquidacionPido'
 import EliminarCuenta from './pages/EliminarCuenta'
 import Resenas from './pages/Resenas'
 import CrearEnvio from './pages/CrearEnvio'
+import Creadores from './pages/Creadores'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -50,6 +51,7 @@ const SECCION_LABELS = {
   'socios-riders': 'Socios y repartidores',
   'finanzas-riders': 'Finanzas con el socio',
   'liquidacion-pido': 'Liquidación con Pido',
+  creadores: 'Creadores',
   'eliminar-cuenta': 'Eliminar cuenta',
   pedidos: 'Pedidos',
   'historial-movil': 'Historial',
@@ -276,6 +278,9 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
     { id: 'socios-riders', Icon: Users, label: 'Socios y repartidores', badge: sociosPendientes },
     { id: 'finanzas-riders', Icon: Wallet, label: 'Finanzas con el socio' },
     { id: 'liquidacion-pido', Icon: Receipt, label: 'Liquidación con Pido' },
+    // Va en "Más" y no en el bottom-nav nativo a propósito: gestionar premios es
+    // trabajo de escritorio, y meterlo en la APK obligaría a una build nueva.
+    { id: 'creadores', Icon: Video, label: 'Creadores' },
     { id: 'soporte', Icon: LifeBuoy, label: 'Soporte' },
   ]
 
@@ -496,6 +501,7 @@ function AppInner({ seccion, setSeccion, nav }) {
     { id: 'socios-riders', label: 'Socios y repartidores', Icon: Handshake, badge: sociosPendientes },
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
     { id: 'liquidacion-pido', label: 'Liquidación con Pido', Icon: Receipt },
+    { id: 'creadores', label: 'Creadores', Icon: Video },
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
   const extraActive = extraOpciones.find(e => e.id === seccion)
@@ -553,6 +559,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'socios-riders' && <SociosYRepartidores />}
       {seccion === 'finanzas-riders' && <FinanzasRiders />}
       {seccion === 'liquidacion-pido' && <LiquidacionPido />}
+      {seccion === 'creadores' && !isNative && <Creadores />}
       {seccion === 'ajustes' && <Ajustes />}
       {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
     </>
