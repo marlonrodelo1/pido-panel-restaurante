@@ -17,6 +17,13 @@ import { toast, confirmar } from '../App'
 // que las validaciones no viven aquí: el servidor las impone (PD131 coste por
 // debajo del mínimo creíble, PD132 escalera desordenada, PD133 producto ajeno).
 // Aquí solo se traducen a un mensaje legible.
+//
+// ⚠️ EL DUEÑO NUNCA VE NI TOCA EL "NIVEL". Se guarda la escalera ENTERA por
+// `creadores_guardar_escalera`, que ordena por visualizaciones y renumera. Antes
+// esto se hacía con INSERT/UPDATE fila a fila y el nivel salía de "el último +1":
+// con eso, meter un premio de entrada MÁS BARATO por delante de los que ya
+// existían era imposible (chocaba con el unique de nivel y con PD132). Que es
+// justo lo que un restaurante quiere hacer el primer día.
 
 const ESTADOS = {
   activa:               { label: 'En juego',    bg: colors.terracottaSoft, color: colors.terracotta2 },
@@ -46,6 +53,7 @@ function traducirError(err) {
   if (m.includes('choca con el nivel')) return m
   if (m.includes('no es de este restaurante')) return 'Ese producto no es de tu carta.'
   if (m.includes('gasto del mes')) return 'El gasto del mes lo lleva el sistema.'
+  // Los del guardado completo (PD158-PD160) ya vienen en cristiano del servidor.
   return m || 'No se ha podido guardar'
 }
 
@@ -104,6 +112,7 @@ export default function Creadores() {
   async function guardarTope() {
     const v = topeInput.trim() === '' ? null : Number(topeInput.replace(',', '.'))
     if (v !== null && (!Number.isFinite(v) || v <= 0)) return toast('El tope tiene que ser mayor que 0')
+    if (v !== null && v > 5000) return toast('El tope máximo son 5.000 € al mes')
     setBusy(true)
     const { error } = await supabase.from('creadores_config')
       .update({ tope_mensual_euros: v }).eq('establecimiento_id', estId)
@@ -113,37 +122,48 @@ export default function Creadores() {
     cargar()
   }
 
-  async function guardarEscalon() {
-    const f = form
-    if (!f.descripcion?.trim()) return toast('Ponle un nombre al premio, es lo que verá el cliente')
-    const datos = {
-      establecimiento_id: estId,
-      nivel: Number(f.nivel),
-      views_necesarias: Number(f.views_necesarias),
-      tipo_premio: f.tipo_premio,
-      valor: (f.tipo_premio === 'descuento_fijo' || f.tipo_premio === 'porcentaje') ? Number(f.valor) : null,
-      producto_id: f.tipo_premio === 'producto_gratis' ? (f.producto_id || null) : null,
-      descripcion: f.descripcion.trim(),
-      coste_estimado: Number(f.coste_estimado),
-      activo: f.activo !== false,
-    }
+  // La escalera se guarda SIEMPRE entera. El servidor la ordena por
+  // visualizaciones y pone los niveles: aquí no se calcula ninguno.
+  const aPayload = (e) => ({
+    views_necesarias: Number(e.views_necesarias),
+    tipo_premio: e.tipo_premio,
+    valor: (e.tipo_premio === 'descuento_fijo' || e.tipo_premio === 'porcentaje') ? Number(e.valor) : null,
+    producto_id: e.tipo_premio === 'producto_gratis' ? (e.producto_id || null) : null,
+    descripcion: (e.descripcion || '').trim(),
+    coste_estimado: Number(e.coste_estimado),
+    activo: e.activo !== false,
+  })
+
+  async function guardarEscalera(lista, mensajeOk) {
     setBusy(true)
-    const { error } = f.id
-      ? await supabase.from('escalera_premios').update(datos).eq('id', f.id)
-      : await supabase.from('escalera_premios').insert(datos)
+    const { error } = await supabase.rpc('creadores_guardar_escalera', {
+      p_establecimiento_id: estId,
+      p_escalones: lista.map(aPayload),
+    })
     setBusy(false)
     if (error) return toast(traducirError(error))
-    toast('Escalón guardado', 'success')
+    toast(mensajeOk, 'success')
     setForm(null)
     cargar()
   }
 
+  async function guardarEscalon() {
+    const f = form
+    if (!f.descripcion?.trim()) return toast('Ponle un nombre al premio, es lo que verá el cliente')
+    // Al editar se sustituye el que ya estaba; al crear, `f.id` es undefined y
+    // no se quita ninguno.
+    const resto = escalera.filter(e => e.id !== f.id)
+    await guardarEscalera([...resto, f], 'Premio guardado')
+  }
+
   async function borrarEscalon(id) {
-    if (!await confirmar('¿Quitar este escalón? Los premios ya entregados no se tocan.')) return
-    const { error } = await supabase.from('escalera_premios').delete().eq('id', id)
-    if (error) return toast(traducirError(error))
-    toast('Escalón eliminado', 'success')
-    cargar()
+    // Un programa encendido sin ningún premio deja a los clientes grabando
+    // vídeos que no pueden ganar nada. Para eso está la pausa, no el vaciado.
+    if (escalera.length <= 1) {
+      return toast('Tiene que quedarte al menos un premio. Si ahora no quieres dar ninguno, pausa el programa arriba.')
+    }
+    if (!await confirmar('¿Quitar este premio? Los que ya has entregado no se tocan.')) return
+    await guardarEscalera(escalera.filter(e => e.id !== id), 'Premio eliminado')
   }
 
   async function rechazar(p) {
@@ -330,6 +350,9 @@ export default function Creadores() {
               <strong>Estos premios los pagas tú.</strong> El coste que declares es el que cuenta
               para tu límite del mes, así que ponlo de verdad. La mayoría de vídeos se queda en el
               primer escalón: hazlo barato y fácil, ahí está el volumen.
+              <br />
+              Créalos en el orden que quieras: <strong>se ordenan solos</strong> de menos a más
+              visualizaciones.
             </span>
           </div>
 
@@ -354,19 +377,18 @@ export default function Creadores() {
           {escalera.length < 5 && !form && (
             <button
               onClick={() => setForm({
-                nivel: (escalera.at(-1)?.nivel || 0) + 1,
-                views_necesarias: (escalera.at(-1)?.views_necesarias || 0) * 4 || 500,
+                views_necesarias: (escalera.at(-1)?.views_necesarias || 0) * 4 || 200,
                 tipo_premio: 'descuento_fijo', valor: 2, descripcion: '', coste_estimado: 2, activo: true,
               })}
               style={{ ...ds.secondaryBtn, marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Plus size={14} /> Añadir escalón
+              <Plus size={14} /> Añadir premio
             </button>
           )}
 
           {form && (
             <div style={{ ...ds.card, marginTop: 10, borderColor: colors.terracotta }}>
               <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink, marginBottom: 12 }}>
-                {form.id ? `Editar el escalón ${form.nivel}` : `Nuevo escalón ${form.nivel}`}
+                {form.id ? 'Editar premio' : 'Nuevo premio'}
               </div>
 
               <label style={ds.label}>Tipo de premio</label>
@@ -387,8 +409,8 @@ export default function Creadores() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 10 }}>
                 <div>
-                  <label style={ds.label}>Visualizaciones necesarias</label>
-                  <input style={ds.formInput} type="number" min={500} value={form.views_necesarias}
+                  <label style={ds.label}>Visualizaciones necesarias (mín. 100)</label>
+                  <input style={ds.formInput} type="number" min={100} value={form.views_necesarias}
                          onChange={e => setForm(f => ({ ...f, views_necesarias: e.target.value }))} />
                 </div>
 

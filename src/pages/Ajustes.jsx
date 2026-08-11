@@ -73,6 +73,8 @@ export default function Ajustes() {
   const [direccion, setDireccion] = useState(restaurante?.direccion || '')
   const [email, setEmail] = useState(restaurante?.email || '')
   const [telefono, setTelefono] = useState(restaurante?.telefono || '')
+  const [instagram, setInstagram] = useState(restaurante?.instagram_usuario || '')
+  const [tiktok, setTiktok] = useState(restaurante?.tiktok_usuario || '')
   const [radioCobertura, setRadioCobertura] = useState(restaurante?.radio_cobertura_km || 10)
   // Las zonas de reparto las gestiona el componente ZonasReparto: se guardan una a una
   // con su propio botón (RPC guardar_zona), no con el "Guardar cambios" general.
@@ -362,6 +364,8 @@ export default function Ajustes() {
     direccion !== (restaurante?.direccion || '') ||
     email !== (restaurante?.email || '') ||
     telefono !== (restaurante?.telefono || '') ||
+    instagram !== (restaurante?.instagram_usuario || '') ||
+    tiktok !== (restaurante?.tiktok_usuario || '') ||
     Number(radioCobertura) !== Number(restaurante?.radio_cobertura_km || 10) ||
     Number(pedidoMinimo || 0) !== Number(restaurante?.pedido_minimo || 0) ||
     razonSocial !== (restaurante?.razon_social || '') ||
@@ -391,6 +395,10 @@ export default function Ajustes() {
       direccion: direccion.trim() || null,
       email: email.trim() || null,
       telefono: telefono.trim() || null,
+      // El servidor los normaliza (quita la arroba, la URL entera si la pegan,
+      // y baja a minúsculas) en trg_establecimientos_normaliza_redes.
+      instagram_usuario: instagram.trim() || null,
+      tiktok_usuario: tiktok.trim() || null,
       radio_cobertura_km: radioCobertura,
       pedido_minimo: pedidoMinimo === '' || pedidoMinimo == null ? 0 : Number(pedidoMinimo),
       horario: horario,
@@ -909,6 +917,26 @@ export default function Ajustes() {
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>Teléfono</label>
           <input type="tel" value={telefono} onChange={e => setTelefono(e.target.value)} style={inp} />
+        </div>
+
+        {/* Redes: no son decorativas. Pidoo Creadores obliga al cliente a
+            etiquetar al restaurante en su vídeo, y sin el @ exacto el texto que
+            se le da para pegar no puede llevar la mención. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          <div>
+            <label style={lbl}>Instagram</label>
+            <input value={instagram} onChange={e => setInstagram(e.target.value)} style={inp}
+                   placeholder="@tunegocio" autoCapitalize="none" spellCheck={false} />
+          </div>
+          <div>
+            <label style={lbl}>TikTok</label>
+            <input value={tiktok} onChange={e => setTiktok(e.target.value)} style={inp}
+                   placeholder="@tunegocio" autoCapitalize="none" spellCheck={false} />
+          </div>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--c-muted)', marginTop: 6, lineHeight: 1.5 }}>
+          Tus clientes tienen que etiquetarte cuando graban un vídeo con Pidoo Creadores.
+          Puedes pegar el enlace de tu perfil o solo el nombre de usuario.
         </div>
       </div>
 
