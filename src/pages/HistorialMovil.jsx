@@ -410,10 +410,10 @@ function DetalleModal({ pedido, items, loading, onClose }) {
             <div key={it.id} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${colors.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                 <span style={{ fontSize: type.sm, fontWeight: 700, color: colors.text }}>
-                  {it.cantidad}× {it.nombre || it.producto_nombre || 'Producto'}
+                  {it.cantidad}× {it.nombre_producto || 'Producto'}
                 </span>
                 <span style={{ fontSize: type.sm, fontWeight: 700, color: colors.text }}>
-                  {((it.precio || 0) * (it.cantidad || 1)).toFixed(2)} €
+                  {(Number(it.precio_unitario || 0) * (it.cantidad || 1)).toFixed(2)} €
                 </span>
               </div>
               {it.tamano && (
