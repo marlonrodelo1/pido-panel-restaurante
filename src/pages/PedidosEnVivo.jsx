@@ -35,8 +35,15 @@ const MOTIVOS_RECHAZO = [
   { id: 'sin_productos', label: 'No hay productos disponibles' },
   { id: 'mucha_demanda', label: 'Mucha demanda ahora mismo' },
 ]
+// `soloDelivery` = motivos que no pueden salir en un pedido de RECOGIDA.
+// 18 ago 2026: en recogida no interviene ningun repartidor, y aun asi se ofrecia
+// "Sin repartidor disponible". Es lo que mas se parece a "no puedo con esto", asi
+// que es lo que se pulsa: dos pedidos de Max's Pizza del mismo dia (25,50 EUR y
+// 8,50 EUR, los dos de recogida) quedaron en el historico como cancelados por
+// falta de repartidor, y nadie habia buscado ninguno. El motivo que se guarda es
+// lo unico que queda para saber por que se perdio un pedido; si miente, no sirve.
 const MOTIVOS_CANCELACION = [
-  { id: 'sin_rider', label: 'Sin repartidor disponible' },
+  { id: 'sin_rider', label: 'Sin repartidor disponible', soloDelivery: true },
   { id: 'sin_stock', label: 'Producto agotado' },
   { id: 'problema_cocina', label: 'Problema en cocina' },
   { id: 'cliente_no_contesta', label: 'Cliente no contesta' },
@@ -1744,7 +1751,9 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
         cancelando ? (
           <div style={{ background: 'rgba(220,38,38,0.08)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.2)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#B5564A', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo de cancelación</div>
-            {MOTIVOS_CANCELACION.map(m => (
+            {MOTIVOS_CANCELACION
+              .filter(m => !m.soloDelivery || pedido.modo_entrega === 'delivery')
+              .map(m => (
               <button key={m.id} onClick={() => { onCancelar(pedido, m.id); afterAction() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(220,38,38,0.06)', color: 'var(--c-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>{m.label}</button>
             ))}
             <button onClick={() => setCancelando(false)} style={{ width: '100%', padding: '8px 0', border: 'none', background: 'transparent', color: 'var(--c-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Volver</button>
