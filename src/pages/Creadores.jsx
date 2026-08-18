@@ -31,7 +31,20 @@ const ESTADOS = {
   en_espera_tope:       { label: 'Espera tope', bg: colors.warningSoft,    color: colors.warning },
   caducada:             { label: 'Caducada',    bg: colors.cream2,         color: colors.stone },
   rechazada:            { label: 'Rechazada',   bg: colors.dangerSoft,     color: colors.danger },
-  pendiente_validacion: { label: 'Sin validar', bg: colors.cream2,         color: colors.stone },
+  // En aviso, no en gris: es el único estado que espera algo del dueño. En gris
+  // se leía como "archivado" y se quedaba ahí para siempre.
+  pendiente_validacion: { label: 'Por revisar', bg: colors.warningSoft,    color: colors.warning },
+}
+
+// Plazo de cortesía. Si el dueño no revisa un vídeo de mesa, entra solo: la
+// pantalla no existe en la app del panel (solo en el navegador), así que si
+// dependiera de él, el cliente que grabó en la mesa se quedaría esperando por
+// algo que no depende de él. Cuadra con `creadores_autoaprobar_mesa`.
+const HORAS_CORTESIA = 72
+
+function horasPara(creado) {
+  const pasadas = (Date.now() - new Date(creado).getTime()) / 3600000
+  return Math.max(0, Math.ceil(HORAS_CORTESIA - pasadas))
 }
 
 const TIPOS = [
@@ -77,7 +90,7 @@ export default function Creadores() {
       supabase.from('creadores_config').select('*').eq('establecimiento_id', estId).maybeSingle(),
       supabase.from('escalera_premios').select('*').eq('establecimiento_id', estId).order('nivel'),
       supabase.from('participaciones_creador')
-        .select('id, estado, red, share_url, views_actual, nivel_alcanzado, created_at, motivo_rechazo, usuario_id, usuarios(nombre)')
+        .select('id, estado, origen, red, share_url, usuario_red, views_actual, nivel_alcanzado, created_at, motivo_rechazo, validado_at, validado_por, usuario_id, usuarios(nombre)')
         .eq('establecimiento_id', estId).order('created_at', { ascending: false }).limit(120),
       supabase.from('productos').select('id, nombre, precio').eq('establecimiento_id', estId).eq('disponible', true).order('nombre'),
     ])
@@ -180,6 +193,24 @@ export default function Creadores() {
     cargar()
   }
 
+  // Aceptar un vídeo grabado en la mesa. Es el paso que le falta a una
+  // participación sin pedido detrás: como el cliente comió en el local y pagó al
+  // camarero, Pidoo no tiene ni idea de que estuvo ahí, y el único que puede
+  // decirlo es quien reconoce su propio local en el vídeo.
+  //
+  // Al aceptar, el servidor entrega el premio EN EL ACTO si ya tiene
+  // visualizaciones suficientes: mientras esperaba, el contador seguía subiendo
+  // pero no podía ganar nada.
+  async function validar(p) {
+    if (!await confirmar('¿Aceptas este vídeo? Empezará a contar visualizaciones y podrá ganar premio.')) return
+    setBusy(true)
+    const { error } = await supabase.rpc('validar_participacion_creador', { p_participacion_id: p.id })
+    setBusy(false)
+    if (error) return toast(traducirError(error))
+    toast('Vídeo aceptado', 'success')
+    cargar()
+  }
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: colors.stone }}>Cargando…</div>
 
   // ── El programa lo enciende Pidoo. Mientras esté apagado, esto es una página
@@ -221,6 +252,10 @@ export default function Creadores() {
   const enJuego = parts.filter(p => p.estado === 'activa' || p.estado === 'en_espera_tope')
   const alcance = parts.reduce((s, p) => s + (p.views_actual || 0), 0)
   const premiadas = parts.filter(p => p.estado === 'premiada')
+  const porRevisar = parts.filter(p => p.estado === 'pendiente_validacion')
+  // Los que esperan una decisión suya, primero. Dentro de cada bloque se
+  // conserva el orden que trae la consulta (los más nuevos arriba).
+  const partsOrdenadas = [...porRevisar, ...parts.filter(p => p.estado !== 'pendiente_validacion')]
 
   return (
     <div>
@@ -279,7 +314,14 @@ export default function Creadores() {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginTop: 20, borderBottom: `1px solid ${colors.border}` }}>
         {[
-          { id: 'videos', label: `Vídeos (${parts.length})` },
+          {
+            id: 'videos',
+            // El contador de pendientes va en la pestaña, no dentro: si hay que
+            // entrar para enterarse de que hay algo que hacer, no se entera nadie.
+            label: porRevisar.length
+              ? `Vídeos (${parts.length}) · ${porRevisar.length} por revisar`
+              : `Vídeos (${parts.length})`,
+          },
           { id: 'premios', label: `Premios (${escalera.length})` },
           { id: 'ajustes', label: 'Límite de gasto' },
         ].map(t => (
@@ -297,9 +339,31 @@ export default function Creadores() {
       {/* ── VÍDEOS ── */}
       {tab === 'videos' && (
         <div style={{ marginTop: 16 }}>
+          {/* Aviso solo cuando hay algo que decidir. Explica las dos cosas que el
+              dueño necesita saber para no bloquearse: que un vídeo sin revisar no
+              le cuesta nada todavía, y que si no hace nada entra igual. */}
+          {porRevisar.length > 0 && (
+            <div style={{
+              ...ds.card, marginBottom: 12,
+              borderColor: colors.warning, background: colors.warningSoft,
+            }}>
+              <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>
+                {porRevisar.length === 1
+                  ? 'Tienes 1 vídeo por revisar'
+                  : `Tienes ${porRevisar.length} vídeos por revisar`}
+              </div>
+              <div style={{ fontSize: type.xs, color: colors.stone, lineHeight: 1.55, marginTop: 4 }}>
+                Son vídeos grabados <strong>en tu local</strong>, sin un pedido de Pidoo detrás:
+                solo tú puedes decir si esa persona estuvo ahí. Mientras no los aceptes
+                <strong> no pueden ganar ningún premio</strong>. Si no dices nada en {HORAS_CORTESIA} horas,
+                entran solos, y aun así podrás rechazarlos mientras no tengan premio.
+              </div>
+            </div>
+          )}
+
           {parts.length === 0 ? (
             <Vacio texto="Todavía no ha grabado nadie. En cuanto un cliente registre un vídeo de un pedido tuyo, aparecerá aquí." />
-          ) : parts.map(p => {
+          ) : partsOrdenadas.map(p => {
             const e = ESTADOS[p.estado] || ESTADOS.activa
             return (
               <div key={p.id} style={{
@@ -321,6 +385,43 @@ export default function Creadores() {
                   <div style={{ fontSize: 10.5, color: colors.stone, textTransform: 'uppercase', letterSpacing: '0.04em' }}>visualizaciones</div>
                 </div>
                 <span style={{ ...ds.badge, background: e.bg, color: e.color, flexShrink: 0 }}>{e.label}</span>
+
+                {/* Un vídeo de mesa NO tiene pedido detrás, y ese es justo el
+                    dato que cambia el juicio del dueño: lo que se le pregunta es
+                    "¿esta persona comió aquí?". Por eso se distingue. */}
+                {p.origen === 'mesa' && (
+                  <span style={{
+                    ...ds.badge, background: colors.cream2, color: colors.stone, flexShrink: 0,
+                  }}>Desde la mesa</span>
+                )}
+
+                {p.estado === 'pendiente_validacion' && (
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => validar(p)} disabled={busy} style={{ ...ds.miniBtn, flexShrink: 0 }}>
+                      Aceptar
+                    </button>
+                    <button onClick={() => rechazar(p)} disabled={busy} style={{ ...ds.miniBtnDanger, flexShrink: 0 }}>
+                      Rechazar
+                    </button>
+                  </div>
+                )}
+
+                {p.estado === 'pendiente_validacion' && (
+                  <span style={{ fontSize: type.xxs, color: colors.stone, flexBasis: '100%' }}>
+                    {horasPara(p.created_at) > 0
+                      ? `Si no lo revisas, entrará solo dentro de ${horasPara(p.created_at)} h.`
+                      : 'Entrará solo en la próxima revisión automática.'}
+                  </span>
+                )}
+
+                {/* Entró por el plazo, no la miró nadie. Se dice, porque el dueño
+                    sigue a tiempo de tumbarla mientras no haya premio. */}
+                {p.validado_at && !p.validado_por && p.estado !== 'pendiente_validacion' && (
+                  <span style={{ fontSize: type.xxs, color: colors.stone, flexBasis: '100%' }}>
+                    Entró sola: no lo revisaste a tiempo. Puedes rechazarlo mientras no tenga premio.
+                  </span>
+                )}
+
                 {(p.estado === 'activa' || p.estado === 'en_espera_tope') && (
                   <button onClick={() => rechazar(p)} disabled={busy} style={{ ...ds.miniBtnDanger, flexShrink: 0 }}>
                     No es de mi local
