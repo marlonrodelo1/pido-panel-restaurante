@@ -6,6 +6,7 @@ import { confirmar, toast } from '../App'
 import { colors, type, ds, chip } from '../lib/uiStyles'
 import { FoodChip } from '../lib/food.jsx'
 import QrCartaLocal from '../components/QrCartaLocal'
+import MesasPanel from '../components/MesasPanel'
 
 // Subida de imágenes vía Edge Function: Storage no valida el JWT de sesión actual
 // (claves asimétricas), así que la subida se hace en el servidor con permisos de
@@ -557,6 +558,7 @@ export default function Carta() {
       {cartaLocal && (
         <>
           <QrCartaLocal restaurante={restaurante} />
+          <MesasPanel restaurante={restaurante} />
           <div style={{ ...ds.card, marginBottom: 18 }}>
             <div style={{ fontSize: type.base, fontWeight: 700, color: colors.ink, marginBottom: 4 }}>
               Precios del local

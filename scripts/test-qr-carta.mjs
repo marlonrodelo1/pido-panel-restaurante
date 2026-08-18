@@ -20,6 +20,15 @@ import jsQR from 'jsqr'
 
 const URL_CARTA = 'https://pidoo.es/cafe-bar-australia/carta'
 
+// El QR de cada mesa lleva su token: `?m=<6 caracteres>`. Son 9 caracteres más de
+// URL, y en un QR eso son módulos más pequeños con el mismo logo encima. Por eso
+// el cartel por mesa NO se puede dar por bueno solo porque el de restaurante se
+// lea: hay que probarlo, y a 300 px, que es el tamaño al que se imprime.
+const TOKEN_MESA = 'A3K7QP'                       // base32 Crockford, sin I/L/O/U
+const URL_MESA = `${URL_CARTA}?m=${TOKEN_MESA}`
+const SLUG_LARGO = 'https://pidoo.es/guachinche-del-sheriff-valle-tabares/carta'
+const URL_MESA_LARGA = `${SLUG_LARGO}?m=${TOKEN_MESA}`
+
 // Debe ir sincronizado con construirQr() en src/lib/qrCarta.js.
 const NIVEL = 'H'
 const LOGO_PCT = 0.22
@@ -81,9 +90,31 @@ test('sigue leyéndose reducido a 300 px (QR pequeño en el cartel impreso)', ()
 })
 
 test('aguanta un slug largo, que es el QR más denso', () => {
-  const largo = 'https://pidoo.es/guachinche-del-sheriff-valle-tabares/carta'
   const lado = 1024
-  assert.equal(leer(pintar(largo, lado, RECUADRO_PCT), lado), largo)
+  assert.equal(leer(pintar(SLUG_LARGO, lado, RECUADRO_PCT), lado), SLUG_LARGO)
+})
+
+/* ── El QR por mesa ──────────────────────────────────────────────────────────
+ * Estos tres son los que autorizan a imprimir carteles de mesa. Si alguno falla,
+ * NO se imprime nada: se baja el logo (LOGO_PCT) o se sube el tamaño del QR en el
+ * cartel. Lo que NUNCA se toca es el nivel de corrección H, que es de donde sale
+ * el margen para tapar el centro. */
+
+test('el QR con mesa se lee con el logo tapando el centro', () => {
+  const lado = 1024
+  assert.equal(leer(pintar(URL_MESA, lado, RECUADRO_PCT), lado), URL_MESA)
+})
+
+test('el QR con mesa sigue leyéndose a 300 px, que es como se imprime', () => {
+  const lado = 300
+  assert.equal(leer(pintar(URL_MESA, lado, RECUADRO_PCT), lado), URL_MESA)
+})
+
+test('el peor caso real —slug largo Y mesa, a 300 px— también se lee', () => {
+  // Es el cartel más difícil que puede pedir un restaurante de verdad. Si este
+  // pasa, cualquier combinación de las que hay hoy en producción pasa.
+  const lado = 300
+  assert.equal(leer(pintar(URL_MESA_LARGA, lado, RECUADRO_PCT), lado), URL_MESA_LARGA)
 })
 
 test('deja de leerse si alguien agranda el logo hasta el 45%: el margen es real, no infinito', () => {

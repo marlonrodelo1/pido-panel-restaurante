@@ -16,7 +16,7 @@ export default function QrCartaLocal({ restaurante }) {
     setError(null)
     try {
       if (tipo === 'qr') {
-        const canvas = await construirQr(restaurante.slug, restaurante.logo_url)
+        const canvas = await construirQr(urlCarta(restaurante.slug), restaurante.logo_url)
         descargarCanvas(canvas, `qr-carta-${restaurante.slug}.png`)
       } else {
         const canvas = await construirCartel(restaurante)
