@@ -29,6 +29,25 @@ const ESTADOS = {
 
 function euro(v) { return `${Number(v || 0).toFixed(2).replace('.', ',')} €` }
 
+// El plazo sale de `establecimientos.cuota_fecha_limite`, no del codigo: asi vale
+// para el siguiente cliente de cuota fija y no se queda diciendo "manana" para
+// siempre. Solo informa; lo que apaga la tienda es el impago real.
+function plazo(fecha) {
+  if (!fecha) return null
+  // 'YYYY-MM-DD' partido a mano: `new Date('2026-08-19')` lo lee como UTC y en
+  // Canarias (UTC+1 en verano) puede pintar el dia anterior.
+  const [a, m, d] = String(fecha).split('-').map(Number)
+  if (!a || !m || !d) return null
+  const limite = new Date(a, m - 1, d)
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const dias = Math.round((limite - hoy) / 86400000)
+  const texto = limite.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+  if (dias < 0) return { vencido: true, frase: `El plazo terminó el ${texto}.` }
+  if (dias === 0) return { vencido: false, frase: 'Tienes de plazo hasta hoy.' }
+  if (dias === 1) return { vencido: false, frase: 'Tienes de plazo hasta mañana.' }
+  return { vencido: false, frase: `Tienes de plazo hasta el ${texto}.` }
+}
+
 export default function SuscripcionCard({ variant = 'card' }) {
   const { restaurante } = useRest()
   const [sus, setSus] = useState(null)
@@ -37,6 +56,7 @@ export default function SuscripcionCard({ variant = 'card' }) {
 
   const estId = restaurante?.id
   const enPlan = restaurante?.plan_cuota_mensual === true
+  const limite = plazo(restaurante?.cuota_fecha_limite)
 
   useEffect(() => {
     if (!estId || !enPlan) { setCargando(false); return }
@@ -99,6 +119,11 @@ export default function SuscripcionCard({ variant = 'card' }) {
               ? `No hemos podido cobrar los ${euro(total)}. Actualiza la tarjeta y tu tienda vuelve a abrir al instante.`
               : `${euro(total)} al mes (${euro(base)} + 7% IGIC). Sin comisión por pedido.`}
           </div>
+          {estado !== 'unpaid' && limite && (
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#B5564A', marginTop: 4 }}>
+              {limite.frase}
+            </div>
+          )}
         </div>
         <button onClick={activar} disabled={enviando} style={{
           padding: '11px 18px', borderRadius: 9, border: 'none', flexShrink: 0,
@@ -130,6 +155,16 @@ export default function SuscripcionCard({ variant = 'card' }) {
         ({euro(base)} + 7% de IGIC) por tener tu tienda y tu app activas.
         <strong style={{ color: 'var(--c-text)' }}> No pagas comisión por pedido.</strong>
       </div>
+
+      {!alDia && limite && (
+        <div style={{
+          fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, marginBottom: 14,
+          padding: '10px 12px', borderRadius: 9, color: '#B5564A',
+          background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(185,28,28,0.2)',
+        }}>
+          {limite.frase}
+        </div>
+      )}
 
       {alDia ? (
         <div style={{ fontSize: 12.5, color: 'var(--c-muted)', lineHeight: 1.6 }}>
