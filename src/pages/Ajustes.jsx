@@ -8,6 +8,7 @@ import { DIAS_ORDEN, DIAS_LABEL, DIAS_CORTO, horarioVacio, horarioEstandar, esta
 import { toast } from '../App'
 import AddressInput from '../components/AddressInput'
 import ZonasReparto from '../components/ZonasReparto'
+import SuscripcionCard from '../components/SuscripcionCard'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -631,6 +632,13 @@ export default function Ajustes() {
       <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--c-text)', letterSpacing: '-0.02em', margin: 0 }}>Ajustes</h2>
       <div className="pidoo-col-full" style={{ fontSize: 14, color: 'var(--c-muted)', marginBottom: 22, marginTop: 4 }}>
         Configuración de tu negocio
+      </div>
+
+      {/* Cuota mensual. Va lo PRIMERO y no lo segundo: si no ha pagado, es lo
+          unico que importa de esta pantalla. Se pinta sola solo para los
+          restaurantes de cuota fija (plan_cuota_mensual). */}
+      <div className="pidoo-col-full">
+        <SuscripcionCard />
       </div>
 
       {/* ── URL pública de la tienda (gratis para todos los restaurantes) ── */}

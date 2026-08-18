@@ -21,6 +21,7 @@ import HistorialMovil from './pages/HistorialMovil'
 import Finanzas from './pages/Finanzas'
 import Carta from './pages/Carta'
 import Ajustes from './pages/Ajustes'
+import SuscripcionCard from './components/SuscripcionCard'
 import Promociones from './pages/Promociones'
 import Soporte from './pages/Soporte'
 import DisponibilidadProductos from './pages/DisponibilidadProductos'
@@ -545,6 +546,10 @@ function AppInner({ seccion, setSeccion, nav }) {
   // Contenido de la sección (compartido)
   const seccionContent = (
     <>
+      {/* Aviso de cuota sin pagar, en TODAS las secciones. Solo sale si el
+          restaurante es de cuota fija y no está al día; el que no ha pagado no
+          va a entrar en Ajustes por su cuenta a buscarlo. */}
+      <SuscripcionCard variant="banner" />
       {seccion === 'pedidos' && isNative && <PedidosEnVivo />}
       {seccion === 'historial-movil' && <HistorialMovil />}
       {seccion === 'disponibilidad' && <DisponibilidadProductos />}
