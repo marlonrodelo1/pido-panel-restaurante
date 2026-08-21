@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { usePedidoAlert } from '../context/PedidoAlertContext'
-import { stopAlarm, unlockAudio, startAlarm } from '../lib/alarm'
+import { stopAlarm, unlockAudio, startAlarm, notificarNuevoPedido } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
@@ -225,6 +225,10 @@ export default function PedidosEnVivo() {
 
   // ref a fetchPedidos para usarlo en listeners de foreground sin reset effect
   const fetchPedidosRef = useRef(null)
+  // Comandas de mesa ya impresas en esta sesión de la app. Va en un ref y no en
+  // estado a propósito: se consulta dentro del handler de realtime y con estado
+  // el handler leería siempre el valor del render en que se suscribió.
+  const mesaImpresasRef = useRef(new Set())
 
   // ── Recovery de pedidos delivery en limbo ────────────────────────────────
   // Si la app murió mientras aceptarPedido() reintentaba create-shipday-order,
@@ -295,6 +299,54 @@ export default function PedidosEnVivo() {
               return merged
             })
           })
+        }
+      })
+      // ── COMANDAS DE MESA: entran ya aceptadas y se imprimen solas ──────────
+      // (21 ago 2026) Un pedido de mesa es interno del restaurante: el cliente
+      // está sentado dentro y ha pedido por el QR hablando con el camarero de
+      // voz. No hay nada que aceptar, así que `ia-mesa` lo crea directamente en
+      // 'preparando' con `aceptado_at` puesto.
+      //
+      // Eso lo deja fuera de los dos caminos por los que llegaba todo lo demás,
+      // y por eso hace falta este bloque:
+      //   · `PedidoAlertContext` descarta en su primera línea cualquier INSERT
+      //     que no venga en 'nuevo'. Para el resto es correcto —un pedido con
+      //     tarjeta se inserta como 'pendiente_pago' antes de cobrarse y no
+      //     puede sonar—, pero deja la comanda de mesa sin entrar en vivo.
+      //   · `imprimirPedido` solo se llamaba dentro de `aceptarPedido`, y aquí
+      //     nadie va a pulsar Aceptar jamás.
+      // Sin esto la comanda no aparece hasta que la app recupera el foco (una
+      // tablet de cocina puede pasarse horas sin perderlo ni recuperarlo) y no
+      // se imprime nunca.
+      //
+      // Suena `notificarNuevoPedido` y NO `startAlarm`: la alarma está pensada
+      // para no callarse hasta que alguien acepta, y aquí no hay botón que
+      // pulsar. Sería un pitido eterno en la cocina.
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'pedidos',
+        filter: `establecimiento_id=eq.${restaurante.id}`,
+      }, async payload => {
+        const p = payload.new
+        if (p.canal !== 'pido' || p.origen_pedido !== 'mesa') return
+        // Realtime puede repetir un evento, y `fetchPedidos` (foco, visibilidad,
+        // reconexión) puede haberlo traído ya. El ticket de la impresora no se
+        // puede sacar dos veces: en cocina eso son dos comandas iguales y una
+        // hamburguesa de más.
+        if (mesaImpresasRef.current.has(p.id)) return
+        mesaImpresasRef.current.add(p.id)
+
+        const { data: items } = await supabase.from('pedido_items').select('*').eq('pedido_id', p.id)
+        const lineas = items || []
+        setItemsMap(prev => ({ ...prev, [p.id]: lineas }))
+        setActivos(prev => (prev.some(x => x.id === p.id) ? prev : [p, ...prev]))
+
+        if (Capacitor.isNativePlatform()) {
+          notificarNuevoPedido(p.codigo)
+          // La impresora vive en la red local del bar: solo la alcanza la
+          // tablet. En web no se imprime nada a propósito — `imprimirPedidoWeb`
+          // abre el diálogo de impresión del navegador y saltaría solo en la
+          // cara de quien tenga el panel abierto en un portátil.
+          imprimirPedido(p, lineas, restaurante).catch(() => {})
         }
       })
       .subscribe()
