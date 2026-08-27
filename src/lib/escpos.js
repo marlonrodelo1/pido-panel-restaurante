@@ -147,8 +147,9 @@ export function generarComandaCocina(pedido, items, restaurante) {
       ...boldOff(),
     )
     // Extras if present
-    if (item.extras) {
-      bytes.push(...line('   + ' + item.extras))
+    // `extras` es text[]: concatenarlo a pelo imprime "Queso,Bacon" sin espacios
+    if (Array.isArray(item.extras) ? item.extras.length : item.extras) {
+      bytes.push(...line('   + ' + (Array.isArray(item.extras) ? item.extras.join(', ') : item.extras)))
     }
   }
 
@@ -284,8 +285,9 @@ export function generarTicketCliente(pedido, items, restaurante) {
       ...line(item.cantidad + 'x ' + item.nombre_producto),
       ...twoColumns('   @' + item.precio_unitario.toFixed(2) + ' EUR', importe + ' EUR'),
     )
-    if (item.extras) {
-      bytes.push(...line('   + ' + item.extras))
+    // `extras` es text[]: concatenarlo a pelo imprime "Queso,Bacon" sin espacios
+    if (Array.isArray(item.extras) ? item.extras.length : item.extras) {
+      bytes.push(...line('   + ' + (Array.isArray(item.extras) ? item.extras.join(', ') : item.extras)))
     }
   }
 
@@ -356,5 +358,242 @@ export function generarTicketCliente(pedido, items, restaurante) {
     ...cut(),
   )
 
+  return new Uint8Array(bytes)
+}
+
+/**
+ * Pulso para abrir el CAJON PORTAMONEDAS.
+ *
+ * El cajon no se conecta al ordenador: cuelga de la impresora por un RJ11 y se
+ * abre porque la impresora recibe este pulso ESC/POS. Por eso, impresora apagada
+ * = cajon cerrado, y hace falta la llave fisica.
+ *
+ * ESC p m t1 t2 → m=0 (pin 2, el habitual), t1/t2 en unidades de 2 ms.
+ * 25 y 250 son los valores de fabrica de casi todos los cajones: 50 ms de pulso
+ * y 500 ms de espera. Subirlos no abre "mejor"; solo calienta la bobina.
+ */
+export function abrirCajon() {
+  return new Uint8Array([ESC, 0x70, 0x00, 0x19, 0xFA])
+}
+
+/**
+ * Ticket de una venta de MOSTRADOR (modulo TPV).
+ *
+ * Es una factura simplificada: lleva los datos fiscales del emisor, su numero de
+ * serie correlativo y el IGIC desglosado. Los precios de la carta ya llevan el
+ * impuesto incluido, asi que la base se calcula hacia atras — pero aqui NO se
+ * recalcula nada: se imprimen los importes que congelo el servidor al emitir el
+ * ticket, que son los que constan en `tpv_tickets`.
+ */
+export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false) {
+  const bytes = []
+  const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
+
+  bytes.push(...init(), ...codepage850(), ...center())
+
+  // Emisor: la razon social manda sobre el nombre comercial en un documento fiscal
+  bytes.push(...boldOn(), ...wideSize())
+  bytes.push(...line(restaurante?.razon_social || restaurante?.nombre || ''))
+  bytes.push(...normalSize(), ...boldOff())
+  if (restaurante?.nif) bytes.push(...line('NIF: ' + restaurante.nif))
+  const dir = restaurante?.direccion_fiscal || restaurante?.direccion
+  if (dir) bytes.push(...line(dir))
+  if (restaurante?.ciudad_fiscal) bytes.push(...line(restaurante.ciudad_fiscal))
+  if (restaurante?.telefono) bytes.push(...line('Tel: ' + restaurante.telefono))
+
+  bytes.push(...feed(1), ...separator('-'), ...left())
+  bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
+  bytes.push(...twoColumns(
+    'Serie ' + ticket.serie + '  Num. ' + String(ticket.numero).padStart(6, '0'),
+    formatDate(ticket.emitido_at)
+  ))
+  bytes.push(...separator('-'))
+
+  // Lineas
+  for (const it of items || []) {
+    const cant = it.cantidad || 1
+    const importe = (it.precio_unitario || 0) * cant
+    let nombre = cant + ' x ' + (it.nombre_producto || '')
+    if (it.tamano) nombre += ' (' + it.tamano + ')'
+    // `extras` es text[] en la BD: si se concatena a pelo sale "Queso,Bacon"
+    const extras = Array.isArray(it.extras) ? it.extras : []
+    bytes.push(...twoColumns(nombre.slice(0, 34), importe.toFixed(2)))
+    if (extras.length) bytes.push(...line('   + ' + extras.join(', ')))
+    if (it.notas) bytes.push(...line('   ' + it.notas))
+  }
+
+  bytes.push(...separator('='))
+  bytes.push(...center(), ...boldOn(), ...doubleSize())
+  bytes.push(...line('TOTAL: ' + eur(ticket.total)))
+  bytes.push(...normalSize(), ...boldOff(), ...left(), ...separator('='))
+
+  // Desglose impositivo, con los importes tal como se guardaron
+  bytes.push(...twoColumns('Base imponible', Number(ticket.base_imponible).toFixed(2)))
+  bytes.push(...twoColumns('IGIC ' + Number(ticket.igic_pct).toFixed(0) + '%', Number(ticket.cuota_igic).toFixed(2)))
+  bytes.push(...separator('-'))
+
+  bytes.push(...line('Forma de pago: ' + (ticket.metodo_pago === 'datafono' ? 'TARJETA' : 'EFECTIVO')))
+  if (ticket.entregado_efectivo != null) {
+    bytes.push(...twoColumns('Entregado', Number(ticket.entregado_efectivo).toFixed(2)))
+    bytes.push(...boldOn(), ...twoColumns('CAMBIO', Number(ticket.cambio || 0).toFixed(2)), ...boldOff())
+  }
+
+  bytes.push(...feed(1), ...center())
+  if (pieTicket) bytes.push(...line(pieTicket))
+  if (pedido?.codigo) bytes.push(...line(pedido.codigo))
+  bytes.push(...feed(3), ...cut())
+
+  // El pulso del cajon va DENTRO del mismo envio, detras del corte, y no en una
+  // segunda conexion: el plugin abre un socket nuevo por llamada, y varias
+  // termicas se comen la segunda orden si llega mientras todavia estan cortando.
+  if (abrirElCajon) bytes.push(ESC, 0x70, 0x00, 0x19, 0xFA)
+
+  return new Uint8Array(bytes)
+}
+
+/**
+ * COMANDA DE COCINA del TPV (lo que en Last es "Comandar").
+ *
+ * Se imprime ANTES de cobrar y sin grabar nada: en un mostrador con cocina, lo
+ * primero es que empiecen a hacer la comida; el dinero llega cuando el cliente
+ * paga. Por eso no lleva precios — a cocina no le importan y solo estorban.
+ */
+export function generarComandaTpv(lineas, restaurante, opciones = {}) {
+  const { nota = null, numero = null } = opciones
+  const bytes = []
+
+  bytes.push(...init(), ...codepage850(), ...center())
+  bytes.push(...boldOn(), ...doubleSize())
+  bytes.push(...line('** COCINA **'))
+  bytes.push(...normalSize(), ...boldOff())
+  if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
+  bytes.push(...line('MOSTRADOR' + (numero ? ' #' + numero : '')))
+  bytes.push(...line(formatDate()))
+  bytes.push(...separator('='), ...left())
+
+  for (const l of lineas) {
+    bytes.push(...boldOn(), ...tallSize())
+    bytes.push(...line(`${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
+    bytes.push(...normalSize(), ...boldOff())
+    if (l.extrasTexto) bytes.push(...line('   + ' + l.extrasTexto))
+    if (l.notas) bytes.push(...line('   ! ' + l.notas))
+  }
+
+  bytes.push(...separator('='))
+  if (nota) { bytes.push(...line('Nota: ' + nota), ...separator('-')) }
+  bytes.push(...feed(3), ...cut())
+  return new Uint8Array(bytes)
+}
+
+/**
+ * INFORME DEL DIA: lo que se ha vendido hoy por el mostrador.
+ *
+ * No es un arqueo de caja — eso exige saber con cuanto se abrio y cuanto hay
+ * fisicamente en el cajon, y eso todavia no existe. Esto es solo el resumen de
+ * lo vendido, que es la mitad util y se puede dar hoy.
+ */
+export function generarInformeDiaTpv(resumen, restaurante) {
+  const bytes = []
+  const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
+
+  bytes.push(...init(), ...codepage850(), ...center())
+  bytes.push(...boldOn(), ...wideSize())
+  bytes.push(...line('INFORME DEL DIA'))
+  bytes.push(...normalSize(), ...boldOff())
+  if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
+  bytes.push(...line(formatDate()))
+  bytes.push(...separator('='), ...left())
+
+  bytes.push(...twoColumns('Tickets', String(resumen.tickets || 0)))
+  bytes.push(...twoColumns('Articulos', String(resumen.articulos || 0)))
+  bytes.push(...separator('-'))
+  bytes.push(...twoColumns('Efectivo', eur(resumen.efectivo)))
+  bytes.push(...twoColumns('Datafono', eur(resumen.datafono)))
+  bytes.push(...separator('='))
+  bytes.push(...boldOn(), ...tallSize())
+  bytes.push(...twoColumns('TOTAL', eur(resumen.total)))
+  bytes.push(...normalSize(), ...boldOff())
+
+  if (resumen.base != null) {
+    bytes.push(...separator('-'))
+    bytes.push(...twoColumns('Base imponible', eur(resumen.base)))
+    bytes.push(...twoColumns('IGIC', eur(resumen.igic)))
+  }
+
+  if (resumen.primero && resumen.ultimo) {
+    bytes.push(...separator('-'))
+    bytes.push(...line('Del ticket ' + resumen.primero + ' al ' + resumen.ultimo))
+  }
+
+  bytes.push(...feed(1), ...center())
+  bytes.push(...line('No es un arqueo de caja'))
+  bytes.push(...feed(3), ...cut())
+  return new Uint8Array(bytes)
+}
+
+/**
+ * INFORME DE CAJA. Dos tipos, y la diferencia importa:
+ *
+ *   X — foto del turno SIN cerrar nada. Se puede sacar las veces que haga falta
+ *       (al cambiar de turno, a media tarde, cuando alguien quiera mirar).
+ *   Z — el CIERRE. Se saca una vez, cuando la caja se cierra, y ya lleva el
+ *       dinero contado y el descuadre.
+ *
+ * Los dos desglosan efectivo y tarjeta, porque solo el efectivo esta en el cajon.
+ */
+export function generarReporteCaja(d, restaurante, tipo = 'X') {
+  const bytes = []
+  const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
+  const esZ = tipo === 'Z'
+
+  bytes.push(...init(), ...codepage850(), ...center())
+  bytes.push(...boldOn(), ...doubleSize())
+  bytes.push(...line(esZ ? 'CIERRE Z' : 'INFORME X'))
+  bytes.push(...normalSize(), ...boldOff())
+  if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
+  if (esZ && restaurante?.nif) bytes.push(...line('NIF: ' + restaurante.nif))
+  bytes.push(...line(formatDate()))
+  if (d.abierta_at) bytes.push(...line('Caja abierta: ' + formatDate(d.abierta_at)))
+  bytes.push(...separator('='), ...left())
+
+  bytes.push(...boldOn(), ...line('VENTAS'), ...boldOff())
+  bytes.push(...twoColumns('Tickets', String(d.tickets || 0)))
+  bytes.push(...twoColumns('Efectivo', eur(d.ventas_efectivo)))
+  bytes.push(...twoColumns('Tarjeta', eur(d.ventas_datafono)))
+  bytes.push(...boldOn())
+  bytes.push(...twoColumns('Total vendido', eur(Number(d.ventas_efectivo || 0) + Number(d.ventas_datafono || 0))))
+  bytes.push(...boldOff())
+
+  if (d.base != null) {
+    bytes.push(...separator('-'))
+    bytes.push(...twoColumns('Base imponible', eur(d.base)))
+    bytes.push(...twoColumns('IGIC', eur(d.igic)))
+  }
+
+  bytes.push(...separator('-'))
+  bytes.push(...boldOn(), ...line('CAJON'), ...boldOff())
+  bytes.push(...twoColumns('Fondo inicial', eur(d.fondo_inicial)))
+  bytes.push(...twoColumns('+ Ventas en efectivo', eur(d.ventas_efectivo)))
+  bytes.push(...twoColumns('+ Entradas', eur(d.entradas)))
+  bytes.push(...twoColumns('- Salidas', eur(d.salidas)))
+  bytes.push(...separator('='))
+  bytes.push(...boldOn(), ...tallSize())
+  bytes.push(...twoColumns('DEBE HABER', eur(d.esperado)))
+  bytes.push(...normalSize(), ...boldOff())
+
+  if (esZ && d.contado_final != null) {
+    bytes.push(...twoColumns('Contado', eur(d.contado_final)))
+    bytes.push(...separator('='))
+    const desc = Number(d.descuadre || 0)
+    bytes.push(...boldOn(), ...tallSize())
+    bytes.push(...twoColumns(desc === 0 ? 'CUADRA' : (desc > 0 ? 'SOBRA' : 'FALTA'), eur(Math.abs(desc))))
+    bytes.push(...normalSize(), ...boldOff())
+  }
+
+  if (d.notas) { bytes.push(...separator('-'), ...line('Nota: ' + d.notas)) }
+
+  bytes.push(...feed(1), ...center())
+  bytes.push(...line(esZ ? 'Caja cerrada' : 'La caja sigue abierta'))
+  bytes.push(...feed(3), ...cut())
   return new Uint8Array(bytes)
 }

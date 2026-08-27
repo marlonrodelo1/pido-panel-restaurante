@@ -38,3 +38,6 @@ ios/App/App/GoogleService-Info.plist
 Keystorepath
 keystore.properties
 android/keystore.properties
+
+# Temporales de la CLI de Supabase
+supabase/.temp/

@@ -1684,7 +1684,9 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-text)', marginBottom: 2 }}>{item.nombre_producto}</div>
               {item.tamano && <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>Tamaño: {item.tamano}</div>}
-              {item.extras_texto && <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>Extras: {item.extras_texto}</div>}
+              {/* `extras_texto` NO existe en `pedido_items`: la columna es `extras text[]`.
+                  Mientras se leyo la que no era, los extras no se vieron nunca en pantalla. */}
+              {Array.isArray(item.extras) && item.extras.length > 0 && <div style={{ fontSize: 11, color: 'var(--c-muted)' }}>Extras: {item.extras.join(', ')}</div>}
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-primary)', flexShrink: 0 }}>{(item.precio_unitario * item.cantidad).toFixed(2)}€</div>
           </div>

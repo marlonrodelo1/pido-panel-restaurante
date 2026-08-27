@@ -3,7 +3,7 @@ import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
   Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star, PhoneCall,
-  TrendingUp, Video,
+  TrendingUp, Video, Calculator,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -33,11 +33,17 @@ import EliminarCuenta from './pages/EliminarCuenta'
 import Resenas from './pages/Resenas'
 import CrearEnvio from './pages/CrearEnvio'
 import Creadores from './pages/Creadores'
+import Tpv from './pages/Tpv'
 
 const isNative = Capacitor.isNativePlatform()
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall }
-const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer }
+// El TPV es de la APK: es donde estan la impresora y el cajon, y es el aparato
+// que se queda en el mostrador. En la web solo aparece en desarrollo, para poder
+// afinar la pantalla sin compilar un AAB por cada cambio de tipografia.
+const TPV_EN_ESTA_PLATAFORMA = isNative || import.meta.env.DEV
+
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator }
+const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer, tpv: Calculator }
 
 // Etiquetas legibles para breadcrumbs y títulos
 const SECCION_LABELS = {
@@ -58,6 +64,7 @@ const SECCION_LABELS = {
   'historial-movil': 'Historial',
   disponibilidad: 'Disponibilidad',
   impresora: 'Impresora',
+  tpv: 'TPV',
 }
 
 // Hook simple para detectar viewport desktop
@@ -80,7 +87,7 @@ function useIsDesktop(breakpoint = 1024) {
 const SECCIONES_DEEPLINK = ['liquidacion-pido']
 
 function AppContent() {
-  const { user, restaurante, restauranteNotFound, loading, logout } = useRest()
+  const { user, restaurante, restauranteNotFound, loading, logout, tpvActivo } = useRest()
   const [seccion, setSeccion] = useState(() => {
     if (isNative) return 'pedidos'
     try {
@@ -177,12 +184,16 @@ function AppContent() {
 
   const nav = isNative
     ? [
+        // El TPV va el primero: durante el servicio es la pantalla en la que
+        // se vive. Solo aparece si Pidoo ha activado el modulo.
+        ...(tpvActivo && TPV_EN_ESTA_PLATAFORMA ? [{ id: 'tpv', label: 'TPV' }] : []),
         { id: 'pedidos', label: 'Pedidos' },
         { id: 'historial-movil', label: 'Historial' },
         { id: 'disponibilidad', label: 'Carta' },
         { id: 'impresora', label: 'Config' },
       ]
     : [
+        ...(tpvActivo && TPV_EN_ESTA_PLATAFORMA ? [{ id: 'tpv', label: 'TPV' }] : []),
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
@@ -266,7 +277,9 @@ function NavItem({ Icon, label, active, badge, onClick }) {
 }
 
 function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onLogout }) {
+  const { tpvActivo } = useRest()
   const main = [
+    ...(tpvActivo && TPV_EN_ESTA_PLATAFORMA ? [{ id: 'tpv', Icon: Calculator, label: 'TPV' }] : []),
     { id: 'historial', Icon: ClipboardList, label: 'Historial' },
     { id: 'finanzas', Icon: TrendingUp, label: 'Finanzas' },
     { id: 'crear-envio', Icon: PhoneCall, label: 'Pedido telefónico' },
@@ -454,7 +467,7 @@ function Breadcrumbs({ seccion }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AppInner({ seccion, setSeccion, nav }) {
-  const { restaurante, user, logout } = useRest()
+  const { restaurante, user, logout, tpvActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sociosPendientes, setSociosPendientes] = useState(0)
@@ -565,6 +578,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'finanzas-riders' && <FinanzasRiders />}
       {seccion === 'liquidacion-pido' && <LiquidacionPido />}
       {seccion === 'creadores' && !isNative && <Creadores />}
+      {seccion === 'tpv' && <Tpv />}
       {seccion === 'ajustes' && <Ajustes />}
       {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
     </>

@@ -9,6 +9,7 @@ import { toast } from '../App'
 import AddressInput from '../components/AddressInput'
 import ZonasReparto from '../components/ZonasReparto'
 import SuscripcionCard from '../components/SuscripcionCard'
+import TpvConfigCard from '../components/TpvConfigCard'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -639,6 +640,12 @@ export default function Ajustes() {
           restaurantes de cuota fija (plan_cuota_mensual). */}
       <div className="pidoo-col-full">
         <SuscripcionCard />
+      </div>
+
+      {/* El TPV se maneja en la tablet, pero se configura aqui. Se pinta solo si
+          Pidoo le ha dado de alta el modulo al restaurante. */}
+      <div className="pidoo-col-full">
+        <TpvConfigCard />
       </div>
 
       {/* ── URL pública de la tienda (gratis para todos los restaurantes) ── */}

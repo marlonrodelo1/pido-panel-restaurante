@@ -5,7 +5,7 @@
  * - On Web: fallback using window.print() with formatted receipt
  */
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { generarComandaCocina, generarTicketCliente, textToBytes as escTextToBytes } from './escpos'
+import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
 
 // Capacitor plugin bridge (registered in Android native code)
 let ThermalPrinter = null
@@ -42,7 +42,7 @@ function uint8ToBase64(uint8Array) {
 /**
  * Send raw bytes to a specific printer IP (overrides config)
  */
-async function sendRawToIp(ip, port, data) {
+export async function sendRawToIp(ip, port, data) {
   if (!Capacitor.isNativePlatform() || !ThermalPrinter) return false
   try {
     const base64 = uint8ToBase64(data)
@@ -266,4 +266,98 @@ export function imprimirPedidoWeb(pedido, items, restaurante, tipo = 'ambos') {
   win.document.write(`<!DOCTYPE html><html><head><title>Ticket</title><style>@media print{@page{margin:0;size:80mm auto;}body{margin:0;}}</style></head><body>${body}</body></html>`)
   win.document.close()
   setTimeout(() => { win.print(); win.close() }, 300)
+}
+
+// ── MODULO TPV ───────────────────────────────────────────────────────────────
+
+/**
+ * Imprime el ticket de una venta de mostrador y, si toca, abre el cajon.
+ *
+ * REGLA: esto se llama DESPUES de que la venta este grabada en el servidor, y
+ * nunca se espera a que termine para dar la venta por buena. Que la impresora
+ * este apagada no puede costar una venta.
+ *
+ * Devuelve { ticket: bool, cajon: bool } para poder avisar de lo que fallo sin
+ * bloquear al que esta cobrando.
+ */
+export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opciones = {}) {
+  const { pieTicket = null, abrirCajonTambien = false } = opciones
+  const resultado = { ticket: false, cajon: false }
+  const config = getPrinterConfig()
+  if (!config.ip || !config.enabled) return resultado
+
+  try {
+    // El pulso del cajon viaja dentro del propio ticket: mas fiable que abrir una
+    // segunda conexion justo cuando la impresora esta cortando el papel.
+    const data = generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirCajonTambien)
+    resultado.ticket = await sendRawToIp(config.ip, config.port, data)
+    resultado.cajon = resultado.ticket && abrirCajonTambien
+  } catch (err) {
+    console.error('[TPV] Error imprimiendo el ticket:', err)
+  }
+
+  // Si el ticket no llego a salir, el cajon tampoco se abrio: se intenta suelto.
+  if (abrirCajonTambien && !resultado.ticket) {
+    resultado.cajon = await pulsoCajon()
+  }
+  return resultado
+}
+
+/**
+ * Abre el cajon portamonedas sin imprimir nada.
+ *
+ * Hace falta suelto (boton "Abrir cajon") para dar cambio, cuadrar caja o sacar
+ * dinero, no solo al cobrar.
+ */
+export async function pulsoCajon() {
+  const config = getPrinterConfig()
+  if (!config.ip || !config.enabled) return false
+  try {
+    return await sendRawToIp(config.ip, config.port, abrirCajon())
+  } catch (err) {
+    console.error('[TPV] Error abriendo el cajon:', err)
+    return false
+  }
+}
+
+/**
+ * Manda a cocina lo que hay en el mostrador, sin cobrar todavia.
+ */
+export async function imprimirComandaTpv(lineas, restaurante, opciones = {}) {
+  const config = getPrinterConfig()
+  if (!config.ip || !config.enabled) return false
+  try {
+    return await sendRawToIp(config.ip, config.port, generarComandaTpv(lineas, restaurante, opciones))
+  } catch (err) {
+    console.error('[TPV] Error imprimiendo la comanda:', err)
+    return false
+  }
+}
+
+/**
+ * Imprime el resumen de lo vendido hoy por el mostrador.
+ */
+export async function imprimirInformeDiaTpv(resumen, restaurante) {
+  const config = getPrinterConfig()
+  if (!config.ip || !config.enabled) return false
+  try {
+    return await sendRawToIp(config.ip, config.port, generarInformeDiaTpv(resumen, restaurante))
+  } catch (err) {
+    console.error('[TPV] Error imprimiendo el informe:', err)
+    return false
+  }
+}
+
+/**
+ * Imprime el informe X (turno en marcha) o el cierre Z de la caja.
+ */
+export async function imprimirReporteCaja(datos, restaurante, tipo = 'X') {
+  const config = getPrinterConfig()
+  if (!config.ip || !config.enabled) return false
+  try {
+    return await sendRawToIp(config.ip, config.port, generarReporteCaja(datos, restaurante, tipo))
+  } catch (err) {
+    console.error('[TPV] Error imprimiendo el informe de caja:', err)
+    return false
+  }
 }

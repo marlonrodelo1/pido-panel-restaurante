@@ -1,4 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+/* Space Grotesk: SOLO la usa el TPV. Se trae aqui porque los @import tienen que
+   ir al principio de la hoja y no valen dentro de un componente. El resto del
+   panel sigue en Plus Jakarta Sans, sin tocar nada. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 :root {
   /* === Bases (cream world) === */
