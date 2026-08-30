@@ -7,6 +7,11 @@ import EscandalloEditor from './EscandalloEditor'
 
 // La lista de escandallos, con semáforo.
 //
+// 🔴 AL TOCAR LOS ANCHOS DE COLUMNA: los botones de este panel son más anchos de lo que
+// parecen («Escribir receta» mide 144 px, no ~90) porque `ds.miniBtn` lleva peso 700 y
+// letter-spacing. Con `col()` no pueden encogerse, así que lo que sobra DESBORDA hacia
+// la izquierda y tapa el importe de al lado. Medir en el navegador, no estimar.
+//
 // Se enseñan TODOS los productos, no solo los que ya tienen receta: la gracia es ver
 // de un vistazo cuántos te faltan. Un plato sin receta no descuenta nada — no es un
 // error, es que todavía no lo has hecho, y así se dice.
@@ -97,13 +102,13 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
       )}
 
       <div style={{ ...ds.table, ...tablaScroll }}>
-        <div style={{ ...ds.tableHeader, ...filaMin(880) }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(950) }}>
           <div style={col(22, 'left')}></div>
           <div style={{ flex: 1, minWidth: 0 }}>Plato</div>
           <div style={col(88)}>Te cuesta</div>
           <div style={col(124)}>En barra</div>
           <div style={col(148)}>Por Pidoo</div>
-          <div style={col(112, 'right')}></div>
+          <div style={col(176, 'right')}></div>
         </div>
 
         {visibles.map(p => {
@@ -118,7 +123,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           const mBarra = tiene && pBarra != null ? pBarra - coste : null
           const mPidoo = tiene && pPidoo > 0 ? netoPidoo - coste : null
           return (
-            <div key={p.id} style={{ ...ds.tableRow, ...filaMin(880), background: colors.paper }}>
+            <div key={p.id} style={{ ...ds.tableRow, ...filaMin(950), background: colors.paper }}>
               <div style={{ ...col(22, 'left'), display: 'flex' }}>
                 {tiene
                   ? <CircleCheck size={16} color={colors.sage2} />
@@ -144,7 +149,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
               <Precio ancho={148} precio={pPidoo} margen={mPidoo}
                 nota={comision == null ? 'sin descontar comisión'
                   : comision > 0 ? `−${comision} % comisión` : 'sin comisión'} />
-              <div style={{ ...col(112), display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ ...col(176), display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={() => setAbierto(p)} style={{ ...ds.miniBtn, flexShrink: 0 }}>
                   {tiene ? 'Ver receta' : 'Escribir receta'}
                 </button>

@@ -35,6 +35,14 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
         )}
       </div>
 
+      {/* Rejilla, no bloques apilados: cada aviso ocupa lo que necesita y en un
+          monitor ancho van de dos en dos, en vez de una columna de cajas de 1080 px
+          con tres lineas dentro. `align-items: start` para que uno corto no se estire
+          a la altura del de al lado. */}
+      <div style={{
+        display: 'grid', gap: 14, marginTop: 14, alignItems: 'start',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))',
+      }}>
       {negativos.length > 0 && (
         <Bloque
           tono="danger"
@@ -67,7 +75,7 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
           titulo="Lo que el almacén no ha podido descontar"
           texto="Se cuadra solo con el recuento. Está aquí para que sepas de dónde viene la diferencia cuando cuentes, en vez de pensar que faltan cosas."
         >
-          <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: type.sm, color: colors.textDim, lineHeight: 1.7 }}>
+          <ul style={{ ...listaGrid, gridTemplateColumns: '1fr', paddingLeft: 18, listStyle: 'disc' }}>
             {c.pedidos_telefonicos > 0 && (
               <li>
                 <strong>{c.pedidos_telefonicos}</strong> pedido{c.pedidos_telefonicos === 1 ? '' : 's'} por
@@ -99,7 +107,7 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
           titulo={`Lo que se ha perdido en ${mes}: ${eur(mermas.total)}`}
           texto={`${mermas.apuntes} apunte${mermas.apuntes === 1 ? '' : 's'} de merma. Cada vez que se rompe, caduca o se tira algo se va sumando aquí solo: no hay que cerrar nada ni hacer cortes.`}
         >
-          <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: type.sm, color: colors.textDim, lineHeight: 1.7 }}>
+          <ul style={listaGrid}>
             {mermas.articulos.slice(0, 6).map(a => (
               <li key={a.nombre}>
                 <strong>{a.nombre}</strong> · {cantidad(a.cantidad, a.unidad)}
@@ -124,6 +132,7 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
           texto="Hasta que metas una factura de compra o le pongas el coste en un recuento, tus platos saldrán con un margen del 100 %, que no es real."
         />
       )}
+      </div>
     </div>
   )
 }
@@ -145,7 +154,7 @@ function Bloque({ tono, icono, titulo, texto, children }) {
   const bg = tono === 'danger' ? colors.dangerSoft : tono === 'warning' ? colors.warningSoft : colors.infoSoft
   return (
     <div style={{
-      marginTop: 14, padding: '14px 16px', borderRadius: radius.md,
+      padding: '14px 16px', borderRadius: radius.md,
       border: `1px solid ${bd}`, background: bg,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -158,9 +167,18 @@ function Bloque({ tono, icono, titulo, texto, children }) {
   )
 }
 
+// Si el bloque queda ancho (porque va solo en su fila), la lista se reparte en
+// columnas en vez de dejar medio bloque en blanco.
+const listaGrid = {
+  margin: '10px 0 0', padding: 0, listStyle: 'none',
+  display: 'grid', gap: '4px 18px',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+  fontSize: type.sm, color: colors.textDim, lineHeight: 1.6,
+}
+
 function Lista({ items }) {
   return (
-    <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: type.sm, color: colors.textDim, lineHeight: 1.7 }}>
+    <ul style={listaGrid}>
       {items.slice(0, 8).map((t, i) => <li key={i}>{t}</li>)}
       {items.length > 8 && <li style={{ color: colors.textMute }}>y {items.length - 8} más…</li>}
     </ul>
