@@ -109,6 +109,12 @@ export const recuentoLote = (lineas) =>
 export const arranqueDesdeCarta = (estId, productoIds) =>
   rpc('stock_arranque_desde_carta', { p_establecimiento_id: estId, p_producto_ids: productoIds })
 
+// Cierra el arranque SIN crear artículos, para las cartas que no tienen nada que se
+// venda tal cual (todo platos elaborados). Sin esto, esos restaurantes se quedaban
+// encerrados en el asistente: la pantalla del Almacén no se abre hasta que hay época cero.
+export const cerrarArranque = (estId) =>
+  rpc('stock_cerrar_arranque', { p_establecimiento_id: estId })
+
 export const contabilizarFactura = (facturaId) =>
   rpc('stock_contabilizar_factura', { p_factura_id: facturaId })
 

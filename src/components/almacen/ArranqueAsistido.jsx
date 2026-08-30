@@ -9,6 +9,11 @@
 //      crea el artículo y su receta 1:1). Cero escritura.
 //   3. Contar es opcional: "lo cuento mañana" también cierra el arranque, porque un
 //      arranque a medias es infinitamente mejor que ninguno.
+//   4. Y hay SALIDA. Hay cartas sin nada que se venda tal cual —Duende Burger son 77
+//      productos entre hamburguesas, bocadillos, arepas y croissants, ni una bebida—.
+//      Sin salida, esos restaurantes se quedaban encerrados aquí, porque la pantalla
+//      del Almacén no se abre hasta que hay época cero. Ellos montan su almacén a mano
+//      (pan, carne, queso) y escandallan.
 //
 // Mientras `stock_config.arranque_at` sea null esto ocupa la pantalla entera: enseñar
 // un inventario a cero antes de contar hace que el módulo parezca roto.
@@ -17,7 +22,7 @@ import { Boxes, Check, Search, ArrowRight, ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { arranqueDesdeCarta, recuentoLote } from '../../lib/stock'
+import { arranqueDesdeCarta, recuentoLote, cerrarArranque } from '../../lib/stock'
 
 // Lo que suena a bebida: son los que mejor se cuentan (están en la cámara, en cajas,
 // y no hay que abrir nada para saber cuántos quedan). Por eso se sugieren primero.
@@ -34,6 +39,7 @@ export default function ArranqueAsistido({ estId, onListo }) {
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [creados, setCreados] = useState([])
+  const [sinBebidas, setSinBebidas] = useState(false)
 
   useEffect(() => {
     if (!estId) return
@@ -46,6 +52,7 @@ export default function ArranqueAsistido({ estId, onListo }) {
       setProds(p.data || [])
       const sugerida = cs.find(x => SUENA_A_BEBIDA.test(x.nombre || ''))
       if (sugerida) setCatsElegidas([sugerida.id])
+      else setSinBebidas(true)
       setCargando(false)
     })
   }, [estId])
@@ -107,6 +114,22 @@ export default function ArranqueAsistido({ estId, onListo }) {
     }
   }
 
+  // Salida para las cartas de solo platos elaborados: cierra el arranque sin crear
+  // nada y deja al dueño en el Almacén, listo para dar de alta sus ingredientes.
+  async function montarloAMano() {
+    setGuardando(true)
+    try {
+      await cerrarArranque(estId)
+      const { data: cfg } = await supabase.from('stock_config')
+        .select('*').eq('establecimiento_id', estId).maybeSingle()
+      toast('Listo. Da de alta tus ingredientes en Artículos.', 'success')
+      onListo?.(cfg)
+    } catch (e) {
+      toast(e.message, 'error')
+      setGuardando(false)
+    }
+  }
+
   if (cargando) return <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Cargando tu carta…</div>
 
   return (
@@ -123,11 +146,13 @@ export default function ArranqueAsistido({ estId, onListo }) {
 
       {paso === 1 && (
         <div style={{ ...ds.card, marginTop: 16 }}>
-          <h2 style={ds.h2}>Empieza por las bebidas</h2>
+          <h2 style={ds.h2}>
+            {sinBebidas ? '¿Vendes algo tal cual?' : 'Empieza por las bebidas'}
+          </h2>
           <p style={{ ...ds.dim, lineHeight: 1.6, marginTop: 0, marginBottom: 16 }}>
-            No intentes meter la carta entera hoy. Con las bebidas ya vas a ver si te
-            cuadra la caja, y son las que se cuentan solas: están en cajas y no hay que
-            abrir nada para saber cuántas quedan.
+            {sinBebidas
+              ? 'Hay cosas que entran y salen enteras: una lata, un agua, una tarrina de helado. Si tienes algo así, elige su categoría y te lo damos de alta solo. Si toda tu carta es cocina, salta este paso y móntalo a tu manera.'
+              : 'No intentes meter la carta entera hoy. Con las bebidas ya vas a ver si te cuadra la caja, y son las que se cuentan solas: están en cajas y no hay que abrir nada para saber cuántas quedan.'}
           </p>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -153,10 +178,24 @@ export default function ArranqueAsistido({ estId, onListo }) {
             })}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-            <button onClick={irAPaso2} style={ds.primaryBtn}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            marginTop: 20, gap: 12, flexWrap: 'wrap',
+          }}>
+            <button onClick={montarloAMano} disabled={guardando} style={ds.secondaryBtn}>
+              En mi carta no hay nada así
+            </button>
+            <button onClick={irAPaso2} disabled={guardando} style={{
+              ...ds.primaryBtn,
+              opacity: catsElegidas.length ? 1 : 0.5,
+            }}>
               Siguiente <ArrowRight size={15} />
             </button>
+          </div>
+          <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.5 }}>
+            Si toda tu carta se elabora, lo tuyo es dar de alta los ingredientes (pan,
+            carne, queso) y escribir la receta de cada plato. Eso se hace en Artículos y
+            Escandallos, con calma.
           </div>
         </div>
       )}
