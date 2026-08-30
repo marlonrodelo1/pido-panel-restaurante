@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { colors, ds, type } from '../../lib/uiStyles'
+import { colors, ds, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { cargarMovimientos, cantidad, eurCoste, TIPOS_MOV } from '../../lib/stock'
 
 // El libro de movimientos. SOLO LECTURA, sin excepción: en base de datos es
@@ -46,14 +46,14 @@ export default function MovimientosTab({ estId, articulos }) {
 
       {error && <div style={{ ...ds.muted, color: colors.danger }}>{error}</div>}
 
-      <div style={ds.table}>
-        <div style={ds.tableHeader}>
-          <div style={{ width: 120 }}>Cuándo</div>
-          <div style={{ flex: 1 }}>Artículo</div>
-          <div style={{ width: 110 }}>Tipo</div>
-          <div style={{ width: 110, textAlign: 'right' }}>Cantidad</div>
-          <div style={{ width: 100, textAlign: 'right' }}>Coste ud.</div>
-          <div style={{ flex: 1 }}>Motivo</div>
+      <div style={{ ...ds.table, ...tablaScroll }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(820) }}>
+          <div style={col(104, 'left')}>Cuándo</div>
+          <div style={{ flex: 1.4, minWidth: 0 }}>Artículo</div>
+          <div style={col(96, 'left')}>Tipo</div>
+          <div style={col(104)}>Cantidad</div>
+          <div style={col(88)}>Coste ud.</div>
+          <div style={{ flex: 1, minWidth: 0 }}>Motivo</div>
         </div>
 
         {cargando && <div style={{ ...ds.muted, padding: 24, textAlign: 'center' }}>Cargando…</div>}
@@ -68,25 +68,25 @@ export default function MovimientosTab({ estId, articulos }) {
           const u = m.stock_articulos?.unidad || 'ud'
           const entra = Number(m.cantidad) > 0
           return (
-            <div key={m.id} style={ds.tableRow}>
-              <div style={{ width: 120, color: colors.textMute, fontSize: type.xs }}>
+            <div key={m.id} style={{ ...ds.tableRow, ...filaMin(820) }}>
+              <div style={{ ...col(104, 'left'), color: colors.textMute, fontSize: type.xs }}>
                 {new Date(m.created_at).toLocaleString('es-ES', {
                   day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
                 })}
               </div>
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ flex: 1.4, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {m.stock_articulos?.nombre || '—'}
               </div>
-              <div style={{ width: 110 }}>
+              <div style={col(96, 'left')}>
                 <span style={{ ...ds.badge }}>{TIPOS_MOV[m.tipo]?.label || m.tipo}</span>
               </div>
               <div style={{
-                width: 110, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                ...col(104),
                 fontWeight: 700, color: entra ? colors.sage2 : colors.danger,
               }}>
                 {entra ? '+' : '−'}{cantidad(Math.abs(Number(m.cantidad)), u)}
               </div>
-              <div style={{ width: 100, textAlign: 'right', color: colors.textMute, fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ ...col(88), color: colors.textMute }}>
                 {Number(m.coste_unitario) > 0 ? eurCoste(m.coste_unitario) : '—'}
               </div>
               <div style={{ flex: 1, minWidth: 0, color: colors.textMute, fontSize: type.xs,

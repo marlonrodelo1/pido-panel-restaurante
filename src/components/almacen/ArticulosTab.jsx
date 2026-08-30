@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Search, Plus, Trash2, ClipboardCheck } from 'lucide-react'
-import { colors, ds, radius, type } from '../../lib/uiStyles'
+import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast } from '../../App'
 import { cantidad, eur, eurCoste, apuntarMerma, recuento, MOTIVOS_MERMA } from '../../lib/stock'
 import ArticuloModal from './ArticuloModal'
@@ -40,13 +40,13 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
         </button>
       </div>
 
-      <div style={ds.table}>
-        <div style={ds.tableHeader}>
-          <div style={{ flex: 1 }}>Artículo</div>
-          <div style={{ width: 110, textAlign: 'right' }}>Quedan</div>
-          <div style={{ width: 100, textAlign: 'right' }}>Coste ud.</div>
-          <div style={{ width: 100, textAlign: 'right' }}>Valor</div>
-          <div style={{ width: 170 }}></div>
+      <div style={{ ...ds.table, ...tablaScroll }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(740) }}>
+          <div style={{ flex: 1, minWidth: 0 }}>Artículo</div>
+          <div style={col(96)}>Quedan</div>
+          <div style={col(96)}>Coste ud.</div>
+          <div style={col(96)}>Valor</div>
+          <div style={col(184, 'right')}></div>
         </div>
 
         {!visibles.length && (
@@ -63,40 +63,48 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           const bajo = !negativo && Number(a.minimo) > 0 && ex <= Number(a.minimo)
           return (
             <div key={a.id} style={{
-              ...ds.tableRow,
+              ...ds.tableRow, ...filaMin(740),
               background: negativo ? colors.dangerSoft : bajo ? colors.warningSoft : undefined,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <button onClick={() => setEditando(a)} style={{
                   background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                   fontFamily: 'inherit', fontSize: type.sm, fontWeight: 600,
-                  color: colors.text, textAlign: 'left',
+                  color: colors.text, textAlign: 'left', display: 'block',
+                  maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}>
                   {a.nombre}
                 </button>
-                <div style={{ ...ds.muted, marginTop: 1 }}>
-                  {a.familia || 'Sin familia'}
-                  {!a.activo && ' · archivado'}
-                  {!a.controla_agotado && ' · no agota la carta'}
-                </div>
+                {/* Solo se dice lo que se sale de lo normal. Repetir "Sin familia" en
+                    cada fila era ruido y ademas hacia la fila el doble de alta. */}
+                {(a.familia || !a.activo || !a.controla_agotado) && (
+                  <div style={{ ...ds.muted, marginTop: 1 }}>
+                    {[a.familia, !a.activo && 'archivado',
+                      !a.controla_agotado && 'no agota la carta']
+                      .filter(Boolean).join(' · ')}
+                  </div>
+                )}
               </div>
               <div style={{
-                width: 110, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                ...col(96),
                 fontWeight: 700, color: negativo ? colors.danger : colors.text,
               }}>
                 {cantidad(ex, a.unidad)}
               </div>
-              <div style={{ width: 100, textAlign: 'right', color: colors.textMute, fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ ...col(96), color: colors.textMute }}>
                 {Number(a.coste_medio) > 0 ? eurCoste(a.coste_medio) : '—'}
               </div>
-              <div style={{ width: 100, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ ...col(96), fontWeight: 600 }}>
                 {eur(ex * Number(a.coste_medio))}
               </div>
-              <div style={{ width: 170, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                <button onClick={() => setAccion({ articulo: a, tipo: 'merma' })} style={ds.miniBtn}>
+              <div style={{ ...col(184), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button onClick={() => setAccion({ articulo: a, tipo: 'merma' })}
+                  style={{ ...ds.miniBtn, flexShrink: 0 }} title="Apuntar una merma">
                   <Trash2 size={12} /> Merma
                 </button>
-                <button onClick={() => setAccion({ articulo: a, tipo: 'recuento' })} style={ds.miniBtn}>
+                <button onClick={() => setAccion({ articulo: a, tipo: 'recuento' })}
+                  style={{ ...ds.miniBtn, flexShrink: 0 }} title="Contar lo que hay de verdad">
                   <ClipboardCheck size={12} /> Contar
                 </button>
               </div>

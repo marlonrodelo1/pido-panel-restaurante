@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, FileText, CircleCheck, Circle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { colors, ds, radius, type } from '../../lib/uiStyles'
+import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { eur } from '../../lib/stock'
 import FacturaEditor from './FacturaEditor'
 
@@ -64,28 +64,28 @@ export default function ComprasTab({ estId, articulos, onCambio }) {
         </div>
       )}
 
-      <div style={ds.table}>
-        <div style={ds.tableHeader}>
-          <div style={{ width: 26 }}></div>
-          <div style={{ width: 100 }}>Fecha</div>
-          <div style={{ flex: 1 }}>Proveedor</div>
-          <div style={{ width: 120 }}>Número</div>
-          <div style={{ width: 90, textAlign: 'right' }}>Líneas</div>
-          <div style={{ width: 110, textAlign: 'right' }}>Total</div>
+      <div style={{ ...ds.table, ...tablaScroll }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(700) }}>
+          <div style={col(22, 'left')}></div>
+          <div style={col(88, 'left')}>Fecha</div>
+          <div style={{ flex: 1, minWidth: 0 }}>Proveedor</div>
+          <div style={col(104, 'left')}>Número</div>
+          <div style={col(72)}>Líneas</div>
+          <div style={col(96)}>Total</div>
         </div>
 
         {facturas.map(f => (
           <button key={f.id} onClick={() => setAbierta(f)} style={{
-            ...ds.tableRow, width: '100%', textAlign: 'left', cursor: 'pointer',
+            ...ds.tableRow, ...filaMin(700), width: '100%', textAlign: 'left', cursor: 'pointer',
             background: colors.paper, fontFamily: 'inherit',
             borderLeft: 'none', borderRight: 'none', borderTop: 'none',
           }}>
-            <div style={{ width: 26, display: 'flex' }}>
+            <div style={{ ...col(22, 'left'), display: 'flex' }}>
               {f.contabilizada
                 ? <CircleCheck size={16} color={colors.sage2} />
                 : <Circle size={16} color={colors.warning} />}
             </div>
-            <div style={{ width: 100, color: colors.textMute }}>
+            <div style={{ ...col(88, 'left'), color: colors.textMute }}>
               {new Date(f.fecha + 'T00:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })}
             </div>
             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, color: colors.text }}>
@@ -94,11 +94,12 @@ export default function ComprasTab({ estId, articulos, onCambio }) {
                 {f.contabilizada ? 'Contabilizada' : 'Borrador · no ha entrado en el almacén'}
               </div>
             </div>
-            <div style={{ width: 120, color: colors.textMute }}>{f.numero || '—'}</div>
-            <div style={{ width: 90, textAlign: 'right', color: colors.textMute }}>
+            <div style={{ ...col(104, 'left'), color: colors.textMute,
+              overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.numero || '—'}</div>
+            <div style={{ ...col(72), color: colors.textMute }}>
               {f.stock_factura_lineas?.length || 0}
             </div>
-            <div style={{ width: 110, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ ...col(96), fontWeight: 700 }}>
               {eur(f.total)}
             </div>
           </button>

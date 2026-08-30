@@ -63,6 +63,9 @@ export default function ArranqueAsistido({ estId, onListo }) {
     ? candidatos.filter(p => p.nombre.toLowerCase().includes(busca.trim().toLowerCase()))
     : candidatos
   const nMarcados = candidatos.filter(p => marcados[p.id]).length
+  // Una categoría vacía no puede aportar nada al almacén: fuera de la lista.
+  const conProductos = cats.filter(c => porCat(c.id).length > 0)
+  const nElegidos = candidatos.length
 
   // Al entrar en el paso 2, todo marcado: lo normal es que una categoría entera se
   // venda tal cual. Desmarcar 3 es menos trabajo que marcar 21.
@@ -151,51 +154,87 @@ export default function ArranqueAsistido({ estId, onListo }) {
           </h2>
           <p style={{ ...ds.dim, lineHeight: 1.6, marginTop: 0, marginBottom: 16 }}>
             {sinBebidas
-              ? 'Hay cosas que entran y salen enteras: una lata, un agua, una tarrina de helado. Si tienes algo así, elige su categoría y te lo damos de alta solo. Si toda tu carta es cocina, salta este paso y móntalo a tu manera.'
+              ? 'Hay cosas que entran y salen enteras: una lata, un agua, una tarrina de helado. Si tienes algo así, elige su categoría y te la damos de alta sola. Si toda tu carta es cocina, salta este paso.'
               : 'No intentes meter la carta entera hoy. Con las bebidas ya vas a ver si te cuadra la caja, y son las que se cuentan solas: están en cajas y no hay que abrir nada para saber cuántas quedan.'}
           </p>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {cats.map(c => {
+          {/* Lista, no chips. Con 16 categorías las pildoras se descuadran en cinco
+              filas con huecos: en columna todo queda alineado, el contador se lee de
+              un vistazo y es la misma forma que el paso 2. */}
+          <div style={{
+            border: `1px solid ${colors.border}`, borderRadius: radius.sm,
+            maxHeight: 300, overflowY: 'auto',
+          }}>
+            {conProductos.map((c, i) => {
               const on = catsElegidas.includes(c.id)
               const n = porCat(c.id).length
+              const sugerida = SUENA_A_BEBIDA.test(c.nombre || '')
               return (
-                <button key={c.id} disabled={!n}
-                  onClick={() => setCatsElegidas(prev =>
-                    on ? prev.filter(x => x !== c.id) : [...prev, c.id])}
-                  style={{
-                    ...ds.filterBtn, height: 36,
-                    background: on ? colors.primary : colors.paper,
-                    color: on ? colors.cream : colors.textDim,
-                    borderColor: on ? colors.primary : colors.border,
-                    fontWeight: on ? 700 : 600,
-                    opacity: n ? 1 : 0.4, cursor: n ? 'pointer' : 'not-allowed',
+                <label key={c.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px',
+                  cursor: 'pointer',
+                  borderTop: i === 0 ? 'none' : `1px solid ${colors.border}`,
+                  background: on ? colors.primarySoft : colors.paper,
+                }}>
+                  <input type="checkbox" checked={on}
+                    onChange={() => setCatsElegidas(prev =>
+                      on ? prev.filter(x => x !== c.id) : [...prev, c.id])} />
+                  <span style={{
+                    flex: 1, minWidth: 0, fontSize: type.sm,
+                    fontWeight: on ? 700 : 500, color: colors.text,
                   }}>
-                  {on && <Check size={13} />}
-                  {c.nombre} <span style={{ opacity: 0.7 }}>({n})</span>
-                </button>
+                    {c.nombre}
+                  </span>
+                  {sugerida && !on && (
+                    <span style={{
+                      fontSize: type.xxs, fontWeight: 700, color: colors.sage2,
+                      background: colors.sageSoft, borderRadius: radius.full,
+                      padding: '2px 9px', whiteSpace: 'nowrap',
+                    }}>
+                      se cuentan solas
+                    </span>
+                  )}
+                  <span style={{
+                    fontSize: type.xs, color: colors.textMute, minWidth: 78,
+                    textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    {n} producto{n === 1 ? '' : 's'}
+                  </span>
+                </label>
               )
             })}
           </div>
 
           <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            marginTop: 20, gap: 12, flexWrap: 'wrap',
+            display: 'flex', alignItems: 'center', gap: 12,
+            marginTop: 18, flexWrap: 'wrap',
           }}>
-            <button onClick={montarloAMano} disabled={guardando} style={ds.secondaryBtn}>
-              En mi carta no hay nada así
-            </button>
-            <button onClick={irAPaso2} disabled={guardando} style={{
+            <div style={{ ...ds.muted, flex: 1, minWidth: 150 }}>
+              {nElegidos
+                ? `${catsElegidas.length} categoría${catsElegidas.length === 1 ? '' : 's'} · ${nElegidos} producto${nElegidos === 1 ? '' : 's'}`
+                : 'Elige al menos una categoría'}
+            </div>
+            <button onClick={irAPaso2} disabled={guardando || !catsElegidas.length} style={{
               ...ds.primaryBtn,
-              opacity: catsElegidas.length ? 1 : 0.5,
+              opacity: (guardando || !catsElegidas.length) ? 0.5 : 1,
+              cursor: (guardando || !catsElegidas.length) ? 'not-allowed' : 'pointer',
             }}>
               Siguiente <ArrowRight size={15} />
             </button>
           </div>
-          <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.5 }}>
-            Si toda tu carta se elabora, lo tuyo es dar de alta los ingredientes (pan,
-            carne, queso) y escribir la receta de cada plato. Eso se hace en Artículos y
-            Escandallos, con calma.
+
+          {/* La salida va abajo, discreta y PEGADA a su explicación: es para una
+              minoría de cartas y no debe competir con el camino normal. */}
+          <div style={{
+            marginTop: 16, paddingTop: 14, borderTop: `1px solid ${colors.border}`,
+          }}>
+            <div style={{ ...ds.muted, lineHeight: 1.6, marginBottom: 10 }}>
+              ¿Toda tu carta se elabora? Entonces lo tuyo es dar de alta los ingredientes
+              (pan, carne, queso) y escribir la receta de cada plato.
+            </div>
+            <button onClick={montarloAMano} disabled={guardando} style={ds.secondaryBtn}>
+              Montar el almacén a mi manera
+            </button>
           </div>
         </div>
       )}

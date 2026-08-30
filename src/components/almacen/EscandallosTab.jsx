@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Search, CircleCheck, Circle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { colors, ds, radius, type } from '../../lib/uiStyles'
+import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { eur } from '../../lib/stock'
 import EscandalloEditor from './EscandalloEditor'
 
@@ -91,13 +91,13 @@ export default function EscandallosTab({ estId, articulos }) {
         </div>
       )}
 
-      <div style={ds.table}>
-        <div style={ds.tableHeader}>
-          <div style={{ width: 26 }}></div>
-          <div style={{ flex: 1 }}>Plato</div>
-          <div style={{ width: 110, textAlign: 'right' }}>Te cuesta</div>
-          <div style={{ width: 110, textAlign: 'right' }}>Lo vendes a</div>
-          <div style={{ width: 110, textAlign: 'right' }}>Te queda</div>
+      <div style={{ ...ds.table, ...tablaScroll }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(700) }}>
+          <div style={col(22, 'left')}></div>
+          <div style={{ flex: 1, minWidth: 0 }}>Plato</div>
+          <div style={col(92)}>Te cuesta</div>
+          <div style={col(92)}>Lo vendes a</div>
+          <div style={col(128)}>Te queda</div>
         </div>
 
         {visibles.map(p => {
@@ -108,30 +108,31 @@ export default function EscandallosTab({ estId, articulos }) {
           const pct = tiene && precio > 0 ? Math.round(1000 * margen / precio) / 10 : null
           return (
             <button key={p.id} onClick={() => setAbierto(p)} style={{
-              ...ds.tableRow, width: '100%', textAlign: 'left',
+              ...ds.tableRow, ...filaMin(700), width: '100%', textAlign: 'left',
               background: colors.paper, cursor: 'pointer',
               fontFamily: 'inherit', borderLeft: 'none', borderRight: 'none', borderTop: 'none',
             }}>
-              <div style={{ width: 26, display: 'flex' }}>
+              <div style={{ ...col(22, 'left'), display: 'flex' }}>
                 {tiene
                   ? <CircleCheck size={16} color={colors.sage2} />
                   : <Circle size={16} color={colors.borderStrong} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, color: colors.text }}>{p.nombre}</div>
+                <div style={{ fontWeight: 600, color: colors.text, overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.nombre}</div>
                 <div style={{ ...ds.muted, marginTop: 1 }}>
                   {p.categorias?.nombre || 'Sin categoría'}
                   {tiene ? ` · ${conReceta[p.id]} ingrediente${conReceta[p.id] === 1 ? '' : 's'}` : ' · sin receta'}
                 </div>
               </div>
-              <div style={{ width: 110, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: colors.textMute }}>
+              <div style={{ ...col(92), color: colors.textMute }}>
                 {tiene ? eur(coste) : '—'}
               </div>
-              <div style={{ width: 110, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+              <div style={col(92)}>
                 {eur(precio)}
               </div>
               <div style={{
-                width: 110, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700,
+                ...col(128), fontWeight: 700,
                 color: margen === null ? colors.textMute : margen < 0 ? colors.danger : colors.sage2,
               }}>
                 {margen === null ? '—' : `${eur(margen)}${pct !== null ? ` · ${pct} %` : ''}`}

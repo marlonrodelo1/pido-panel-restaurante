@@ -96,6 +96,27 @@ export const type = {
 // === Radios ===
 export const radius = { sm: 8, md: 12, lg: 16, xl: 20, full: 999 }
 
+// Columna de ancho fijo dentro de una fila flex.
+//
+// `flexShrink: 0` NO es decorativo: sin el, flex comprime las columnas numericas
+// cuando algo mas pide sitio y los importes salen CORTADOS a media cifra ("7,3"
+// en vez de "7,35"). Un inventario que enseña importes truncados no sirve.
+// Tabla ancha en pantalla estrecha.
+//
+// Con las columnas ya sin encoger (ver `col`), una fila que no cabe DESBORDA, y con el
+// `overflow: hidden` de la tarjeta los botones acaban montados encima del importe.
+// Antes de aplastar las cifras hasta hacerlas ilegibles, que la tabla se desplace.
+//
+// `tablaScroll` va en el contenedor y `filaMin` en la cabecera Y en cada fila: si solo
+// se pone en el contenedor, las filas se encogen igual y no se arregla nada.
+export const tablaScroll = { overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch' }
+export const filaMin = (min = 700) => ({ minWidth: min })
+
+export const col = (w, alinear = 'right') => ({
+  width: w, flexShrink: 0, textAlign: alinear,
+  whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+})
+
 export const ds = {
   // Surfaces
   card: {
