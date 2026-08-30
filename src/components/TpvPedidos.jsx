@@ -77,6 +77,19 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
     return () => { supabase.removeChannel(canal); clearInterval(t) }
   }, [establecimientoId, cargar])
 
+  // Cuantos hay EN MARCHA de cada tipo. Va en el propio filtro para que se vea sin
+  // tener que entrar en cada uno: lo que interesa de un vistazo es si hay algo
+  // esperando en reparto, no cuantos se cerraron hoy.
+  const activos = pedidos.filter((p) => EN_CURSO.includes(p.estado))
+  const cuenta = {
+    todos: activos.length,
+    reparto: activos.filter((p) => tipoDe(p) === 'reparto').length,
+    recogida: activos.filter((p) => tipoDe(p) === 'recogida').length,
+    mostrador: activos.filter((p) => tipoDe(p) === 'mostrador').length,
+  }
+  const sinAceptar = (tipo) => activos.filter(
+    (p) => p.estado === 'nuevo' && (tipo === 'todos' || tipoDe(p) === tipo)).length
+
   const delFiltro = pedidos.filter((p) => filtro === 'todos' || tipoDe(p) === filtro)
   const enMarcha = delFiltro.filter((p) => EN_CURSO.includes(p.estado))
   const cerrados = delFiltro.filter((p) => CERRADOS.includes(p.estado))
@@ -94,10 +107,16 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
         display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap',
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Filtro activo={filtro === 'todos'} onClick={() => setFiltro('todos')} texto="Todos" />
-        <Filtro activo={filtro === 'reparto'} onClick={() => setFiltro('reparto')} texto="Reparto" Icono={Bike} />
-        <Filtro activo={filtro === 'recogida'} onClick={() => setFiltro('recogida')} texto="Recogida" Icono={ShoppingBag} />
-        <Filtro activo={filtro === 'mostrador'} onClick={() => setFiltro('mostrador')} texto="Mostrador" Icono={Store} />
+        {[
+          { id: 'todos', texto: 'Todos' },
+          { id: 'reparto', texto: 'Reparto', Icono: Bike },
+          { id: 'recogida', texto: 'Recogida', Icono: ShoppingBag },
+          { id: 'mostrador', texto: 'Mostrador', Icono: Store },
+        ].map((f) => (
+          <Filtro key={f.id} activo={filtro === f.id} onClick={() => setFiltro(f.id)}
+            texto={f.texto} Icono={f.Icono}
+            cuantos={cuenta[f.id]} urgentes={sinAceptar(f.id)} />
+        ))}
         <button onClick={() => setVista(vista === 'columnas' ? 'lista' : 'columnas')}
           style={{ ...btnSecundario, height: 40, borderRadius: RADIO, padding: '0 12px' }}
           aria-label={vista === 'columnas' ? 'Ver en listado' : 'Ver en columnas'}>
@@ -226,7 +245,7 @@ function Tarjeta({ p, onClick }) {
 
 const hora = (iso) => new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
 
-function Filtro({ activo, onClick, texto, Icono }) {
+function Filtro({ activo, onClick, texto, Icono, cuantos = 0, urgentes = 0 }) {
   return (
     <button onClick={onClick} style={{
       height: 40, padding: '0 14px', borderRadius: RADIO, cursor: 'pointer', fontFamily: 'inherit',
@@ -237,6 +256,18 @@ function Filtro({ activo, onClick, texto, Icono }) {
       display: 'flex', alignItems: 'center', gap: 6,
     }}>
       {Icono && <Icono size={15} />}{texto}
+      {cuantos > 0 && (
+        // El que tiene pedidos SIN ACEPTAR se pinta en naranja: no es lo mismo tener
+        // tres en el horno que tres esperando a que alguien les diga que si. Sobre el
+        // naranja el numero va OSCURO, que es la regla de contraste del tema.
+        <span style={{
+          minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+          background: urgentes > 0 ? T.accent : activo ? 'rgba(0,0,0,0.22)' : T.border,
+          color: urgentes > 0 ? T.bg : activo ? T.onAccent : T.muted,
+        }}>{cuantos}</span>
+      )}
     </button>
   )
 }

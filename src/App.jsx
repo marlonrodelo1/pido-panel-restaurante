@@ -614,9 +614,11 @@ function AppInner({ seccion, setSeccion, nav }) {
   // Para poder verlo en la vista previa sin compilar un AAB: `?tpvapp=1` en la URL.
   // Solo funciona en `npm run dev`; en la web de produccion `import.meta.env.DEV` es
   // false, asi que panel.pidoo.es nunca entra en esta shell.
+  // El fondo OSCURO del TPV, no el crema del panel: aqui el TPV ocupa la pantalla
+  // entera y con el `shell` de siempre quedaba una franja clara debajo de la caja.
   if ((isNative || FORZAR_TPV_APP) && tpvActivo) {
     return (
-      <div style={{ ...shell, minHeight: '100vh' }}>
+      <div style={{ ...shell, minHeight: '100vh', background: '#12100E' }}>
         <style>{css}</style>
         <Tpv modoApp />
       </div>

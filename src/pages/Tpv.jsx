@@ -31,6 +31,7 @@ import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
   Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
+  ShoppingBag,
   Sandwich, Croissant, Beef, Beer, CupSoda, Coffee, Pizza, Salad, CakeSlice, IceCream,
   Fish, Drumstick, Soup, Cookie, Utensils, Wine, Ham, Popcorn, Carrot, EggFried,
 } from 'lucide-react'
@@ -47,6 +48,21 @@ import ConfigImpresora from './ConfigImpresora'
 import CrearEnvio from './CrearEnvio'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+
+// Un TELEFONO no es una tablet estrecha. En 375 px las dos columnas del mostrador se
+// apilan y el ticket queda debajo de toda la carta: para cobrar habria que bajar 77
+// productos. El corte esta en 760 px, que deja fuera al iPad en vertical (768).
+function useEsMovil() {
+  const [movil, setMovil] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 760px)')
+    const on = (e) => setMovil(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return movil
+}
 
 
 
@@ -120,14 +136,32 @@ export default function Tpv({ modoApp = false }) {
   const [ultimaVenta, setUltimaVenta] = useState(null)
   const [impresora, setImpresora] = useState({ configurada: false, viva: null })
 
-  // Un pedido nuevo abre la capa de Pedidos por si sola: la alarma ya suena, pero
-  // hay que llevar al camarero a donde se acepta. El mostrador se queda detras.
-  const nuevosPrev = useRef(0)
+  // Un pedido nuevo NO se lleva la pantalla por delante: si estas cobrando a alguien
+  // en la barra, saltar a Pedidos solo es quitarle el mostrador de las manos al
+  // camarero. Sale un aviso encima de todo, imposible de no ver, y se entra cuando
+  // se puede. `avisoFuera` guarda el ultimo pedido que se aparto: si entra OTRO
+  // despues, el aviso vuelve a salir.
+  const esMovil = useEsMovil()
+  // En el telefono la venta se ve en una hoja a pantalla completa. Empieza cerrada:
+  // lo que se toca cien veces al dia es la carta, no el ticket.
+  const [hojaVenta, setHojaVenta] = useState(false)
+
+  const [avisoFuera, setAvisoFuera] = useState(null)
+  const pedidoAvisado = pedidosNuevos?.[0] || null
+  const hayAviso = modoApp && pedidoAvisado && avisoFuera !== pedidoAvisado.id && pantalla !== 'pedidos'
+
+  // Volver a Pedidos desde donde sea. `TpvPedidos` y `CrearEnvio` piden ir alli con
+  // este evento; en la shell normal lo recoge `App.jsx`, pero aqui NO hay secciones
+  // y sin esto tocar una tarjeta de pedido no haria absolutamente nada.
   useEffect(() => {
-    const n = pedidosNuevos?.length || 0
-    if (modoApp && n > nuevosPrev.current) setPantalla('pedidos')
-    nuevosPrev.current = n
-  }, [pedidosNuevos, modoApp])
+    if (!modoApp) return
+    const ir = (e) => {
+      const d = e?.detail
+      if (PANTALLAS[d]) setPantalla(d)
+    }
+    window.addEventListener('pidoo:goto', ir)
+    return () => window.removeEventListener('pidoo:goto', ir)
+  }, [modoApp])
 
   const idemRef = useRef(null)
   const enVueloRef = useRef(false)
@@ -398,56 +432,33 @@ export default function Tpv({ modoApp = false }) {
 
 
   return (
-    <div style={caja}>
+    <div style={modoApp
+      // Como app, la caja ES la pantalla: sin esquinas redondeadas ni tope de alto.
+      ? { ...caja, padding: esMovil ? 10 : 16, borderRadius: 0, minHeight: '100vh' }
+      : esMovil ? { ...caja, padding: 10, borderRadius: 12 } : caja}>
       {/* Mostrador y Pedidos en la misma pantalla: durante el servicio no se puede
           estar saltando de una sección a otra. No hay pestaña de Reservas porque
           Pidoo no tiene reservas: no existe ninguna tabla detrás. */}
       {/* En modo app no hay cabecera de panel detrás, así que el nombre y el estado
           van aquí. El estado importa: si la app se queda sin conexión, el sistema
           cierra el restaurante solo a los 5 minutos y conviene verlo de un vistazo. */}
-      {modoApp && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
-          paddingBottom: 10, borderBottom: `1px solid ${T.border}`,
-        }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.text, minWidth: 0,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {restaurante?.nombre}
-          </div>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
-            fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
-            padding: '4px 10px', borderRadius: 999,
-            color: restaurante?.activo ? T.ok : T.danger,
-            border: `1px solid ${restaurante?.activo ? T.ok : T.danger}`,
-          }}>
-            <span style={{
-              width: 7, height: 7, borderRadius: '50%',
-              background: restaurante?.activo ? T.ok : T.danger,
-            }} />
-            {restaurante?.activo ? 'ABIERTO' : 'CERRADO'}
-          </span>
-          {!restaurante?.activo && (
-            <button onClick={() => setPantalla('impresora')} style={{
-              ...btnSecundario, height: 30, fontSize: 12, flexShrink: 0,
-              borderColor: T.accent, color: T.accent,
-            }}>Abrir</button>
-          )}
-        </div>
-      )}
+      {modoApp && <CabeceraApp restaurante={restaurante} esMovil={esMovil}
+        onAbrir={() => setPantalla('impresora')} />}
 
       <div style={{ position: 'relative', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Pestana activa={pestana === 'mostrador'} onClick={() => setPestana('mostrador')}
-            icono={<Calculator size={17} />} texto="Mostrador" />
+            esMovil={esMovil} icono={<Calculator size={esMovil ? 16 : 17} />} texto="Mostrador" />
           <Pestana activa={pestana === 'pedidos'} onClick={() => setPestana('pedidos')}
-            icono={<Bike size={17} />} texto="Pedidos" contador={pedidosNuevos?.length || 0} />
+            esMovil={esMovil} icono={<Bike size={esMovil ? 16 : 17} />} texto="Pedidos"
+            contador={pedidosNuevos?.length || 0} />
         </div>
         {/* El menú va en la esquina y no encima del ticket: es de la pantalla
             entera, no de la venta que estés cobrando. La etiqueta dice "del TPV"
             porque el header de la app ya tiene su propio botón de menú. */}
         <button onClick={() => setMenu(true)} aria-label="Menú del TPV" style={{
-          ...btnIcono, position: 'absolute', right: 0, top: 6, width: 44, height: 44, borderRadius: 12,
+          ...btnIcono, position: 'absolute', right: 0, top: esMovil ? 4 : 6,
+          width: esMovil ? 40 : 44, height: esMovil ? 40 : 44, borderRadius: 12,
         }}>
           <Menu size={20} />
         </button>
@@ -458,7 +469,9 @@ export default function Tpv({ modoApp = false }) {
       ) : (
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* ── Izquierda: la carta ─────────────────────────────────────────── */}
-      <div style={{ flex: '1 1 420px', minWidth: 0 }}>
+      {/* En telefono la carta es TODA la pantalla, y se le deja hueco abajo para que
+          la barra de la venta no tape la ultima fila de productos. */}
+      <div style={{ flex: '1 1 420px', minWidth: 0, paddingBottom: esMovil ? 84 : 0 }}>
         {impresora.configurada && impresora.viva === false && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', marginBottom: 12,
@@ -496,25 +509,32 @@ export default function Tpv({ modoApp = false }) {
                 productos, que es lo que de verdad se toca. Se centra cuando cabe y
                 se desliza cuando no. */}
             <div style={{ position: 'relative', marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
+              {/* En TELEFONO las categorias van en una sola fila que se desliza: no
+                  caben y apilarlas se comeria media pantalla de carta. En tablet
+                  grande y en escritorio se REPARTEN EN FILAS y se ven TODAS, que es
+                  lo que ahorra toques: la categoria que buscas ya esta a la vista. */}
               <div style={{
-                display: 'flex', gap: 8, maxWidth: '100%', overflowX: 'auto',
-                paddingBottom: 2, scrollSnapType: 'x proximity',
+                display: 'flex', gap: 8, maxWidth: '100%',
+                justifyContent: 'center',
+                ...(esMovil
+                  ? { overflowX: 'auto', paddingBottom: 2, scrollSnapType: 'x proximity' }
+                  : { flexWrap: 'wrap' }),
               }}>
                 {categorias.map((c) => {
                   const Icono = iconoDe(c.nombre)
                   const activa = c.id === catSel && !busqueda
                   return (
                     <button key={c.id} onClick={() => { setCatSel(c.id); setBusqueda('') }} style={{
-                      flex: '0 0 auto', height: 56, padding: '0 16px', cursor: 'pointer',
+                      flex: '0 0 auto', height: esMovil ? 46 : 56, padding: esMovil ? '0 12px' : '0 16px', cursor: 'pointer',
                       scrollSnapAlign: 'start', fontFamily: 'inherit',
                       border: `1px solid ${activa ? T.accent : T.border}`,
                       borderRadius: 12,
                       background: activa ? T.accentFill : T.surface2,
                       color: activa ? T.onAccent : T.text,
                       display: 'flex', alignItems: 'center', gap: 9,
-                      fontSize: 14, fontWeight: activa ? 700 : 500,
+                      fontSize: esMovil ? 13 : 14, fontWeight: activa ? 700 : 500,
                     }}>
-                      <Icono size={18} color={activa ? T.onAccent : T.accent} />
+                      <Icono size={esMovil ? 16 : 18} color={activa ? T.onAccent : T.accent} />
                       {c.nombre}
                       <span style={{
                         fontSize: 12, opacity: 0.65, fontWeight: 500,
@@ -524,11 +544,14 @@ export default function Tpv({ modoApp = false }) {
                 })}
               </div>
               {/* El CSS global esconde las barras de scroll, así que sin esta pista
-                  visual no hay forma de saber que quedan categorías a la derecha. */}
-              <div style={{
-                position: 'absolute', right: 0, top: 0, bottom: 2, width: 24, pointerEvents: 'none',
-                background: `linear-gradient(90deg, rgba(18,16,14,0), ${T.bg})`,
-              }} />
+                  visual no hay forma de saber que quedan categorías a la derecha.
+                  Cuando van en filas no hay nada a la derecha que insinuar. */}
+              {esMovil && (
+                <div style={{
+                  position: 'absolute', right: 0, top: 0, bottom: 2, width: 24, pointerEvents: 'none',
+                  background: `linear-gradient(90deg, rgba(18,16,14,0), ${T.bg})`,
+                }} />
+              )}
             </div>
 
             {busqueda && (
@@ -536,7 +559,12 @@ export default function Tpv({ modoApp = false }) {
                 Resultados de &quot;{busqueda}&quot;
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+            <div style={{
+              display: 'grid', gap: esMovil ? 8 : 10,
+              // 3 columnas en telefono. Con 150 px salen 2 y se ve media carta por
+              // pantalla; con 104 entran tres y se llega antes al producto.
+              gridTemplateColumns: `repeat(auto-fill, minmax(${esMovil ? 104 : 150}px, 1fr))`,
+            }}>
               {visibles.map((p) => {
                 const tams = tamanosDe[p.id] || []
                 const tieneExtras = (gruposDe[p.id] || []).length > 0
@@ -544,8 +572,8 @@ export default function Tpv({ modoApp = false }) {
                 return (
                   <button key={p.id} onClick={() => tocarProducto(p)} style={{
                     position: 'relative', overflow: 'hidden',
-                    minHeight: 92, padding: 0, textAlign: 'left', cursor: 'pointer',
-                    border: `1px solid ${yaLleva ? T.accent : T.border}`, borderRadius: 12,
+                    minHeight: esMovil ? 78 : 92, padding: 0, textAlign: 'left', cursor: 'pointer',
+                    border: `1px solid ${yaLleva ? T.accent : T.border}`, borderRadius: esMovil ? 10 : 12,
                     background: T.surface2,
                     display: 'flex', flexDirection: 'column',
                     fontFamily: 'inherit', color: T.text,
@@ -554,28 +582,33 @@ export default function Tpv({ modoApp = false }) {
                         una caja gris con un icono de "sin imagen" es peor que nada. */}
                     {p.imagen_url && (
                       <img src={p.imagen_url} alt="" loading="lazy" style={{
-                        width: '100%', height: 74, objectFit: 'cover', display: 'block',
+                        width: '100%', height: esMovil ? 58 : 74, objectFit: 'cover', display: 'block',
                       }} />
                     )}
                     {yaLleva > 0 && (
                       <span style={{
-                        position: 'absolute', top: 6, right: 6, minWidth: 24, height: 24,
-                        padding: '0 6px', borderRadius: 8, background: T.accentFill, color: T.onAccent,
-                        fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center',
+                        position: 'absolute', top: 5, right: 5,
+                        minWidth: esMovil ? 20 : 24, height: esMovil ? 20 : 24,
+                        padding: '0 5px', borderRadius: 7, background: T.accentFill, color: T.onAccent,
+                        fontSize: esMovil ? 11 : 13, fontWeight: 700, display: 'flex', alignItems: 'center',
                         justifyContent: 'center',
                       }}>{yaLleva}</span>
                     )}
                     <span style={{
-                      padding: '10px 10px 11px', display: 'flex', flexDirection: 'column',
-                      gap: 5, flex: 1, justifyContent: 'space-between',
+                      padding: esMovil ? '7px 8px 8px' : '10px 10px 11px',
+                      display: 'flex', flexDirection: 'column',
+                      gap: esMovil ? 3 : 5, flex: 1, justifyContent: 'space-between',
                     }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.25 }}>{p.nombre}</span>
-                      <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: T.accent }}>
+                      <span style={{
+                        fontSize: esMovil ? 12 : 14, fontWeight: 500,
+                        lineHeight: esMovil ? 1.2 : 1.25,
+                      }}>{p.nombre}</span>
+                      <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: esMovil ? 13 : 15, fontWeight: 700, color: T.accent }}>
                           {tams.length ? 'desde ' : ''}
                           {eur(tams.length ? Math.min(...tams.map((t) => precioBarra(p, t))) : precioBarra(p))}
                         </span>
-                        {tieneExtras && <span style={{ fontSize: 11, color: T.muted }}>+ extras</span>}
+                        {tieneExtras && <span style={{ fontSize: esMovil ? 10 : 11, color: T.muted }}>+ extras</span>}
                       </span>
                     </span>
                   </button>
@@ -592,7 +625,26 @@ export default function Tpv({ modoApp = false }) {
       </div>
 
       {/* ── Derecha: el ticket en curso ─────────────────────────────────── */}
-      <div style={{ flex: '0 1 360px', minWidth: 300, position: 'sticky', top: 12 }}>
+      {/* MISMO bloque en los dos sitios. En tablet es la columna de siempre; en
+          telefono es una hoja a pantalla completa que abre la barra de abajo. Se
+          monta siempre (`display:none` cuando esta cerrada) y NO se desmonta: el
+          carrito vive en este componente y desmontarlo seria perder la venta. */}
+      <div style={esMovil ? {
+        position: 'fixed', inset: 0, zIndex: 1000, background: T.bg,
+        padding: 10, overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+        display: hojaVenta ? 'block' : 'none',
+      } : { flex: '0 1 360px', minWidth: 300, position: 'sticky', top: 12 }}>
+        {esMovil && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+          }}>
+            <button onClick={() => setHojaVenta(false)} style={{
+              ...btnSecundario, height: 42, borderRadius: 12, flexShrink: 0,
+            }}>
+              <ArrowLeft size={16} style={{ marginRight: 6 }} /> Seguir marcando
+            </button>
+          </div>
+        )}
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <strong style={{ fontSize: 15, color: T.text }}>Venta en curso</strong>
@@ -641,8 +693,11 @@ export default function Tpv({ modoApp = false }) {
             display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
             padding: '10px 0', borderTop: `2px solid ${T.accent}`, marginTop: 4,
           }}>
-            <span style={{ fontSize: 14, color: T.muted }}>{totalUnidades} art.</span>
-            <span style={{ fontSize: 32, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontSize: 13, color: T.muted }}>{totalUnidades} art.</span>
+            <span style={{
+              fontSize: esMovil ? 26 : 30, fontWeight: 800, color: T.text,
+              fontVariantNumeric: 'tabular-nums',
+            }}>
               {eur(totalCarrito)}
             </span>
           </div>
@@ -750,6 +805,43 @@ export default function Tpv({ modoApp = false }) {
           <TpvCaja establecimientoId={restaurante.id} restaurante={restaurante}
             vistaInicial={cajaVista} onCerrarModal={() => setModalCaja(false)} />
         </Modal>
+      )}
+
+      {/* La barra de la venta, fija abajo en telefono. Es lo unico que hace falta ver
+          de la venta mientras se marca: cuanto llevas y como llegar al cobro. */}
+      {esMovil && pestana === 'mostrador' && !hojaVenta && (
+        <div style={{
+          position: 'fixed', left: 10, right: 10, bottom: 10, zIndex: 950,
+        }}>
+          <button onClick={() => setHojaVenta(true)} disabled={!carrito.length} style={{
+            ...btnAccion, width: '100%', height: 54, borderRadius: 14,
+            justifyContent: 'space-between', padding: '0 14px', fontSize: 15,
+            opacity: carrito.length ? 1 : 0.45,
+            cursor: carrito.length ? 'pointer' : 'not-allowed',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
+          }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span style={{
+                minWidth: 24, height: 24, padding: '0 6px', borderRadius: 999,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(0,0,0,0.26)', fontSize: 13, fontWeight: 800,
+              }}>{totalUnidades}</span>
+              Ver la venta
+            </span>
+            <span style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {eur(totalCarrito)}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {hayAviso && (
+        <AvisoPedido
+          pedido={pedidoAvisado}
+          cuantos={pedidosNuevos.length}
+          onVer={() => { setAvisoFuera(pedidoAvisado.id); setPantalla('pedidos') }}
+          onLuego={() => setAvisoFuera(pedidoAvisado.id)}
+        />
       )}
 
       {/* Las pantallas de la app, ENCIMA del mostrador. Van con el tema claro del
@@ -1029,11 +1121,12 @@ function Bloque({ titulo, obligatorio, nota, children }) {
   )
 }
 
-function Pestana({ activa, onClick, icono, texto, contador }) {
+function Pestana({ activa, onClick, icono, texto, contador, esMovil }) {
   return (
     <button onClick={onClick} style={{
-      height: 44, padding: '0 18px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-      fontSize: 15, fontWeight: activa ? 800 : 600,
+      height: esMovil ? 40 : 44, padding: esMovil ? '0 14px' : '0 18px',
+      borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+      fontSize: esMovil ? 14 : 15, fontWeight: activa ? 800 : 600,
       border: `1px solid ${activa ? T.accent : T.border}`,
       background: activa ? T.accentFill : T.surface2,
       color: activa ? T.onAccent : T.text,
@@ -1120,6 +1213,97 @@ function Opcion({ activa, onClick, nombre, precio }) {
   )
 }
 
+// La cabecera de la app. Antes eran dos contornos naranjas seguidos, con radios
+// distintos (999 y 12) y los dos huecos: parecian dos aplicaciones pegadas. Ahora es
+// UNA barra con fondo propio, el estado como pastilla de relleno suave (sin borde y
+// sin mayusculas gritadas) y una sola accion, esa si, rellena. Cerrado no es un
+// detalle de adorno: con el local cerrado no entra ni un pedido.
+function CabeceraApp({ restaurante, esMovil, onAbrir }) {
+  const abierto = !!restaurante?.activo
+  const tono = abierto ? T.ok : T.danger
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, marginBottom: esMovil ? 10 : 14,
+      padding: esMovil ? '8px 10px' : '10px 12px', borderRadius: 14, background: T.surface,
+    }}>
+      <div style={{
+        fontSize: esMovil ? 14 : 16, fontWeight: 800, color: T.text, letterSpacing: '-0.01em',
+        minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {restaurante?.nombre}
+      </div>
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,
+        marginLeft: 'auto', padding: esMovil ? '5px 10px' : '6px 12px', borderRadius: 999,
+        fontSize: esMovil ? 12 : 13, fontWeight: 700, color: tono,
+        background: abierto ? 'rgba(143,196,107,0.14)' : 'rgba(255,122,107,0.14)',
+      }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: tono }} />
+        {abierto ? 'Abierto' : 'Cerrado'}
+      </span>
+      {!abierto && (
+        <button onClick={onAbrir} style={{
+          ...btnAccion, height: esMovil ? 34 : 38, padding: esMovil ? '0 14px' : '0 18px',
+          fontSize: esMovil ? 13 : 14, borderRadius: 11, flexShrink: 0,
+        }}>Abrir</button>
+      )}
+    </div>
+  )
+}
 
-
-
+// El aviso de pedido nuevo. Va encima de TODO (tambien de la capa de pantallas) y no
+// se quita solo: un pedido sin aceptar es dinero esperando, y la alarma se puede
+// silenciar. Ensena lo justo para decidir -de donde viene, de quien es y cuanto- y el
+// boton lleva a `PedidosEnVivo`, que es donde se acepta con su tiempo de preparacion,
+// se rechaza y se imprime.
+function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
+  const reparto = pedido.modo_entrega === 'delivery'
+  const Icono = reparto ? Bike : ShoppingBag
+  const quien = pedido.guest_nombre || pedido.nombre_cliente || null
+  return (
+    <div style={{
+      position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 1200,
+      display: 'flex', justifyContent: 'center', pointerEvents: 'none',
+    }}>
+      <div style={{
+        pointerEvents: 'auto', width: '100%', maxWidth: 560,
+        background: T.surface, borderRadius: 18, padding: 14,
+        border: `2px solid ${T.accent}`,
+        boxShadow: '0 18px 44px rgba(0,0,0,0.55)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+            background: T.accentFill, color: T.onAccent,
+          }}>
+            <Icono size={22} />
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.text }}>
+              {cuantos > 1 ? `${cuantos} pedidos sin aceptar` : 'Pedido nuevo'}
+            </div>
+            <div style={{
+              fontSize: 13, color: T.muted, marginTop: 2,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {pedido.codigo} · {reparto ? 'Reparto' : 'Recogida'}
+              {quien ? ` · ${quien}` : ''}
+            </div>
+          </div>
+          <div style={{ fontSize: 19, fontWeight: 800, color: T.text, flexShrink: 0 }}>
+            {eur(cents(pedido.total))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button onClick={onLuego} style={{
+            ...btnSecundario, height: 46, padding: '0 16px', borderRadius: 12, flexShrink: 0,
+          }}>Ahora no</button>
+          <button onClick={onVer} style={{
+            ...btnAccion, flex: 1, height: 46, fontSize: 15, borderRadius: 12,
+          }}>Ver y aceptar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
