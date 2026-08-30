@@ -10,6 +10,7 @@ import AddressInput from '../components/AddressInput'
 import ZonasReparto from '../components/ZonasReparto'
 import SuscripcionCard from '../components/SuscripcionCard'
 import TpvConfigCard from '../components/TpvConfigCard'
+import StockConfigCard from '../components/StockConfigCard'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -646,6 +647,9 @@ export default function Ajustes() {
           Pidoo le ha dado de alta el modulo al restaurante. */}
       <div className="pidoo-col-full">
         <TpvConfigCard />
+
+        {/* Almacen: solo se pinta si Pidoo le ha dado de alta el modulo */}
+        <StockConfigCard />
       </div>
 
       {/* ── URL pública de la tienda (gratis para todos los restaurantes) ── */}

@@ -12,6 +12,9 @@ export function RestProvider({ children }) {
   // Modulo TPV. Mismo gating que `carta_local_activa`: lo enciende Pidoo desde el
   // super-admin y aqui solo se lee. Si no hay fila, el modulo no esta contratado.
   const [tpvConfig, setTpvConfig] = useState(null)
+  // Modulo Almacen (stock + escandallos). Mismo patron que el TPV: lo enciende
+  // Pidoo y aqui solo se lee. Sin fila, el modulo no esta contratado.
+  const [stockConfig, setStockConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
 
@@ -76,6 +79,8 @@ export function RestProvider({ children }) {
         // cobro y la entrada del menu dependen de el.
         supabase.from('tpv_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
           .then(({ data: cfg }) => setTpvConfig(cfg || null))
+        supabase.from('stock_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
+          .then(({ data: cfg }) => setStockConfig(cfg || null))
         registerWebPush('restaurante', { establecimiento_id: data.id, user_id: userId })
         registerPushNotifications('restaurante', { establecimiento_id: data.id, user_id: userId })
       } else {
@@ -161,7 +166,7 @@ export function RestProvider({ children }) {
   }
 
   return (
-    <RestContext.Provider value={{ user, restaurante, restauranteNotFound, loading, authError, setAuthError, login, registro, logout, updateRestaurante, tpvConfig, setTpvConfig, tpvActivo: !!tpvConfig?.activo && !tpvConfig?.pausado_por_restaurante, refetch: () => fetchRestaurante(user?.id) }}>
+    <RestContext.Provider value={{ user, restaurante, restauranteNotFound, loading, authError, setAuthError, login, registro, logout, updateRestaurante, tpvConfig, setTpvConfig, tpvActivo: !!tpvConfig?.activo && !tpvConfig?.pausado_por_restaurante, stockConfig, setStockConfig, stockActivo: !!stockConfig?.activo && !stockConfig?.pausado_por_restaurante, refetch: () => fetchRestaurante(user?.id) }}>
       {children}
     </RestContext.Provider>
   )

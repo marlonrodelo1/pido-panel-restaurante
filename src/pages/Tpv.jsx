@@ -30,6 +30,7 @@ import {
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
+  Boxes, ClipboardCheck,
   Sandwich, Croissant, Beef, Beer, CupSoda, Coffee, Pizza, Salad, CakeSlice, IceCream,
   Fish, Drumstick, Soup, Cookie, Utensils, Wine, Ham, Popcorn, Carrot, EggFried,
 } from 'lucide-react'
@@ -38,6 +39,7 @@ import { T, FONT, cents, eur, caja, btnIcono, btnAccion, btnSecundario } from '.
 import TpvPedidos from '../components/TpvPedidos'
 import TpvCaja from '../components/TpvCaja'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
+import TpvStock from '../components/TpvStock'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
@@ -71,7 +73,7 @@ const ICONOS = [
 const iconoDe = (nombre) => (ICONOS.find(([re]) => re.test(nombre || ''))?.[1]) || Utensils
 
 export default function Tpv() {
-  const { restaurante, tpvConfig } = useRest()
+  const { restaurante, tpvConfig, stockActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
 
   const [categorias, setCategorias] = useState([])
@@ -95,6 +97,8 @@ export default function Tpv() {
   const [pestana, setPestana] = useState('mostrador')
   const [modalCaja, setModalCaja] = useState(false)
   const [cajaVista, setCajaVista] = useState('resumen')
+  const [modalStock, setModalStock] = useState(false)
+  const [stockVista, setStockVista] = useState('existencias')
   const [nuevoPedido, setNuevoPedido] = useState(null)   // 'reparto' | 'recogida'
   const [ultimaVenta, setUltimaVenta] = useState(null)
   const [impresora, setImpresora] = useState({ configurada: false, viva: null })
@@ -688,6 +692,12 @@ export default function Tpv() {
         </Modal>
       )}
 
+      {modalStock && (
+        <Modal titulo="Almacén" onCerrar={() => setModalStock(false)}>
+          <TpvStock establecimientoId={restaurante.id} vistaInicial={stockVista} />
+        </Modal>
+      )}
+
       {menu && (
         <Drawer titulo="TPV" onCerrar={() => setMenu(false)}>
           <GrupoMenu titulo="Caja" />
@@ -719,6 +729,23 @@ export default function Tpv() {
           <OpcionMenu icono={<Printer size={19} color={T.accent} />} texto="Informe del día"
             nota="Todo lo vendido hoy, haya habido caja o no"
             onClick={async () => { setMenu(false); await informeDelDia() }} />
+
+          {/* El almacen SOLO si Pidoo le ha dado de alta el modulo. Aqui va lo del
+              servicio; dar de alta articulos y escandallos es del panel web. */}
+          {stockActivo && (
+            <>
+              <GrupoMenu titulo="Almacén" />
+              <OpcionMenu icono={<Boxes size={19} color={T.accent} />} texto="Existencias"
+                nota="Lo que queda de cada cosa"
+                onClick={() => { setMenu(false); setStockVista('existencias'); setModalStock(true) }} />
+              <OpcionMenu icono={<Trash2 size={19} color={T.accent} />} texto="Apuntar merma"
+                nota="Lo que se ha roto, caducado o se ha ido a la basura"
+                onClick={() => { setMenu(false); setStockVista('merma'); setModalStock(true) }} />
+              <OpcionMenu icono={<ClipboardCheck size={19} color={T.accent} />} texto="Recuento"
+                nota="Contar y cuadrar lo que hay de verdad"
+                onClick={() => { setMenu(false); setStockVista('recuento'); setModalStock(true) }} />
+            </>
+          )}
 
           <div style={{
             marginTop: 14, padding: 12, borderRadius: 10, background: T.surface2,

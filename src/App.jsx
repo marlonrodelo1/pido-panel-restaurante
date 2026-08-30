@@ -3,7 +3,7 @@ import {
   ClipboardList, Clock, UtensilsCrossed, Settings, Tag, ToggleLeft, Printer,
   MoreHorizontal, MessageCircle, Handshake, Bike, History,
   Users, Wallet, LifeBuoy, LogOut, ChevronRight, BookOpen, Receipt, Star, PhoneCall,
-  TrendingUp, Video, Calculator,
+  TrendingUp, Video, Calculator, Boxes,
 } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -34,6 +34,7 @@ import Resenas from './pages/Resenas'
 import CrearEnvio from './pages/CrearEnvio'
 import Creadores from './pages/Creadores'
 import Tpv from './pages/Tpv'
+import Almacen from './pages/Almacen'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -42,7 +43,7 @@ const isNative = Capacitor.isNativePlatform()
 // afinar la pantalla sin compilar un AAB por cada cambio de tipografia.
 const TPV_EN_ESTA_PLATAFORMA = isNative || import.meta.env.DEV
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator }
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer, tpv: Calculator }
 
 // Etiquetas legibles para breadcrumbs y títulos
@@ -65,6 +66,7 @@ const SECCION_LABELS = {
   disponibilidad: 'Disponibilidad',
   impresora: 'Impresora',
   tpv: 'TPV',
+  almacen: 'Almacén',
 }
 
 // Hook simple para detectar viewport desktop
@@ -277,13 +279,14 @@ function NavItem({ Icon, label, active, badge, onClick }) {
 }
 
 function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onLogout }) {
-  const { tpvActivo } = useRest()
+  const { tpvActivo, stockActivo } = useRest()
   const main = [
     ...(tpvActivo && TPV_EN_ESTA_PLATAFORMA ? [{ id: 'tpv', Icon: Calculator, label: 'TPV' }] : []),
     { id: 'historial', Icon: ClipboardList, label: 'Historial' },
     { id: 'finanzas', Icon: TrendingUp, label: 'Finanzas' },
     { id: 'crear-envio', Icon: PhoneCall, label: 'Pedido telefónico' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
+    ...(stockActivo ? [{ id: 'almacen', Icon: Boxes, label: 'Almacén' }] : []),
     { id: 'promos', Icon: Tag, label: 'Promociones' },
     { id: 'resenas', Icon: Star, label: 'Reseñas' },
     { id: 'ajustes', Icon: Settings, label: 'Ajustes' },
@@ -467,7 +470,7 @@ function Breadcrumbs({ seccion }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AppInner({ seccion, setSeccion, nav }) {
-  const { restaurante, user, logout, tpvActivo } = useRest()
+  const { restaurante, user, logout, tpvActivo, stockActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sociosPendientes, setSociosPendientes] = useState(0)
@@ -516,6 +519,7 @@ function AppInner({ seccion, setSeccion, nav }) {
     { id: 'finanzas-riders', label: 'Finanzas con el socio', Icon: Bike },
     { id: 'liquidacion-pido', label: 'Liquidación con Pido', Icon: Receipt },
     { id: 'creadores', label: 'Creadores', Icon: Video },
+    ...(stockActivo ? [{ id: 'almacen', label: 'Almacén', Icon: Boxes }] : []),
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
   const extraActive = extraOpciones.find(e => e.id === seccion)
@@ -579,6 +583,10 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'liquidacion-pido' && <LiquidacionPido />}
       {seccion === 'creadores' && !isNative && <Creadores />}
       {seccion === 'tpv' && <Tpv />}
+      {/* El almacen es de ESCRITORIO: dar de alta articulos y escribir escandallos
+          con el dedo en una tablet es inviable, y meterlo en la APK obligaria a un
+          AAB por cada retoque. En la tablet solo va lo del servicio, dentro del TPV. */}
+      {seccion === 'almacen' && !isNative && <Almacen />}
       {seccion === 'ajustes' && <Ajustes />}
       {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
     </>
