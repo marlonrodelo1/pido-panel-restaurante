@@ -1,4 +1,4 @@
-import { TriangleAlert, TrendingDown, CircleHelp } from 'lucide-react'
+import { TriangleAlert, TrendingDown, CircleHelp, Trash2 } from 'lucide-react'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { eur, cantidad } from '../../lib/stock'
 
@@ -18,6 +18,11 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
 
   const ciegasTotal = (c?.pedidos_telefonicos || 0) + (c?.lineas_sin_escandallo || 0) + (c?.lineas_sin_producto || 0)
 
+  const mermas = resumen?.mermas
+  const mes = resumen?.desdeMes
+    ? resumen.desdeMes.toLocaleDateString('es-ES', { month: 'long' })
+    : 'este mes'
+
   return (
     <div>
       <div className="ds-cards" style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
@@ -25,6 +30,9 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
         <Tarjeta label="Artículos controlados" valor={v.articulos || 0} />
         <Tarjeta label="Bajo mínimo" valor={v.bajo_minimo || 0} tono={v.bajo_minimo > 0 ? 'warning' : null} />
         <Tarjeta label="En negativo" valor={v.en_negativo || 0} tono={v.en_negativo > 0 ? 'danger' : null} />
+        {mermas && mermas.total > 0 && (
+          <Tarjeta label={`Perdido en ${mes}`} valor={eur(mermas.total)} tono="warning" />
+        )}
       </div>
 
       {negativos.length > 0 && (
@@ -79,6 +87,30 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
                 <strong>{c.lineas_sin_producto}</strong> cobro{c.lineas_sin_producto === 1 ? '' : 's'} de
                 importe libre en el mostrador, sin producto de la carta detrás.
               </li>
+            )}
+          </ul>
+        </Bloque>
+      )}
+
+      {mermas && mermas.apuntes > 0 && (
+        <Bloque
+          tono="warning"
+          icono={<Trash2 size={16} color={colors.warning} />}
+          titulo={`Lo que se ha perdido en ${mes}: ${eur(mermas.total)}`}
+          texto={`${mermas.apuntes} apunte${mermas.apuntes === 1 ? '' : 's'} de merma. Cada vez que se rompe, caduca o se tira algo se va sumando aquí solo: no hay que cerrar nada ni hacer cortes.`}
+        >
+          <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: type.sm, color: colors.textDim, lineHeight: 1.7 }}>
+            {mermas.articulos.slice(0, 6).map(a => (
+              <li key={a.nombre}>
+                <strong>{a.nombre}</strong> · {cantidad(a.cantidad, a.unidad)}
+                {a.euros > 0 && <> · <strong>{eur(a.euros)}</strong></>}
+                <span style={{ color: colors.textMute }}>
+                  {' '}({a.veces} {a.veces === 1 ? 'vez' : 'veces'})
+                </span>
+              </li>
+            ))}
+            {mermas.articulos.length > 6 && (
+              <li style={{ color: colors.textMute }}>y {mermas.articulos.length - 6} más…</li>
             )}
           </ul>
         </Bloque>

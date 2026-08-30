@@ -64,13 +64,53 @@ export async function cargarArticulos(estId) {
 }
 
 export async function cargarResumen(estId) {
-  const [valor, ciegos] = await Promise.all([
+  const mes = new Date()
+  mes.setDate(1); mes.setHours(0, 0, 0, 0)
+  const [valor, ciegos, mermas] = await Promise.all([
     supabase.from('v_stock_valor_inventario').select('*').eq('establecimiento_id', estId).maybeSingle(),
     supabase.from('v_stock_puntos_ciegos').select('*').eq('establecimiento_id', estId).maybeSingle(),
+    cargarMermas(estId, mes.toISOString()).catch(() => null),
   ])
   return {
     valor: valor.data || { articulos: 0, valor: 0, en_negativo: 0, bajo_minimo: 0, sin_coste: 0 },
     ciegos: ciegos.data || null,
+    mermas,
+    desdeMes: mes,
+  }
+}
+
+// Lo que se ha perdido en un periodo, agrupado por artículo. Cada merma es un apunte
+// suelto en el libro (hoy un pan, mañana otro) y eso está bien: el libro cuenta lo que
+// pasó. Pero nadie va a sumar 30 líneas a mano, así que aquí se agrega.
+export async function cargarMermas(estId, desde) {
+  const { data, error } = await supabase
+    .from('stock_movimientos')
+    .select('cantidad, coste_unitario, motivo, created_at, stock_articulos(nombre, unidad)')
+    .eq('establecimiento_id', estId)
+    .eq('tipo', 'merma')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(500)
+  if (error) throw new Error(error.message)
+
+  const porArticulo = {}
+  let totalEur = 0
+  for (const m of (data || [])) {
+    const nombre = m.stock_articulos?.nombre || '—'
+    const perdido = -Number(m.cantidad)
+    const euros = perdido * Number(m.coste_unitario || 0)
+    totalEur += euros
+    porArticulo[nombre] = porArticulo[nombre] || {
+      nombre, unidad: m.stock_articulos?.unidad || 'ud', cantidad: 0, euros: 0, veces: 0,
+    }
+    porArticulo[nombre].cantidad += perdido
+    porArticulo[nombre].euros += euros
+    porArticulo[nombre].veces += 1
+  }
+  return {
+    total: totalEur,
+    apuntes: (data || []).length,
+    articulos: Object.values(porArticulo).sort((a, b) => b.euros - a.euros),
   }
 }
 
