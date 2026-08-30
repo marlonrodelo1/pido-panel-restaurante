@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
-import { UNIDADES, FAMILIAS, cantidad, eurCoste } from '../../lib/stock'
+import { UNIDADES, FAMILIAS, cantidad, fijarCoste } from '../../lib/stock'
 
 // Alta y edición de un artículo de almacén.
 //
@@ -10,7 +10,7 @@ import { UNIDADES, FAMILIAS, cantidad, eurCoste } from '../../lib/stock'
 // de datos (PD233) y se mueven apuntando una compra, una merma o un recuento — si se
 // pudieran teclear, el libro de movimientos dejaría de cuadrar con la realidad y todo
 // el módulo perdería el sentido. Por eso ni siquiera se ofrecen: se enseñan y punto.
-export default function ArticuloModal({ estId, articulo, onCerrar, onGuardado }) {
+export default function ArticuloModal({ estId, articulo, familiasUsadas = [], onCerrar, onGuardado }) {
   const nuevo = !articulo
   const [v, setV] = useState({
     nombre: articulo?.nombre || '',
@@ -20,7 +20,16 @@ export default function ArticuloModal({ estId, articulo, onCerrar, onGuardado })
     controla_agotado: articulo?.controla_agotado ?? true,
     activo: articulo?.activo ?? true,
   })
+  // El coste va aparte del resto del formulario: no se guarda con un UPDATE (la
+  // columna está congelada por PD233), se apunta en el libro con su propia RPC.
+  const [coste, setCoste] = useState(
+    articulo?.coste_medio != null ? String(articulo.coste_medio).replace('.', ',') : '')
   const [guardando, setGuardando] = useState(false)
+
+  // Las 8 sugeridas MAS las que el restaurante ya se haya inventado. Y como es un
+  // campo de texto con lista, tambien puede escribir una nueva: la columna `familia`
+  // es texto libre en base de datos, la limitacion estaba solo en la pantalla.
+  const familias = [...new Set([...familiasUsadas, ...FAMILIAS].filter(Boolean))].sort()
 
   const cambiar = (k, val) => setV(prev => ({ ...prev, [k]: val }))
   const valido = v.nombre.trim().length > 0
@@ -47,6 +56,15 @@ export default function ArticuloModal({ estId, articulo, onCerrar, onGuardado })
           : 'No se ha podido guardar: ' + error.message,
         'error')
     }
+    // Si además tocó el coste, se apunta aparte. Va DESPUÉS de guardar el resto para
+    // que un fallo aquí no tire por tierra el cambio de nombre o de unidad.
+    if (!nuevo) {
+      const c = Number(String(coste).replace(',', '.'))
+      if (coste !== '' && !Number.isNaN(c) && c !== Number(articulo.coste_medio)) {
+        try { await fijarCoste(articulo.id, c) }
+        catch (e) { toast('El artículo se guardó, pero el coste no: ' + e.message, 'error') }
+      }
+    }
     toast(nuevo ? 'Artículo creado' : 'Artículo guardado', 'success')
     onGuardado()
   }
@@ -71,7 +89,7 @@ export default function ArticuloModal({ estId, articulo, onCerrar, onGuardado })
 
   return (
     <div style={ds.modal} onClick={onCerrar}>
-      <div style={ds.modalContent} onClick={e => e.stopPropagation()}>
+      <div style={{ ...ds.modalContent, maxWidth: 580 }} onClick={e => e.stopPropagation()}>
         <h2 style={ds.h2}>{nuevo ? 'Nuevo artículo' : 'Editar artículo'}</h2>
 
         <label style={ds.label}>Nombre</label>
@@ -79,41 +97,46 @@ export default function ArticuloModal({ estId, articulo, onCerrar, onGuardado })
           placeholder="Carne picada, Pan de hamburguesa, Coca-Cola lata…"
           style={ds.formInput} />
 
-        <label style={{ ...ds.label, marginTop: 16 }}>¿Cómo lo mides?</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {UNIDADES.map(u => (
-            <button key={u.id} onClick={() => cambiar('unidad', u.id)} style={{
-              ...ds.filterBtn, height: 38, flexDirection: 'column', alignItems: 'flex-start',
-              padding: '4px 12px', gap: 0,
-              background: v.unidad === u.id ? colors.primary : colors.paper,
-              color: v.unidad === u.id ? colors.cream : colors.textDim,
-              borderColor: v.unidad === u.id ? colors.primary : colors.border,
-            }}>
-              <span style={{ fontWeight: 700 }}>{u.label}</span>
-            </button>
-          ))}
-        </div>
-        <div style={{ ...ds.muted, marginTop: 6 }}>
-          {UNIDADES.find(u => u.id === v.unidad)?.ayuda}
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 16 }}>
+          <div style={{ flex: '1 1 250px', minWidth: 0 }}>
+            <label style={ds.label}>¿Cómo lo mides?</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {UNIDADES.map(u => (
+                <button key={u.id} onClick={() => cambiar('unidad', u.id)} style={{
+                  ...ds.filterBtn, height: 38, flex: 1, justifyContent: 'center',
+                  background: v.unidad === u.id ? colors.primary : colors.paper,
+                  color: v.unidad === u.id ? colors.cream : colors.textDim,
+                  borderColor: v.unidad === u.id ? colors.primary : colors.border,
+                  fontWeight: v.unidad === u.id ? 700 : 600,
+                }}>{u.label}</button>
+              ))}
+            </div>
+            <div style={{ ...ds.muted, marginTop: 6 }}>
+              {UNIDADES.find(u => u.id === v.unidad)?.ayuda}
+            </div>
+          </div>
+
+          <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+            <label style={ds.label}>Familia (opcional)</label>
+            {/* Campo con lista, no 8 botones en dos filas: ocupaban media pantalla
+                para algo opcional y ademas NO dejaban poner una familia propia. */}
+            <input list="stock-familias" value={v.familia}
+              onChange={e => cambiar('familia', e.target.value)}
+              placeholder="Elige o escribe la tuya" style={ds.formInput} />
+            <datalist id="stock-familias">
+              {familias.map(f => <option key={f} value={f} />)}
+            </datalist>
+            <div style={{ ...ds.muted, marginTop: 6 }}>Solo sirve para filtrar la lista.</div>
+          </div>
         </div>
 
-        <label style={{ ...ds.label, marginTop: 16 }}>Familia (opcional)</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {FAMILIAS.map(f => (
-            <button key={f} onClick={() => cambiar('familia', v.familia === f ? '' : f)} style={{
-              ...ds.filterBtn,
-              background: v.familia === f ? colors.primary : colors.paper,
-              color: v.familia === f ? colors.cream : colors.textDim,
-              borderColor: v.familia === f ? colors.primary : colors.border,
-            }}>{f}</button>
-          ))}
+        <div style={{ marginTop: 16, maxWidth: 260 }}>
+          <label style={ds.label}>Avísame cuando queden menos de</label>
+          <input inputMode="decimal" value={v.minimo}
+            onChange={e => cambiar('minimo', e.target.value.replace(/[^\d.,]/g, ''))}
+            placeholder="0" style={{ ...ds.formInput, textAlign: 'right' }} />
+          <div style={{ ...ds.muted, marginTop: 6 }}>Déjalo en 0 si no quieres aviso.</div>
         </div>
-
-        <label style={{ ...ds.label, marginTop: 16 }}>Avísame cuando queden menos de</label>
-        <input inputMode="decimal" value={v.minimo}
-          onChange={e => cambiar('minimo', e.target.value.replace(/[^\d.,]/g, ''))}
-          placeholder="0" style={ds.formInput} />
-        <div style={{ ...ds.muted, marginTop: 6 }}>Déjalo en 0 si no quieres aviso.</div>
 
         <Interruptor
           titulo="Puede agotar productos en la web"
@@ -137,14 +160,21 @@ export default function ArticuloModal({ estId, articulo, onCerrar, onGuardado })
             marginTop: 16, padding: '12px 14px', borderRadius: radius.sm,
             background: colors.surface2, border: `1px solid ${colors.border}`,
           }}>
-            <div style={{ ...ds.label, marginBottom: 6 }}>Lo que dice el libro de movimientos</div>
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              <Dato label="Quedan" valor={cantidad(articulo.existencia, articulo.unidad)} />
-              <Dato label="Coste medio" valor={Number(articulo.coste_medio) > 0 ? eurCoste(articulo.coste_medio) : '—'} />
+            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <Dato label="Quedan ahora" valor={cantidad(articulo.existencia, articulo.unidad)} />
+              <div style={{ width: 150 }}>
+                <label style={ds.label}>Te cuesta (€ / {articulo.unidad})</label>
+                <input inputMode="decimal" value={coste}
+                  onChange={e => setCoste(e.target.value.replace(/[^\d.,]/g, ''))}
+                  placeholder="0,00" style={{ ...ds.formInput, textAlign: 'right' }} />
+              </div>
             </div>
-            <div style={{ ...ds.muted, marginTop: 8, lineHeight: 1.5 }}>
-              Estos dos números no se escriben a mano: se mueven con una compra, una
-              merma o un recuento. Así el inventario siempre cuadra con lo que pasó.
+            <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.5 }}>
+              <strong>Lo que queda no se escribe a mano</strong>: se mueve con una compra,
+              una merma o un recuento, y así el inventario siempre cuadra con lo que pasó.
+              El coste sí puedes corregirlo aquí — normalmente entra solo con las facturas,
+              pero para el género que ya tenías o un proveedor sin factura, ponlo tú. Queda
+              apuntado en Movimientos.
             </div>
           </div>
         )}

@@ -46,6 +46,7 @@ export const TIPOS_MOV = {
   recuento:   { label: 'Recuento',   tono: 'info' },
   traspaso:   { label: 'Traspaso',   tono: 'info' },
   devolucion: { label: 'Devolución', tono: 'warning' },
+  ajuste_coste: { label: 'Coste', tono: 'info' },
 }
 
 export const MOTIVOS_MERMA = ['Se ha roto', 'Caducado', 'Se cayó', 'Prueba de cocina', 'Mal estado']
@@ -105,6 +106,13 @@ export const recuento = (articuloId, contado, coste) =>
 
 export const recuentoLote = (lineas) =>
   rpc('stock_recuento_lote', { p_lineas: lineas })
+
+// Corregir a mano lo que cuesta un artículo. Normalmente el coste sale de las facturas
+// de compra; esto es para el género que ya estaba en la cámara antes de arrancar, un
+// proveedor sin factura, o un precio mal tecleado. Queda apuntado en el libro como
+// `ajuste_coste`, no se escribe la columna a escondidas.
+export const fijarCoste = (articuloId, coste, motivo) =>
+  rpc('stock_fijar_coste', { p_articulo_id: articuloId, p_coste: coste, p_motivo: motivo || null })
 
 export const arranqueDesdeCarta = (estId, productoIds) =>
   rpc('stock_arranque_desde_carta', { p_establecimiento_id: estId, p_producto_ids: productoIds })

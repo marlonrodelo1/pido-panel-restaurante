@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Plus, Trash2, ClipboardCheck } from 'lucide-react'
+import { Search, Plus, Trash2, ClipboardCheck, Pencil } from 'lucide-react'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast } from '../../App'
 import { cantidad, eur, eurCoste, apuntarMerma, recuento, MOTIVOS_MERMA } from '../../lib/stock'
@@ -41,12 +41,12 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
       </div>
 
       <div style={{ ...ds.table, ...tablaScroll }}>
-        <div style={{ ...ds.tableHeader, ...filaMin(780) }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(880) }}>
           <div style={{ flex: 1, minWidth: 0 }}>Artículo</div>
           <div style={col(96)}>Quedan</div>
           <div style={col(96)}>Coste ud.</div>
           <div style={col(96)}>Valor</div>
-          <div style={col(220, 'right')}></div>
+          <div style={col(316, 'right')}></div>
         </div>
 
         {!visibles.length && (
@@ -63,7 +63,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           const bajo = !negativo && Number(a.minimo) > 0 && ex <= Number(a.minimo)
           return (
             <div key={a.id} style={{
-              ...ds.tableRow, ...filaMin(780),
+              ...ds.tableRow, ...filaMin(880),
               background: negativo ? colors.dangerSoft : bajo ? colors.warningSoft : undefined,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -98,7 +98,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
               <div style={{ ...col(96), fontWeight: 600 }}>
                 {eur(ex * Number(a.coste_medio))}
               </div>
-              <div style={{ ...col(220), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <div style={{ ...col(316), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button onClick={() => setAccion({ articulo: a, tipo: 'merma' })}
                   style={{ ...ds.miniBtn, flexShrink: 0 }} title="Apuntar una merma">
                   <Trash2 size={12} /> Merma
@@ -106,6 +106,11 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
                 <button onClick={() => setAccion({ articulo: a, tipo: 'recuento' })}
                   style={{ ...ds.miniBtn, flexShrink: 0 }} title="Contar lo que hay de verdad">
                   <ClipboardCheck size={12} /> Contar
+                </button>
+                {/* Antes solo se podia editar tocando el nombre, y eso no se ve. */}
+                <button onClick={() => setEditando(a)}
+                  style={{ ...ds.miniBtn, flexShrink: 0 }} title="Editar el artículo">
+                  <Pencil size={12} /> Editar
                 </button>
               </div>
             </div>
@@ -116,6 +121,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
       {editando && (
         <ArticuloModal
           estId={estId}
+          familiasUsadas={familiasUsadas}
           articulo={editando.id ? editando : null}
           onCerrar={() => setEditando(null)}
           onGuardado={() => { setEditando(null); onCambio() }}
