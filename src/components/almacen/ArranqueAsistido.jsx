@@ -136,7 +136,9 @@ export default function ArranqueAsistido({ estId, onListo }) {
   if (cargando) return <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Cargando tu carta…</div>
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    // 1400 y no 720: el panel se ensancho a 1600 el 30 jul para no desperdiciar
+    // ~800 px en un monitor de 1920, y una columna estrecha aqui iba justo en contra.
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <Boxes size={20} color={colors.primary} />
         <h1 style={ds.h1}>Poner el almacén en marcha</h1>
@@ -161,19 +163,23 @@ export default function ArranqueAsistido({ estId, onListo }) {
           {/* Lista, no chips. Con 16 categorías las pildoras se descuadran en cinco
               filas con huecos: en columna todo queda alineado, el contador se lee de
               un vistazo y es la misma forma que el paso 2. */}
+          {/* Rejilla, no lista de una columna: con 16 categorias en una pantalla
+              ancha, una sola columna deja el 70 % del espacio vacio y obliga a
+              hacer scroll para ver el final. Todas las celdas miden lo mismo, asi
+              que sigue alineado (que era el problema de las chips). */}
           <div style={{
-            border: `1px solid ${colors.border}`, borderRadius: radius.sm,
-            maxHeight: 300, overflowY: 'auto',
+            display: 'grid', gap: 8,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            maxHeight: 420, overflowY: 'auto',
           }}>
-            {conProductos.map((c, i) => {
+            {conProductos.map((c) => {
               const on = catsElegidas.includes(c.id)
               const n = porCat(c.id).length
-              const sugerida = SUENA_A_BEBIDA.test(c.nombre || '')
               return (
                 <label key={c.id} style={{
                   display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px',
-                  cursor: 'pointer',
-                  borderTop: i === 0 ? 'none' : `1px solid ${colors.border}`,
+                  cursor: 'pointer', borderRadius: radius.sm,
+                  border: `1px solid ${on ? colors.primary : colors.border}`,
                   background: on ? colors.primarySoft : colors.paper,
                 }}>
                   <input type="checkbox" checked={on}
@@ -182,18 +188,10 @@ export default function ArranqueAsistido({ estId, onListo }) {
                   <span style={{
                     flex: 1, minWidth: 0, fontSize: type.sm,
                     fontWeight: on ? 700 : 500, color: colors.text,
-                  }}>
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }} title={c.nombre}>
                     {c.nombre}
                   </span>
-                  {sugerida && !on && (
-                    <span style={{
-                      fontSize: type.xxs, fontWeight: 700, color: colors.sage2,
-                      background: colors.sageSoft, borderRadius: radius.full,
-                      padding: '2px 9px', whiteSpace: 'nowrap',
-                    }}>
-                      se cuentan solas
-                    </span>
-                  )}
                   <span style={{
                     fontSize: type.xs, color: colors.textMute, minWidth: 78,
                     textAlign: 'right', fontVariantNumeric: 'tabular-nums',
@@ -267,22 +265,30 @@ export default function ArranqueAsistido({ estId, onListo }) {
             </div>
           </div>
 
-          <div style={{ maxHeight: 340, overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: radius.sm }}>
+          <div style={{
+            display: 'grid', gap: 8,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            maxHeight: 460, overflowY: 'auto',
+          }}>
             {visibles.map(p => (
               <label key={p.id} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-                borderBottom: `1px solid ${colors.border}`, cursor: 'pointer',
+                cursor: 'pointer', borderRadius: radius.sm,
+                border: `1px solid ${marcados[p.id] ? colors.primary : colors.border}`,
                 background: marcados[p.id] ? colors.primarySoft : colors.paper,
               }}>
                 <input type="checkbox" checked={!!marcados[p.id]}
                   onChange={e => setMarcados({ ...marcados, [p.id]: e.target.checked })} />
-                <span style={{ fontSize: type.sm, color: colors.text }}>{p.nombre}</span>
+                <span style={{
+                  fontSize: type.sm, color: colors.text, minWidth: 0,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{p.nombre}</span>
               </label>
             ))}
-            {!visibles.length && (
-              <div style={{ ...ds.muted, padding: 20, textAlign: 'center' }}>Nada que mostrar.</div>
-            )}
           </div>
+          {!visibles.length && (
+            <div style={{ ...ds.muted, padding: 20, textAlign: 'center' }}>Nada que mostrar.</div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 20 }}>
             <button onClick={() => setPaso(1)} style={ds.secondaryBtn}>
@@ -308,32 +314,43 @@ export default function ArranqueAsistido({ estId, onListo }) {
             plato; si no, entrará solo con la primera factura de compra.
           </p>
 
-          <div style={{ maxHeight: 380, overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: radius.sm }}>
-            <div style={{ ...ds.tableHeader }}>
-              <div style={{ flex: 1 }}>Artículo</div>
-              <div style={{ width: 120 }}>¿Cuántos tienes?</div>
-              <div style={{ width: 120 }}>¿A cómo te sale?</div>
-            </div>
+          {/* Una tarjeta por articulo en rejilla: la tabla de tres columnas en
+              1600 px dejaba media pantalla en blanco y obligaba a bajar 13 filas. */}
+          <div style={{
+            display: 'grid', gap: 10,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))',
+            maxHeight: 460, overflowY: 'auto', paddingRight: 2,
+          }}>
             {creados.map(a => (
-              <div key={a.id} style={{ ...ds.tableRow }}>
-                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.nombre}</div>
-                <div style={{ width: 120 }}>
-                  <input inputMode="decimal" placeholder="0"
-                    value={conteos[a.id]?.cant ?? ''}
-                    onChange={e => setConteos({
-                      ...conteos,
-                      [a.id]: { ...conteos[a.id], cant: e.target.value.replace(/[^\d.,]/g, '') },
-                    })}
-                    style={{ ...ds.input, height: 32, textAlign: 'right' }} />
-                </div>
-                <div style={{ width: 120 }}>
-                  <input inputMode="decimal" placeholder="€ / ud"
-                    value={conteos[a.id]?.coste ?? ''}
-                    onChange={e => setConteos({
-                      ...conteos,
-                      [a.id]: { ...conteos[a.id], coste: e.target.value.replace(/[^\d.,]/g, '') },
-                    })}
-                    style={{ ...ds.input, height: 32, textAlign: 'right' }} />
+              <div key={a.id} style={{
+                border: `1px solid ${colors.border}`, borderRadius: radius.sm,
+                padding: '10px 12px', background: colors.paper,
+              }}>
+                <div style={{
+                  fontSize: type.sm, fontWeight: 600, color: colors.text, marginBottom: 8,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{a.nombre}</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={{ ...ds.label, marginBottom: 4 }}>¿Cuántos tienes?</label>
+                    <input inputMode="decimal" placeholder="0"
+                      value={conteos[a.id]?.cant ?? ''}
+                      onChange={e => setConteos({
+                        ...conteos,
+                        [a.id]: { ...conteos[a.id], cant: e.target.value.replace(/[^\d.,]/g, '') },
+                      })}
+                      style={{ ...ds.input, height: 36, textAlign: 'right' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={{ ...ds.label, marginBottom: 4 }}>¿A cómo te sale?</label>
+                    <input inputMode="decimal" placeholder={`€ / ${a.unidad}`}
+                      value={conteos[a.id]?.coste ?? ''}
+                      onChange={e => setConteos({
+                        ...conteos,
+                        [a.id]: { ...conteos[a.id], coste: e.target.value.replace(/[^\d.,]/g, '') },
+                      })}
+                      style={{ ...ds.input, height: 36, textAlign: 'right' }} />
+                  </div>
                 </div>
               </div>
             ))}
