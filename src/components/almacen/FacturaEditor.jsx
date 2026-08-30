@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, TriangleAlert } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { colors, ds, radius, type } from '../../lib/uiStyles'
+import { colors, ds, radius, type, col } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import { eur, contabilizarFactura, descontabilizarFactura } from '../../lib/stock'
 
@@ -143,7 +143,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
 
   return (
     <div style={ds.modal} onClick={onCerrar}>
-      <div style={{ ...ds.modalContent, maxWidth: 780 }} onClick={e => e.stopPropagation()}>
+      <div style={{ ...ds.modalContent, maxWidth: 940 }} onClick={e => e.stopPropagation()}>
         <h2 style={{ ...ds.h2, marginBottom: 2 }}>
           {nueva ? 'Nueva factura de compra' : bloqueada ? 'Factura contabilizada' : 'Factura (borrador)'}
         </h2>
@@ -160,12 +160,27 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ flex: '2 1 220px' }}>
                 <label style={ds.label}>Proveedor</label>
-                <select value={cab.proveedor_id} disabled={bloqueada}
-                  onChange={e => setCab({ ...cab, proveedor_id: e.target.value })}
-                  style={ds.select}>
-                  <option value="">— Sin proveedor —</option>
-                  {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
+                {/* Un desplegable con una sola opcion vacia no ayuda a nadie: si
+                    todavia no tiene proveedores, se le pide el nombre directamente. */}
+                {proveedores.length ? (
+                  <select value={cab.proveedor_id} disabled={bloqueada}
+                    onChange={e => setCab({ ...cab, proveedor_id: e.target.value })}
+                    style={ds.select}>
+                    <option value="">— Sin proveedor —</option>
+                    {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={nuevoProv} disabled={bloqueada}
+                      onChange={e => setNuevoProv(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearProveedor() } }}
+                      placeholder="Makro, Coca-Cola, el panadero…"
+                      style={{ ...ds.formInput, flex: 1 }} />
+                    <button onClick={crearProveedor} disabled={!nuevoProv.trim() || bloqueada}
+                      style={{ ...ds.secondaryBtn, flexShrink: 0,
+                        opacity: nuevoProv.trim() ? 1 : 0.5 }}>Crear</button>
+                  </div>
+                )}
               </div>
               <div style={{ flex: '1 1 140px' }}>
                 <label style={ds.label}>Número</label>
@@ -181,14 +196,13 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
               </div>
             </div>
 
-            {!bloqueada && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <input value={nuevoProv} onChange={e => setNuevoProv(e.target.value)}
-                    placeholder="…o escribe un proveedor nuevo" style={{ ...ds.input, height: 32 }} />
-                </div>
+            {!bloqueada && proveedores.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                <input value={nuevoProv} onChange={e => setNuevoProv(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearProveedor() } }}
+                  placeholder="…o escribe uno nuevo" style={{ ...ds.input, height: 32, flex: 1 }} />
                 <button onClick={crearProveedor} disabled={!nuevoProv.trim()} style={{
-                  ...ds.miniBtn, opacity: nuevoProv.trim() ? 1 : 0.5,
+                  ...ds.miniBtn, flexShrink: 0, opacity: nuevoProv.trim() ? 1 : 0.5,
                 }}>Crear</button>
               </div>
             )}
@@ -199,20 +213,22 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
               cuántas unidades de almacén trae cada una: una caja de 6 botellas es 6.
             </div>
 
-            <div style={{ display: 'flex', gap: 8, ...ds.label, marginBottom: 4 }}>
-              <div style={{ flex: 1 }}>Artículo</div>
-              <div style={{ width: 78, textAlign: 'right' }}>Cuántas</div>
-              <div style={{ width: 78, textAlign: 'right' }}>Contiene</div>
-              <div style={{ width: 90, textAlign: 'right' }}>Precio ud.</div>
-              <div style={{ width: 84, textAlign: 'right' }}>Importe</div>
-              <div style={{ width: 28 }} />
+            {/* OJO: `ds.label` lleva `display: block`. Si va DESPUES de `display: flex`
+                lo pisa y las cabeceras se apilan en vertical. El display va al final. */}
+            <div style={{ ...ds.label, marginBottom: 6, display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>Artículo</div>
+              <div style={col(78)}>Cuántas</div>
+              <div style={col(78)}>Contiene</div>
+              <div style={col(92)}>Precio ud.</div>
+              <div style={col(88)}>Importe</div>
+              <div style={col(30)} />
             </div>
 
             {lineas.map((l, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
                 <select value={l.articulo_id} disabled={bloqueada}
                   onChange={e => setLinea(i, 'articulo_id', e.target.value)}
-                  style={{ ...ds.select, flex: 1, height: 34 }}>
+                  style={{ ...ds.select, flex: 1, minWidth: 0, height: 34 }}>
                   <option value="">— Elige —</option>
                   {articulos.filter(a => a.activo).map(a => (
                     <option key={a.id} value={a.id}>{a.nombre}</option>
@@ -220,18 +236,19 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
                 </select>
                 <input inputMode="decimal" value={l.cantidad} disabled={bloqueada} placeholder="0"
                   onChange={e => setLinea(i, 'cantidad', e.target.value.replace(/[^\d.,]/g, ''))}
-                  style={{ ...ds.input, width: 78, height: 34, textAlign: 'right' }} />
+                  style={{ ...ds.input, ...col(78), height: 34 }} />
                 <input inputMode="decimal" value={l.factor} disabled={bloqueada} placeholder="1"
                   onChange={e => setLinea(i, 'factor', e.target.value.replace(/[^\d.,]/g, ''))}
-                  style={{ ...ds.input, width: 78, height: 34, textAlign: 'right' }} />
+                  style={{ ...ds.input, ...col(78), height: 34 }} />
                 <input inputMode="decimal" value={l.precio_unitario} disabled={bloqueada} placeholder="0,00"
                   onChange={e => setLinea(i, 'precio_unitario', e.target.value.replace(/[^\d.,]/g, ''))}
-                  style={{ ...ds.input, width: 90, height: 34, textAlign: 'right' }} />
-                <div style={{ width: 84, textAlign: 'right', ...ds.muted, fontVariantNumeric: 'tabular-nums' }}>
+                  style={{ ...ds.input, ...col(92), height: 34 }} />
+                <div style={{ ...col(88), ...ds.muted, alignSelf: 'center' }}>
                   {eur(num(l.cantidad) * num(l.precio_unitario))}
                 </div>
                 <button onClick={() => setLineas(lineas.filter((_, j) => j !== i))}
-                  disabled={bloqueada} style={{ ...ds.miniBtn, width: 28, padding: 0, opacity: bloqueada ? 0.4 : 1 }}
+                  disabled={bloqueada}
+                  style={{ ...ds.miniBtn, ...col(30), padding: 0, height: 34, opacity: bloqueada ? 0.4 : 1 }}
                   aria-label="Quitar línea">
                   <X size={12} />
                 </button>
@@ -246,21 +263,22 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
             )}
 
             <div style={{
-              marginTop: 18, padding: '12px 14px', borderRadius: radius.sm,
+              marginTop: 20, padding: '14px 16px', borderRadius: radius.sm,
               background: colors.surface2, border: `1px solid ${colors.border}`,
-              display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap',
+              display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap',
             }}>
-              <div>
+              <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ ...ds.label, marginBottom: 2 }}>Suma de las líneas</div>
-                <div style={{ fontSize: type.lg, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                  color: colors.text, lineHeight: 1.2 }}>
                   {eur(sumaLineas)}
                 </div>
               </div>
-              <div style={{ width: 140 }}>
+              <div style={{ width: 150, flexShrink: 0 }}>
                 <label style={ds.label}>Total del papel</label>
                 <input inputMode="decimal" value={cab.total} disabled={bloqueada} placeholder="0,00"
                   onChange={e => setCab({ ...cab, total: e.target.value.replace(/[^\d.,]/g, '') })}
-                  style={{ ...ds.formInput, textAlign: 'right' }} />
+                  style={{ ...ds.formInput, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
               </div>
             </div>
 
