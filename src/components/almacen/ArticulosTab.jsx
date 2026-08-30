@@ -41,12 +41,12 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
       </div>
 
       <div style={{ ...ds.table, ...tablaScroll }}>
-        <div style={{ ...ds.tableHeader, ...filaMin(740) }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(780) }}>
           <div style={{ flex: 1, minWidth: 0 }}>Artículo</div>
           <div style={col(96)}>Quedan</div>
           <div style={col(96)}>Coste ud.</div>
           <div style={col(96)}>Valor</div>
-          <div style={col(184, 'right')}></div>
+          <div style={col(220, 'right')}></div>
         </div>
 
         {!visibles.length && (
@@ -63,7 +63,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           const bajo = !negativo && Number(a.minimo) > 0 && ex <= Number(a.minimo)
           return (
             <div key={a.id} style={{
-              ...ds.tableRow, ...filaMin(740),
+              ...ds.tableRow, ...filaMin(780),
               background: negativo ? colors.dangerSoft : bajo ? colors.warningSoft : undefined,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -98,7 +98,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
               <div style={{ ...col(96), fontWeight: 600 }}>
                 {eur(ex * Number(a.coste_medio))}
               </div>
-              <div style={{ ...col(184), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <div style={{ ...col(220), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button onClick={() => setAccion({ articulo: a, tipo: 'merma' })}
                   style={{ ...ds.miniBtn, flexShrink: 0 }} title="Apuntar una merma">
                   <Trash2 size={12} /> Merma
