@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Search, CircleCheck, Circle, Wand2 } from 'lucide-react'
+import { Search, CircleCheck, Circle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { toast } from '../../App'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
-import { eur, arranqueDesdeCarta, comisionPidoo } from '../../lib/stock'
+import { eur, comisionPidoo } from '../../lib/stock'
 import EscandalloEditor from './EscandalloEditor'
 
 // La lista de escandallos, con semáforo.
@@ -20,7 +19,6 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
   const [abierto, setAbierto] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [refresco, setRefresco] = useState(0)
-  const [creando, setCreando] = useState(null)
   // null = no se ha podido saber. NO es lo mismo que 0: un fallo disfrazado de
   // "no paga comision" enseña un margen inflado como si fuera bueno.
   const [comision, setComision] = useState(null)
@@ -66,23 +64,6 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
 
   const nSin = prods.length - Object.keys(conReceta).length
 
-  // Un producto que entra y sale igual (una lata, un agua) tambien necesita receta,
-  // solo que de una linea: "1 de este producto = 1 de este articulo". El asistente de
-  // arranque la escribe sola, pero el asistente sale UNA VEZ; sin este boton, dar de
-  // alta una bebida nueva costaba 4 pasos en 2 pestañas. La RPC es la misma.
-  async function venderTalCual(prod) {
-    setCreando(prod.id)
-    try {
-      await arranqueDesdeCarta(estId, [prod.id])
-      toast(`«${prod.nombre}» ya descuenta del almacén`, 'success')
-      onCambio?.()
-      setRefresco(n => n + 1)
-    } catch (e) {
-      toast(e.message, 'error')
-    }
-    setCreando(null)
-  }
-
   if (cargando) return <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>Cargando la carta…</div>
 
   return (
@@ -116,13 +97,13 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
       )}
 
       <div style={{ ...ds.table, ...tablaScroll }}>
-        <div style={{ ...ds.tableHeader, ...filaMin(960) }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(880) }}>
           <div style={col(22, 'left')}></div>
           <div style={{ flex: 1, minWidth: 0 }}>Plato</div>
           <div style={col(88)}>Te cuesta</div>
           <div style={col(124)}>En barra</div>
           <div style={col(148)}>Por Pidoo</div>
-          <div style={col(200, 'right')}></div>
+          <div style={col(112, 'right')}></div>
         </div>
 
         {visibles.map(p => {
@@ -137,7 +118,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           const mBarra = tiene && pBarra != null ? pBarra - coste : null
           const mPidoo = tiene && pPidoo > 0 ? netoPidoo - coste : null
           return (
-            <div key={p.id} style={{ ...ds.tableRow, ...filaMin(960), background: colors.paper }}>
+            <div key={p.id} style={{ ...ds.tableRow, ...filaMin(880), background: colors.paper }}>
               <div style={{ ...col(22, 'left'), display: 'flex' }}>
                 {tiene
                   ? <CircleCheck size={16} color={colors.sage2} />
@@ -163,18 +144,10 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
               <Precio ancho={148} precio={pPidoo} margen={mPidoo}
                 nota={comision == null ? 'sin descontar comisión'
                   : comision > 0 ? `−${comision} % comisión` : 'sin comisión'} />
-              <div style={{ ...col(200), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                {tiene ? (
-                  <button onClick={() => setAbierto(p)} style={{ ...ds.miniBtn, flexShrink: 0 }}>
-                    Ver receta
-                  </button>
-                ) : (
-                  <button onClick={() => venderTalCual(p)} disabled={creando === p.id}
-                    title="Crea el artículo y su receta de una unidad, de un clic"
-                    style={{ ...ds.miniBtn, flexShrink: 0, opacity: creando === p.id ? 0.5 : 1 }}>
-                    <Wand2 size={12} /> {creando === p.id ? 'Creando…' : 'Se vende tal cual'}
-                  </button>
-                )}
+              <div style={{ ...col(112), display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setAbierto(p)} style={{ ...ds.miniBtn, flexShrink: 0 }}>
+                  {tiene ? 'Ver receta' : 'Escribir receta'}
+                </button>
               </div>
             </div>
           )
@@ -191,9 +164,8 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
         Los platos sin receta no descuentan nada del almacén. Es lo normal al principio:
         empieza por los que más vendes, que son los que mueven el género.
         <br />
-        <strong>«Se vende tal cual»</strong> es para lo que entra y sale igual —una lata,
-        un agua, una tarrina—: te crea el artículo y su receta de una unidad de un clic.
-        Para los platos que se elaboran, <strong>toca el nombre</strong> y escribe la receta.
+        Si el plato entra y sale igual —una lata, un agua, una tarrina— no hace falta que
+        escribas nada: abre su receta y pulsa <strong>«Se vende tal cual»</strong>.
       </div>
 
       {abierto && (
@@ -202,7 +174,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           producto={abierto}
           articulos={articulos}
           onCerrar={() => setAbierto(null)}
-          onGuardado={() => { setAbierto(null); setRefresco(n => n + 1) }}
+          onGuardado={() => { setAbierto(null); onCambio?.(); setRefresco(n => n + 1) }}
         />
       )}
     </div>

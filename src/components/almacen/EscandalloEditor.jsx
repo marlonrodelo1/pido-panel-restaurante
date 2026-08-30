@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp, Wand2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { eur, comisionPidoo } from '../../lib/stock'
+import { eur, comisionPidoo, arranqueDesdeCarta } from '../../lib/stock'
 
 // El escandallo de un plato: qué lleva y cuánto cuesta.
 //
@@ -28,6 +28,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [comision, setComision] = useState(null)
+  const [montando, setMontando] = useState(false)
 
   const clave = (s) => (s || '').trim().toLowerCase()
   const porId = Object.fromEntries(articulos.map(a => [a.id, a]))
@@ -81,6 +82,21 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
       ...prev,
       [k]: prev[k].map((l, j) => j === i ? { ...l, [campo]: valor } : l),
     }))
+  }
+
+  // El atajo para lo que entra y sale igual: crea el artículo con el mismo nombre y
+  // su receta de una unidad. Va aquí y no en la lista porque es aquí donde surge la
+  // duda: estás mirando una receta vacía.
+  async function seVendeTalCual() {
+    setMontando(true)
+    try {
+      await arranqueDesdeCarta(estId, [producto.id])
+      toast(`«${producto.nombre}» ya descuenta del almacén`, 'success')
+      onGuardado()
+    } catch (e) {
+      toast(e.message, 'error')
+      setMontando(false)
+    }
   }
 
   async function guardar() {
@@ -158,8 +174,22 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
                 onQuitar={() => setLineas(prev => prev.filter((_, j) => j !== i))} />
             ))}
             {!lineas.length && (
-              <div style={{ ...ds.muted, padding: '12px 0' }}>
-                Todavía no lleva nada. Añade el primer ingrediente.
+              <div style={{
+                padding: '14px 16px', borderRadius: radius.sm, marginTop: 4,
+                border: `1px solid ${colors.border}`, background: colors.surface2,
+              }}>
+                <div style={{ fontSize: type.sm, color: colors.textDim, lineHeight: 1.6 }}>
+                  Todavía no lleva nada. Añade abajo lo que lleva una ración.
+                </div>
+                <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.6 }}>
+                  ¿Es de los que entran y salen igual, como una lata o un agua? Entonces
+                  no hace falta que escribas nada:
+                </div>
+                <button onClick={seVendeTalCual} disabled={montando} style={{
+                  ...ds.secondaryBtn, marginTop: 10, opacity: montando ? 0.5 : 1,
+                }}>
+                  <Wand2 size={14} /> {montando ? 'Creando…' : 'Se vende tal cual'}
+                </button>
               </div>
             )}
             <button onClick={() => setLineas([...lineas, { articulo_id: '', cantidad: '' }])}
