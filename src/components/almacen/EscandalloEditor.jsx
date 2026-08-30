@@ -3,7 +3,7 @@ import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { eur } from '../../lib/stock'
+import { eur, comisionPidoo } from '../../lib/stock'
 
 // El escandallo de un plato: qué lleva y cuánto cuesta.
 //
@@ -27,6 +27,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const [abierta, setAbierta] = useState(null)      // tamano_clave con receta propia desplegada
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
+  const [comision, setComision] = useState(null)
 
   const clave = (s) => (s || '').trim().toLowerCase()
   const porId = Object.fromEntries(articulos.map(a => [a.id, a]))
@@ -34,13 +35,15 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   useEffect(() => {
     let vivo = true
     ;(async () => {
-      const [t, e, f] = await Promise.all([
+      const [t, e, f, c] = await Promise.all([
         supabase.from('producto_tamanos').select('id, nombre, precio, precio_local')
           .eq('producto_id', producto.id).order('orden'),
         supabase.from('escandallo_lineas').select('*').eq('producto_id', producto.id),
         supabase.from('escandallo_tamanos').select('*').eq('producto_id', producto.id),
+        comisionPidoo(estId).catch((e) => { console.warn('[almacen] comisión:', e.message); return null }),
       ])
       if (!vivo) return
+      setComision(c == null ? null : Number(c))
       setTamanos(t.data || [])
       const todas = e.data || []
       setLineas(todas.filter(l => l.tamano_clave === '')
@@ -55,15 +58,20 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
       setCargando(false)
     })()
     return () => { vivo = false }
-  }, [producto.id])
+  }, [producto.id, estId])
 
   const num = (v) => Number(String(v ?? '').replace(',', '.')) || 0
   const costeDe = (ls) => ls.reduce((s, l) => s + num(l.cantidad) * Number(porId[l.articulo_id]?.coste_medio || 0), 0)
 
   const costeBase = costeDe(lineas)
-  const precioBase = Number(producto.precio_local ?? producto.precio ?? 0)
-  const margenBase = precioBase - costeBase
-  const pctBase = precioBase > 0 ? Math.round(1000 * margenBase / precioBase) / 10 : null
+  // Los DOS precios: la barra no paga comisión, lo que entra por Pidoo sí. Enseñar
+  // uno solo hace que el dueño decida con la mitad de la información.
+  const pBarra = producto.precio_local != null ? Number(producto.precio_local) : null
+  const pPidoo = Number(producto.precio ?? 0)
+  const mBarra = pBarra != null ? pBarra - costeBase : null
+  const mPidoo = pPidoo > 0
+    ? (comision == null ? pPidoo : pPidoo * (1 - comision / 100)) - costeBase
+    : null
 
   function setLinea(i, campo, valor) {
     setLineas(prev => prev.map((l, j) => j === i ? { ...l, [campo]: valor } : l))
@@ -165,10 +173,17 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
               display: 'flex', gap: 22, flexWrap: 'wrap',
             }}>
               <Cifra label="Te cuesta" valor={eur(costeBase)} />
-              <Cifra label="Lo vendes a" valor={eur(precioBase)} />
-              <Cifra label="Te queda"
-                valor={`${eur(margenBase)}${pctBase !== null ? ` · ${pctBase} %` : ''}`}
-                tono={margenBase < 0 ? 'danger' : 'ok'} />
+              <Cifra label="En barra te queda"
+                valor={pBarra == null ? '—' : eur(mBarra)}
+                nota={pBarra == null ? 'sin precio de local' : `vendes a ${eur(pBarra)}`}
+                tono={mBarra != null && mBarra < 0 ? 'danger' : 'ok'} />
+              <Cifra label="Por Pidoo te queda"
+                valor={pPidoo > 0 ? eur(mPidoo) : '—'}
+                nota={pPidoo > 0
+                  ? `vendes a ${eur(pPidoo)}${comision == null ? ' · sin descontar comisión'
+                      : comision > 0 ? ` − ${comision} % comisión` : ''}`
+                  : 'sin precio'}
+                tono={mPidoo != null && mPidoo < 0 ? 'danger' : 'ok'} />
             </div>
             {costeBase === 0 && lineas.length > 0 && (
               <div style={{ ...ds.muted, marginTop: 8, lineHeight: 1.5 }}>
@@ -187,7 +202,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
                 {tamanos.map(t => {
                   const k = clave(t.nombre)
                   const tienePropia = !!propias[k]?.length
-                  const precioT = Number(t.precio_local ?? t.precio ?? 0)
+                  const precioT = Number(t.precio_local ?? t.precio ?? 0)  // barra, o el de app si no hay
                   const costeT = tienePropia ? costeDe(propias[k]) : costeBase * (num(factores[k]) || 1)
                   return (
                     <div key={t.id} style={{
@@ -283,7 +298,7 @@ function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
   )
 }
 
-function Cifra({ label, valor, tono }) {
+function Cifra({ label, valor, tono, nota }) {
   return (
     <div>
       <div style={{ ...ds.label, marginBottom: 2 }}>{label}</div>
@@ -291,6 +306,7 @@ function Cifra({ label, valor, tono }) {
         fontSize: type.lg, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
         color: tono === 'danger' ? colors.danger : tono === 'ok' ? colors.sage2 : colors.text,
       }}>{valor}</div>
+      {nota && <div style={{ ...ds.muted, marginTop: 1 }}>{nota}</div>}
     </div>
   )
 }

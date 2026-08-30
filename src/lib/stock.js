@@ -123,6 +123,11 @@ export const arranqueDesdeCarta = (estId, productoIds) =>
 export const cerrarArranque = (estId) =>
   rpc('stock_cerrar_arranque', { p_establecimiento_id: estId })
 
+// El % que se lleva Pidoo por lo que entra por la app. NO es siempre el 10 %: cada
+// restaurante puede tener su trato pactado, y quien lo sabe es la base de datos.
+export const comisionPidoo = (estId) =>
+  rpc('pidoo_comision_pct', { p_establecimiento_id: estId, p_origen: 'pido' })
+
 export const contabilizarFactura = (facturaId) =>
   rpc('stock_contabilizar_factura', { p_factura_id: facturaId })
 

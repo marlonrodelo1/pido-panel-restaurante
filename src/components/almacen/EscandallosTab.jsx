@@ -3,7 +3,7 @@ import { Search, CircleCheck, Circle, Wand2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { toast } from '../../App'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
-import { eur, arranqueDesdeCarta } from '../../lib/stock'
+import { eur, arranqueDesdeCarta, comisionPidoo } from '../../lib/stock'
 import EscandalloEditor from './EscandalloEditor'
 
 // La lista de escandallos, con semáforo.
@@ -21,20 +21,25 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
   const [cargando, setCargando] = useState(true)
   const [refresco, setRefresco] = useState(0)
   const [creando, setCreando] = useState(null)
+  // null = no se ha podido saber. NO es lo mismo que 0: un fallo disfrazado de
+  // "no paga comision" enseña un margen inflado como si fuera bueno.
+  const [comision, setComision] = useState(null)
 
   useEffect(() => {
     if (!estId) return
     let vivo = true
     ;(async () => {
-      const [p, e] = await Promise.all([
+      const [p, e, c] = await Promise.all([
         supabase.from('productos')
           .select('id, nombre, precio, precio_local, categoria_id, categorias(nombre)')
           .eq('establecimiento_id', estId).order('nombre'),
         supabase.from('escandallo_lineas')
           .select('producto_id, articulo_id, cantidad, tamano_clave')
           .eq('establecimiento_id', estId),
+        comisionPidoo(estId).catch((e) => { console.warn('[almacen] comisión:', e.message); return null }),
       ])
       if (!vivo) return
+      setComision(c == null ? null : Number(c))
       setProds(p.data || [])
 
       const cuenta = {}
@@ -111,23 +116,28 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
       )}
 
       <div style={{ ...ds.table, ...tablaScroll }}>
-        <div style={{ ...ds.tableHeader, ...filaMin(890) }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(960) }}>
           <div style={col(22, 'left')}></div>
           <div style={{ flex: 1, minWidth: 0 }}>Plato</div>
-          <div style={col(92)}>Te cuesta</div>
-          <div style={col(92)}>Lo vendes a</div>
-          <div style={col(128)}>Te queda</div>
+          <div style={col(88)}>Te cuesta</div>
+          <div style={col(124)}>En barra</div>
+          <div style={col(148)}>Por Pidoo</div>
           <div style={col(200, 'right')}></div>
         </div>
 
         {visibles.map(p => {
           const tiene = !!conReceta[p.id]
           const coste = costes[p.id]
-          const precio = Number(p.precio_local ?? p.precio ?? 0)
-          const margen = tiene ? precio - coste : null
-          const pct = tiene && precio > 0 ? Math.round(1000 * margen / precio) / 10 : null
+          // Los DOS precios del producto. `precio_local` es la barra y el QR de mesa;
+          // `precio` es lo que paga el cliente por la app y la tienda.
+          const pBarra = p.precio_local != null ? Number(p.precio_local) : null
+          const pPidoo = Number(p.precio ?? 0)
+          // Por Pidoo se paga comisión; en barra no. Comparar los dos brutos mentiría.
+          const netoPidoo = comision == null ? pPidoo : pPidoo * (1 - comision / 100)
+          const mBarra = tiene && pBarra != null ? pBarra - coste : null
+          const mPidoo = tiene && pPidoo > 0 ? netoPidoo - coste : null
           return (
-            <div key={p.id} style={{ ...ds.tableRow, ...filaMin(890), background: colors.paper }}>
+            <div key={p.id} style={{ ...ds.tableRow, ...filaMin(960), background: colors.paper }}>
               <div style={{ ...col(22, 'left'), display: 'flex' }}>
                 {tiene
                   ? <CircleCheck size={16} color={colors.sage2} />
@@ -146,18 +156,13 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
                   {tiene ? ` · ${conReceta[p.id]} ingrediente${conReceta[p.id] === 1 ? '' : 's'}` : ' · sin receta'}
                 </div>
               </div>
-              <div style={{ ...col(92), color: colors.textMute }}>
+              <div style={{ ...col(88), color: colors.textMute }}>
                 {tiene ? eur(coste) : '—'}
               </div>
-              <div style={col(92)}>
-                {eur(precio)}
-              </div>
-              <div style={{
-                ...col(128), fontWeight: 700,
-                color: margen === null ? colors.textMute : margen < 0 ? colors.danger : colors.sage2,
-              }}>
-                {margen === null ? '—' : `${eur(margen)}${pct !== null ? ` · ${pct} %` : ''}`}
-              </div>
+              <Precio ancho={124} precio={pBarra} margen={mBarra} />
+              <Precio ancho={148} precio={pPidoo} margen={mPidoo}
+                nota={comision == null ? 'sin descontar comisión'
+                  : comision > 0 ? `−${comision} % comisión` : 'sin comisión'} />
               <div style={{ ...col(200), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 {tiene ? (
                   <button onClick={() => setAbierto(p)} style={{ ...ds.miniBtn, flexShrink: 0 }}>
@@ -199,6 +204,30 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           onCerrar={() => setAbierto(null)}
           onGuardado={() => { setAbierto(null); setRefresco(n => n + 1) }}
         />
+      )}
+    </div>
+  )
+}
+
+// Una celda de precio: lo que cobra arriba y lo que le queda debajo. Dos numeros en
+// el sitio de uno, porque el precio solo no dice nada sin el coste al lado.
+function Precio({ ancho, precio, margen, nota }) {
+  if (precio == null || precio === 0) {
+    return <div style={{ ...col(ancho), color: colors.textMute }}>—</div>
+  }
+  return (
+    <div style={col(ancho)}>
+      <div style={{ fontWeight: 600, color: colors.text }}>{eur(precio)}</div>
+      <div style={{
+        fontSize: type.xxs, marginTop: 1, fontWeight: 700,
+        color: margen === null ? colors.textMute : margen < 0 ? colors.danger : colors.sage2,
+      }}>
+        {margen === null
+          ? (nota || '—')
+          : `${margen < 0 ? '' : '+'}${eur(margen)}${precio > 0 ? ` · ${Math.round(1000 * margen / precio) / 10} %` : ''}`}
+      </div>
+      {nota && margen !== null && (
+        <div style={{ fontSize: type.xxs, color: colors.textMute }}>{nota}</div>
       )}
     </div>
   )
