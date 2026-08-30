@@ -138,7 +138,7 @@ export default function Almacen() {
         <ArticulosTab estId={estId} articulos={articulos} onCambio={recargar} />
       )}
       {pestana === 'escandallos' && (
-        <EscandallosTab estId={estId} articulos={articulos} />
+        <EscandallosTab estId={estId} articulos={articulos} onCambio={recargar} />
       )}
       {pestana === 'compras' && (
         <ComprasTab estId={estId} articulos={articulos} onCambio={recargar} />
