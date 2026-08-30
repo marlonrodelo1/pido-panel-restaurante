@@ -43,6 +43,10 @@ const isNative = Capacitor.isNativePlatform()
 // afinar la pantalla sin compilar un AAB por cada cambio de tipografia.
 const TPV_EN_ESTA_PLATAFORMA = isNative || import.meta.env.DEV
 
+// Llave de desarrollo para probar la shell TPV en el navegador: `?tpvapp=1`.
+const FORZAR_TPV_APP = import.meta.env.DEV &&
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('tpvapp')
+
 const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer, tpv: Calculator }
 
@@ -99,6 +103,8 @@ function AppContent() {
     return 'historial'
   })
 
+  // En la shell normal, un pedido nuevo lleva a Pedidos. En la shell TPV NO se usa:
+  // alli el propio TPV abre su capa de Pedidos encima, sin desmontar el mostrador.
   const handleNuevoPedido = useCallback(() => {
     setSeccion('pedidos')
   }, [])
@@ -591,6 +597,31 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
     </>
   )
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SHELL TPV (app nativa CON el modulo de TPV activo)
+  //
+  // Decision de Marlon (30 ago 2026): cuando el restaurante tiene el TPV, el TPV
+  // ES la aplicacion. Nada de barra inferior ni cabecera aparte: el TPV ocupa la
+  // pantalla entera y TODO —pedidos, historial, carta, impresora— cuelga de su
+  // menu, abriendose ENCIMA en vez de sustituirlo.
+  //
+  // Eso ademas arregla un problema real que ya existia: al entrar un pedido, la
+  // app saltaba a Pedidos y el TPV se DESMONTABA, perdiendo el carrito a medias
+  // con el cliente delante. Como capa, el carrito sigue detras intacto.
+  //
+  // A quien NO tenga el modulo, la app le queda exactamente igual que antes.
+  // Para poder verlo en la vista previa sin compilar un AAB: `?tpvapp=1` en la URL.
+  // Solo funciona en `npm run dev`; en la web de produccion `import.meta.env.DEV` es
+  // false, asi que panel.pidoo.es nunca entra en esta shell.
+  if ((isNative || FORZAR_TPV_APP) && tpvActivo) {
+    return (
+      <div style={{ ...shell, minHeight: '100vh' }}>
+        <style>{css}</style>
+        <Tpv modoApp />
+      </div>
+    )
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // SHELL DESKTOP (≥1024px, no native)

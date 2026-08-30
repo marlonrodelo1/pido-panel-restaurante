@@ -30,7 +30,7 @@ import {
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
-  Boxes, ClipboardCheck,
+  Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
   Sandwich, Croissant, Beef, Beer, CupSoda, Coffee, Pizza, Salad, CakeSlice, IceCream,
   Fish, Drumstick, Soup, Cookie, Utensils, Wine, Ham, Popcorn, Carrot, EggFried,
 } from 'lucide-react'
@@ -40,6 +40,11 @@ import TpvPedidos from '../components/TpvPedidos'
 import TpvCaja from '../components/TpvCaja'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
 import TpvStock from '../components/TpvStock'
+import PedidosEnVivo from './PedidosEnVivo'
+import HistorialMovil from './HistorialMovil'
+import DisponibilidadProductos from './DisponibilidadProductos'
+import ConfigImpresora from './ConfigImpresora'
+import CrearEnvio from './CrearEnvio'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
@@ -72,7 +77,15 @@ const ICONOS = [
 ]
 const iconoDe = (nombre) => (ICONOS.find(([re]) => re.test(nombre || ''))?.[1]) || Utensils
 
-export default function Tpv() {
+const PANTALLAS = {
+  pedidos: 'Pedidos',
+  'crear-envio': 'Pedido telefónico',
+  historial: 'Historial',
+  disponibilidad: 'Carta',
+  impresora: 'Impresora y cuenta',
+}
+
+export default function Tpv({ modoApp = false }) {
   const { restaurante, tpvConfig, stockActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
 
@@ -97,11 +110,24 @@ export default function Tpv() {
   const [pestana, setPestana] = useState('mostrador')
   const [modalCaja, setModalCaja] = useState(false)
   const [cajaVista, setCajaVista] = useState('resumen')
+  // Con `modoApp`, el TPV es la aplicacion entera y las demas pantallas se abren
+  // ENCIMA en esta capa. No se sustituye el TPV: si se desmontara, el carrito a
+  // medias se perderia con el cliente delante.
+  const [pantalla, setPantalla] = useState(null)
   const [modalStock, setModalStock] = useState(false)
   const [stockVista, setStockVista] = useState('existencias')
   const [nuevoPedido, setNuevoPedido] = useState(null)   // 'reparto' | 'recogida'
   const [ultimaVenta, setUltimaVenta] = useState(null)
   const [impresora, setImpresora] = useState({ configurada: false, viva: null })
+
+  // Un pedido nuevo abre la capa de Pedidos por si sola: la alarma ya suena, pero
+  // hay que llevar al camarero a donde se acepta. El mostrador se queda detras.
+  const nuevosPrev = useRef(0)
+  useEffect(() => {
+    const n = pedidosNuevos?.length || 0
+    if (modoApp && n > nuevosPrev.current) setPantalla('pedidos')
+    nuevosPrev.current = n
+  }, [pedidosNuevos, modoApp])
 
   const idemRef = useRef(null)
   const enVueloRef = useRef(false)
@@ -376,6 +402,40 @@ export default function Tpv() {
       {/* Mostrador y Pedidos en la misma pantalla: durante el servicio no se puede
           estar saltando de una sección a otra. No hay pestaña de Reservas porque
           Pidoo no tiene reservas: no existe ninguna tabla detrás. */}
+      {/* En modo app no hay cabecera de panel detrás, así que el nombre y el estado
+          van aquí. El estado importa: si la app se queda sin conexión, el sistema
+          cierra el restaurante solo a los 5 minutos y conviene verlo de un vistazo. */}
+      {modoApp && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+          paddingBottom: 10, borderBottom: `1px solid ${T.border}`,
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.text, minWidth: 0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {restaurante?.nombre}
+          </div>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+            fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+            padding: '4px 10px', borderRadius: 999,
+            color: restaurante?.activo ? T.ok : T.danger,
+            border: `1px solid ${restaurante?.activo ? T.ok : T.danger}`,
+          }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: restaurante?.activo ? T.ok : T.danger,
+            }} />
+            {restaurante?.activo ? 'ABIERTO' : 'CERRADO'}
+          </span>
+          {!restaurante?.activo && (
+            <button onClick={() => setPantalla('impresora')} style={{
+              ...btnSecundario, height: 30, fontSize: 12, flexShrink: 0,
+              borderColor: T.accent, color: T.accent,
+            }}>Abrir</button>
+          )}
+        </div>
+      )}
+
       <div style={{ position: 'relative', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Pestana activa={pestana === 'mostrador'} onClick={() => setPestana('mostrador')}
@@ -692,6 +752,40 @@ export default function Tpv() {
         </Modal>
       )}
 
+      {/* Las pantallas de la app, ENCIMA del mostrador. Van con el tema claro del
+          panel porque son las mismas de siempre: no se tocan, solo se enmarcan. */}
+      {pantalla && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 900,
+          background: 'var(--c-bg)', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+            background: 'var(--c-surface)', borderBottom: '1px solid var(--c-border)',
+            flexShrink: 0,
+          }}>
+            <button onClick={() => setPantalla(null)} style={{
+              display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
+              borderRadius: 10, border: '1px solid var(--c-border)',
+              background: 'var(--c-surface)', color: 'var(--c-text)',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>
+              <ArrowLeft size={16} /> Volver al mostrador
+            </button>
+            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--c-text)' }}>
+              {PANTALLAS[pantalla]}
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+            {pantalla === 'pedidos' && <PedidosEnVivo />}
+            {pantalla === 'crear-envio' && <CrearEnvio />}
+            {pantalla === 'historial' && <HistorialMovil />}
+            {pantalla === 'disponibilidad' && <DisponibilidadProductos />}
+            {pantalla === 'impresora' && <ConfigImpresora />}
+          </div>
+        </div>
+      )}
+
       {modalStock && (
         <Modal titulo="Almacén" onCerrar={() => setModalStock(false)}>
           <TpvStock establecimientoId={restaurante.id} vistaInicial={stockVista} />
@@ -699,7 +793,27 @@ export default function Tpv() {
       )}
 
       {menu && (
-        <Drawer titulo="TPV" onCerrar={() => setMenu(false)}>
+        <Drawer titulo={modoApp ? (restaurante?.nombre || 'TPV') : 'TPV'} onCerrar={() => setMenu(false)}>
+          {modoApp && (
+            <>
+              <GrupoMenu titulo="El negocio" />
+              <OpcionMenu icono={<ClipboardList size={19} color={T.accent} />} texto="Pedidos"
+                nota="Aceptar, marcar listos y entregados"
+                onClick={() => { setMenu(false); setPantalla('pedidos') }} />
+              <OpcionMenu icono={<PhoneCall size={19} color={T.accent} />} texto="Pedido telefónico"
+                nota="Crear un reparto o una recogida por teléfono"
+                onClick={() => { setMenu(false); setPantalla('crear-envio') }} />
+              <OpcionMenu icono={<Clock size={19} color={T.accent} />} texto="Historial"
+                nota="Todo lo de días anteriores"
+                onClick={() => { setMenu(false); setPantalla('historial') }} />
+              <OpcionMenu icono={<ToggleLeft size={19} color={T.accent} />} texto="Carta"
+                nota="Qué está disponible y qué se ha agotado"
+                onClick={() => { setMenu(false); setPantalla('disponibilidad') }} />
+              <OpcionMenu icono={<Printer size={19} color={T.accent} />} texto="Impresora y cuenta"
+                nota="Abrir o cerrar el local, impresora y salir"
+                onClick={() => { setMenu(false); setPantalla('impresora') }} />
+            </>
+          )}
           <GrupoMenu titulo="Caja" />
           <OpcionMenu icono={<Inbox size={19} color={T.accent} />} texto="Abrir cajón"
             nota="Sin cobrar nada"
