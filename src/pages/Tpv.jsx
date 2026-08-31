@@ -809,7 +809,7 @@ export default function Tpv({ modoApp = false }) {
 
       {/* La barra de la venta, fija abajo en telefono. Es lo unico que hace falta ver
           de la venta mientras se marca: cuanto llevas y como llegar al cobro. */}
-      {esMovil && pestana === 'mostrador' && !hojaVenta && (
+      {esMovil && pestana === 'mostrador' && !hojaVenta && !pantalla && (
         <div style={{
           position: 'fixed', left: 10, right: 10, bottom: 10, zIndex: 950,
         }}>
@@ -847,7 +847,7 @@ export default function Tpv({ modoApp = false }) {
       {/* Las pantallas de la app, ENCIMA del mostrador. Van con el tema claro del
           panel porque son las mismas de siempre: no se tocan, solo se enmarcan. */}
       {pantalla && (
-        <div style={{
+        <div className="tpv-capa" style={{
           position: 'fixed', inset: 0, zIndex: 900,
           background: 'var(--c-bg)', display: 'flex', flexDirection: 'column',
         }}>

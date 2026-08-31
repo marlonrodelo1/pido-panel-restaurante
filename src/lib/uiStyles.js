@@ -9,74 +9,91 @@
 const FONT = "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
 
 export const colors = {
+  // ⚠️ CADA COLOR ES UNA VARIABLE CSS CON RESPALDO, no un hex suelto.
+  //
+  // En el panel web la variable vale EXACTAMENTE el hex del respaldo, asi que no
+  // cambia nada. Existen para poder redefinirlas dentro de un contenedor y dar la
+  // vuelta al tema entero: es lo que hace `.tpv-capa` en index.css para que la
+  // pantalla de Pedidos se vea DENTRO del TPV, que es negro, y no como una pantalla
+  // crema pegada. Reescribir esas 1875 lineas no era una opcion: son las que aceptan,
+  // rechazan, imprimen y despachan el pedido.
+  //
+  // Tres reglas si tocas esto:
+  //  1. NO reuses los nombres --c-*-soft de index.css: ya existen con OTRO valor
+  //     (rgba en vez de hex) y el respaldo no llegaria a entrar. Por eso: -tint.
+  //  2. Una variable declarada VACIA o con un valor invalido tira la propiedad entera
+  //     y NO cae al respaldo. O valor valido, o no la declares.
+  //  3. var() SI funciona en atributos de presentacion SVG (medido en Chromium), asi
+  //     que los iconos de lucide siguen pintando. En WebKit no esta comprobado, pero
+  //     este panel solo se publica en Android.
   // === Bases (cream world) ===
-  cream:    '#F7F3EC',   // fondo principal
-  cream2:   '#EFE9DD',   // filas/secciones secundarias
-  paper:    '#FBF8F2',   // cards, inputs
+  cream:    'var(--c-cream, #F7F3EC)',   // fondo principal
+  cream2:   'var(--c-cream-2, #EFE9DD)',   // filas/secciones secundarias
+  paper:    'var(--c-paper, #FBF8F2)',   // cards, inputs
 
   // === Tinta ===
-  ink:      '#1A1815',
-  ink2:     '#2B2823',
-  stone:    '#6B6356',
-  stone2:   '#8A8174',
+  ink:      'var(--c-text, #1A1815)',
+  ink2:     'var(--c-text-soft, #2B2823)',
+  stone:    'var(--c-muted, #6B6356)',
+  stone2:   'var(--c-text-faint, #8A8174)',
 
   // === Acentos ===
-  terracotta:      '#C5562C',
-  terracotta2:     '#A8451F',
-  terracottaSoft:  '#F1D9CC',
+  terracotta:      'var(--c-primary, #C5562C)',
+  terracotta2:     'var(--c-primary-dark, #A8451F)',
+  terracottaSoft:  'var(--c-primary-tint, #F1D9CC)',
 
-  sage:      '#8B9D7A',
-  sage2:     '#6F8460',
-  sageSoft:  '#DDE3D3',
+  sage:      'var(--c-success, #8B9D7A)',
+  sage2:     'var(--c-success-strong, #6F8460)',
+  sageSoft:  'var(--c-success-tint, #DDE3D3)',
 
   // === Funcionales ===
-  info:        '#7B8FA8',
-  infoSoft:    '#DBE0E8',
-  danger:      '#B5564A',
-  dangerSoft:  '#F1D0CB',
-  warning:     '#C99551',
-  warningSoft: '#F0E1C8',
+  info:        'var(--c-info, #7B8FA8)',
+  infoSoft:    'var(--c-info-tint, #DBE0E8)',
+  danger:      'var(--c-danger, #B5564A)',
+  dangerSoft:  'var(--c-danger-tint, #F1D0CB)',
+  warning:     'var(--c-warning, #C99551)',
+  warningSoft: 'var(--c-warning-tint, #F0E1C8)',
 
   // === Compatibilidad hacia atrás (alias a la nueva paleta) ===
   // Superficies
-  bg:           '#F7F3EC',  // alias cream
-  surface:      '#FBF8F2',  // alias paper
-  surface2:     '#EFE9DD',  // alias cream2
-  elev:         '#FBF8F2',  // alias paper
-  elev2:        '#EFE9DD',  // alias cream2
-  border:       '#E8E1D3',
-  borderStrong: '#D8CDB8',
+  bg:           'var(--c-bg, #F7F3EC)',  // alias cream
+  surface:      'var(--c-surface, #FBF8F2)',  // alias paper
+  surface2:     'var(--c-surface2, #EFE9DD)',  // alias cream2
+  elev:         'var(--c-elev, #FBF8F2)',  // alias paper
+  elev2:        'var(--c-elev2, #EFE9DD)',  // alias cream2
+  border:       'var(--c-border, #E8E1D3)',
+  borderStrong: 'var(--c-border-strong, #D8CDB8)',
 
   // Tipografía
-  text:      '#1A1815',  // alias ink
-  textDim:   '#2B2823',  // alias ink2
-  textMute:  '#6B6356',  // alias stone
-  textFaint: '#8A8174',  // alias stone2
+  text:      'var(--c-text, #1A1815)',  // alias ink
+  textDim:   'var(--c-text-soft, #2B2823)',  // alias ink2
+  textMute:  'var(--c-muted, #6B6356)',  // alias stone
+  textFaint: 'var(--c-text-faint, #8A8174)',  // alias stone2
 
   // Primario (antes naranja Pidoo #FF6B2C → ahora terracotta)
-  primary:       '#C5562C',
-  primaryDark:   '#A8451F',
-  primarySoft:   '#F1D9CC',
-  primaryBorder: 'rgba(197,86,44,0.32)',
+  primary:       'var(--c-primary, #C5562C)',
+  primaryDark:   'var(--c-primary-dark, #A8451F)',
+  primarySoft:   'var(--c-primary-tint, #F1D9CC)',
+  primaryBorder: 'var(--c-primary-border, rgba(197,86,44,0.32))',
 
   // Estados (mapeados a paleta nueva)
-  stateNew:        '#B5564A',  // danger
-  stateNewSoft:    '#F1D0CB',
-  statePrep:       '#C99551',  // warning
-  statePrepSoft:   '#F0E1C8',
-  stateOk:         '#8B9D7A',  // sage
-  stateOkSoft:     '#DDE3D3',
-  stateNeutral:    '#6B6356',  // stone
-  stateNeutralSoft:'#EFE9DD',
+  stateNew:        'var(--c-danger, #B5564A)',  // danger
+  stateNewSoft:    'var(--c-danger-tint, #F1D0CB)',
+  statePrep:       'var(--c-warning, #C99551)',  // warning
+  statePrepSoft:   'var(--c-warning-tint, #F0E1C8)',
+  stateOk:         'var(--c-success, #8B9D7A)',  // sage
+  stateOkSoft:     'var(--c-success-tint, #DDE3D3)',
+  stateNeutral:    'var(--c-muted, #6B6356)',  // stone
+  stateNeutralSoft:'var(--c-cream-2, #EFE9DD)',
 
   // Otros
-  dangerText: '#A8451F',
+  dangerText: 'var(--c-danger-text, #A8451F)',
 
   // === Sombras ===
-  shadow:   '0 1px 3px rgba(26,24,21,0.05), 0 1px 1px rgba(26,24,21,0.03)',
-  shadowMd: '0 4px 12px rgba(26,24,21,0.06), 0 1px 3px rgba(26,24,21,0.04)',
-  shadowLg: '0 14px 40px rgba(26,24,21,0.10), 0 4px 12px rgba(26,24,21,0.06)',
-  shadowGlossy: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 1px 2px rgba(26,24,21,0.20)',
+  shadow:   'var(--c-shadow, 0 1px 3px rgba(26,24,21,0.05), 0 1px 1px rgba(26,24,21,0.03))',
+  shadowMd: 'var(--c-shadow-md, 0 4px 12px rgba(26,24,21,0.06), 0 1px 3px rgba(26,24,21,0.04))',
+  shadowLg: 'var(--c-shadow-lg, 0 14px 40px rgba(26,24,21,0.10), 0 4px 12px rgba(26,24,21,0.06))',
+  shadowGlossy: 'var(--c-shadow-glossy, inset 0 1px 0 rgba(255,255,255,0.10), 0 1px 2px rgba(26,24,21,0.20))',
 }
 
 // Escala tipográfica fija (6 tamaños) — mantiene API existente

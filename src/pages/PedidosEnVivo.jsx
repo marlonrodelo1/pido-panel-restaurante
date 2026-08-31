@@ -835,9 +835,9 @@ export default function PedidosEnVivo() {
 function SeccionMobile({ tone, label, count, children }) {
   const tones = {
     danger:  { bg: colors.dangerSoft,  fg: colors.danger },
-    warning: { bg: colors.warningSoft, fg: '#8B6126' },
+    warning: { bg: colors.warningSoft, fg: 'var(--c-warning-text, #8B6126)' },
     sage:    { bg: colors.sageSoft,    fg: colors.sage2 },
-    info:    { bg: colors.infoSoft,    fg: '#4A6480' },
+    info:    { bg: colors.infoSoft,    fg: 'var(--c-info-text, #4A6480)' },
   }
   const t = tones[tone] || tones.sage
   return (
@@ -1000,9 +1000,9 @@ function SplitView({
 function SeccionSplit({ tone, label, count, children }) {
   const tones = {
     danger:  { bg: colors.dangerSoft,  fg: colors.danger },
-    warning: { bg: colors.warningSoft, fg: '#8B6126' },
+    warning: { bg: colors.warningSoft, fg: 'var(--c-warning-text, #8B6126)' },
     sage:    { bg: colors.sageSoft,    fg: colors.sage2 },
-    info:    { bg: colors.infoSoft,    fg: '#4A6480' },
+    info:    { bg: colors.infoSoft,    fg: 'var(--c-info-text, #4A6480)' },
   }
   const t = tones[tone] || tones.sage
   return (
@@ -1055,7 +1055,7 @@ function LineaPedidoSplit({ pedido, timer, isNuevo, selected, onTap }) {
           <span style={{ fontFamily: type.mono, fontSize: type.xs, color: colors.stone, fontWeight: 600 }}>{pedido.codigo}</span>
           <span style={{
             background: pedido.modo_entrega === 'delivery' ? colors.infoSoft : colors.cream2,
-            color: pedido.modo_entrega === 'delivery' ? '#4A6480' : colors.stone,
+            color: pedido.modo_entrega === 'delivery' ? 'var(--c-info-text, #4A6480)' : colors.stone,
             fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.03em',
           }}>
             {pedido.modo_entrega === 'delivery' ? 'Delivery' : 'Recogida'}
@@ -1161,10 +1161,10 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
     : pedido.estado === 'recogido' || pedido.estado === 'en_camino' ? 'ENTREGADO'
     : null
   const accionStyle = ['aceptado', 'preparando'].includes(pedido.estado)
-    ? { background: colors.warningSoft, color: '#8B6126' }
+    ? { background: colors.warningSoft, color: 'var(--c-warning-text, #8B6126)' }
     : pedido.estado === 'listo'
     ? { background: colors.sageSoft, color: colors.sage2 }
-    : { background: colors.infoSoft, color: '#4A6480' }
+    : { background: colors.infoSoft, color: 'var(--c-info-text, #4A6480)' }
 
   const isDelivery = pedido.modo_entrega === 'delivery'
 
@@ -1189,7 +1189,7 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             background: isDelivery ? colors.infoSoft : colors.cream2,
-            color: isDelivery ? '#4A6480' : colors.stone,
+            color: isDelivery ? 'var(--c-info-text, #4A6480)' : colors.stone,
             fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.03em',
           }}>
             {isDelivery ? <Bike size={10} strokeWidth={2.4} /> : <ShoppingBag size={10} strokeWidth={2.4} />}
@@ -1218,7 +1218,7 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
             </div>
           )}
           {pedido.intento_asignacion > 1 && (
-            <div style={{ fontSize: 10, color: '#8B6126', marginTop: 2, fontWeight: 700 }}>
+            <div style={{ fontSize: 10, color: 'var(--c-warning-text, #8B6126)', marginTop: 2, fontWeight: 700 }}>
               Reintento {pedido.intento_asignacion}/3
             </div>
           )}
@@ -1268,16 +1268,16 @@ function RiderInfo({ pedido }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 12 }}>
       {rider ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--c-text)' }}>
-          <Truck size={13} color="#6B6356" />
+          <Truck size={13} color='var(--c-muted, #6B6356)' />
           <span>Rider: <strong>{rider.nombre}</strong>{rider.telefono ? ` · ${rider.telefono}` : ''}</span>
         </div>
       ) : sinRiders ? (
-        <span style={{ background: 'var(--c-danger-soft)', color: '#B5564A', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Sin riders disponibles</span>
+        <span style={{ background: 'var(--c-danger-soft)', color: 'var(--c-danger, #B5564A)', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Sin riders disponibles</span>
       ) : (
-        <span style={{ background: 'var(--c-warning-soft)', color: '#C99551', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Sin asignar</span>
+        <span style={{ background: 'var(--c-warning-soft)', color: 'var(--c-warning, #C99551)', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Sin asignar</span>
       )}
       {intento > 1 && (
-        <span style={{ background: 'rgba(217,119,6,0.15)', color: '#C99551', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Reintento {intento}/3</span>
+        <span style={{ background: 'rgba(217,119,6,0.15)', color: 'var(--c-warning, #C99551)', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.03em' }}>Reintento {intento}/3</span>
       )}
     </div>
   )
@@ -1592,14 +1592,14 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
             <div style={{
               background: timer < 60 ? 'var(--c-danger-soft)' : 'rgba(217,119,6,0.15)',
               borderRadius: 8, padding: '6px 12px',
-              color: timer < 60 ? '#B5564A' : '#C99551',
+              color: timer < 60 ? 'var(--c-danger, #B5564A)' : 'var(--c-warning, #C99551)',
               fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
               animation: timer < 60 ? 'pulse 0.5s ease-in-out infinite' : 'none',
             }}>{formatTimer(timer)}</div>
           ) : (
             <div style={{
               background: 'var(--c-danger-soft)', borderRadius: 8, padding: '6px 12px',
-              color: '#B5564A', fontSize: 14, fontWeight: 800,
+              color: 'var(--c-danger, #B5564A)', fontSize: 14, fontWeight: 800,
             }}>Expirando...</div>
           )
         )}
@@ -1608,7 +1608,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
       {/* Tiempo estimado */}
       {(pedido.estado === 'preparando' || pedido.estado === 'aceptado') && pedido.minutos_preparacion && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: 'var(--c-surface)', borderRadius: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--c-muted)' }}>Tiempo estimado: <strong style={{ color: '#C99551' }}>{pedido.minutos_preparacion} min</strong></span>
+          <span style={{ fontSize: 12, color: 'var(--c-muted)' }}>Tiempo estimado: <strong style={{ color: 'var(--c-warning, #C99551)' }}>{pedido.minutos_preparacion} min</strong></span>
         </div>
       )}
 
@@ -1663,7 +1663,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Método de Pago</div>
             <div style={{ fontSize: 12, color: 'var(--c-text)', fontWeight: 600 }}>{metodoPagoLabel(pedido.metodo_pago)}</div>
-            {hayQueCobrar(pedido.metodo_pago) && <div style={{ fontSize: 10, color: '#C99551', marginTop: 2 }}>Cobrar en mano</div>}
+            {hayQueCobrar(pedido.metodo_pago) && <div style={{ fontSize: 10, color: 'var(--c-warning, #C99551)', marginTop: 2 }}>Cobrar en mano</div>}
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Canal de Venta</div>
@@ -1713,7 +1713,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
           </div>
         )}
         {pedido.descuento > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8B9D7A', marginBottom: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--c-success, #8B9D7A)', marginBottom: 6 }}>
             <span>Descuento</span><span>-{(pedido.descuento || 0).toFixed(2)}€</span>
           </div>
         )}
@@ -1727,7 +1727,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
         <div style={{ marginBottom: 12 }}>
           {rechazando ? (
             <div style={{ background: 'rgba(185,28,28,0.1)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.25)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#B5564A', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo del rechazo</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-danger, #B5564A)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo del rechazo</div>
               {MOTIVOS_RECHAZO.map(m => (
                 <button key={m.id} onClick={() => { onRechazar(pedido.id, m.id); afterAction() }} style={{ width: '100%', padding: '11px 14px', borderRadius: 8, marginBottom: 6, border: '1px solid rgba(185,28,28,0.2)', background: 'rgba(220,38,38,0.08)', color: 'var(--c-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>{m.label}</button>
               ))}
@@ -1743,7 +1743,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
                       padding: '11px 0', borderRadius: 8,
                       border: `1px solid ${minutosSel === min ? 'var(--c-primary)' : 'var(--c-border)'}`,
                       background: minutosSel === min ? colors.primary : 'var(--c-surface)',
-                      color: minutosSel === min ? '#fff' : 'var(--c-muted)',
+                      color: minutosSel === min ? 'var(--c-on-primary, #fff)' : 'var(--c-muted)',
                       fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                       transition: 'all 0.15s',
                     }}>{min} min</button>
@@ -1754,7 +1754,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
                 <button onClick={() => setRechazando(true)} style={{ flex: 1, padding: '14px 0', borderRadius: 8, border: '1px solid var(--c-border)', background: 'transparent', color: 'var(--c-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Rechazar
                 </button>
-                <button onClick={async () => { if (aceptando) return; setAceptando(true); try { await onAceptar(pedido, minutosSel) } finally { setAceptando(false) } afterAction() }} disabled={aceptando} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: colors.primary, color: '#fff', fontSize: 14, fontWeight: 800, cursor: aceptando ? 'wait' : 'pointer', opacity: aceptando ? 0.7 : 1, fontFamily: 'inherit' }}>
+                <button onClick={async () => { if (aceptando) return; setAceptando(true); try { await onAceptar(pedido, minutosSel) } finally { setAceptando(false) } afterAction() }} disabled={aceptando} style={{ flex: 2, padding: '14px 0', borderRadius: 8, border: 'none', background: colors.primary, color: 'var(--c-on-primary, #fff)', fontSize: 14, fontWeight: 800, cursor: aceptando ? 'wait' : 'pointer', opacity: aceptando ? 0.7 : 1, fontFamily: 'inherit' }}>
                   {aceptando ? 'Aceptando…' : 'Aceptar pedido'}
                 </button>
               </div>
@@ -1767,35 +1767,35 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
       {(pedido.estado === 'preparando' || pedido.estado === 'aceptado') && !isNuevo && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <button onClick={() => onReimprimir(pedido)} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Imprimir</button>
-          <button onClick={() => { onMarcarListo(pedido.id); afterAction() }} style={{ flex: 1, padding: '13px 0', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'var(--c-success-soft)', color: '#8B9D7A', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Pedido listo para recoger</button>
+          <button onClick={() => { onMarcarListo(pedido.id); afterAction() }} style={{ flex: 1, padding: '13px 0', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'var(--c-success-soft)', color: 'var(--c-success, #8B9D7A)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Pedido listo para recoger</button>
         </div>
       )}
 
       {/* LISTO: recogida en local */}
       {pedido.estado === 'listo' && pedido.modo_entrega === 'recogida' && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#8B9D7A', border: '1px solid rgba(74,222,128,0.2)' }}>Esperando al cliente</div>
-          <button onClick={() => { onMarcarEntregado(pedido.id); afterAction() }} style={{ padding: '13px 18px', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(22,163,74,0.20)', color: '#8B9D7A', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Entregado</button>
+          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-success, #8B9D7A)', border: '1px solid rgba(74,222,128,0.2)' }}>Esperando al cliente</div>
+          <button onClick={() => { onMarcarEntregado(pedido.id); afterAction() }} style={{ padding: '13px 18px', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(22,163,74,0.20)', color: 'var(--c-success, #8B9D7A)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Entregado</button>
         </div>
       )}
 
       {/* LISTO: delivery */}
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
-        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#8B9D7A', marginBottom: 12, border: '1px solid rgba(74,222,128,0.2)' }}>
+        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-success, #8B9D7A)', marginBottom: 12, border: '1px solid rgba(74,222,128,0.2)' }}>
           Esperando repartidor
         </div>
       )}
 
       {/* RECOGIDO */}
       {pedido.estado === 'recogido' && (
-        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-info-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#7B8FA8', marginBottom: 12, border: '1px solid rgba(96,165,250,0.2)' }}>
+        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-info-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-info, #7B8FA8)', marginBottom: 12, border: '1px solid rgba(96,165,250,0.2)' }}>
           Repartidor recogió el pedido — en camino al cliente
         </div>
       )}
 
       {/* EN CAMINO */}
       {pedido.estado === 'en_camino' && (
-        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(124,58,237,0.10)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#7C3AED', marginBottom: 12, border: '1px solid rgba(167,139,250,0.2)' }}>
+        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(124,58,237,0.10)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-violet, #7C3AED)', marginBottom: 12, border: '1px solid rgba(167,139,250,0.2)' }}>
           Repartidor en camino al cliente
         </div>
       )}
@@ -1804,7 +1804,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
       {!isNuevo && (
         cancelando ? (
           <div style={{ background: 'rgba(220,38,38,0.08)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(185,28,28,0.2)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#B5564A', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo de cancelación</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-danger, #B5564A)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Motivo de cancelación</div>
             {MOTIVOS_CANCELACION
               .filter(m => !m.soloDelivery || pedido.modo_entrega === 'delivery')
               .map(m => (
@@ -1813,7 +1813,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
             <button onClick={() => setCancelando(false)} style={{ width: '100%', padding: '8px 0', border: 'none', background: 'transparent', color: 'var(--c-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Volver</button>
           </div>
         ) : (
-          <button onClick={() => setCancelando(true)} style={{ width: '100%', padding: '13px 0', borderRadius: 8, border: '1px solid rgba(185,28,28,0.25)', background: 'rgba(220,38,38,0.06)', color: '#B5564A', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar pedido</button>
+          <button onClick={() => setCancelando(true)} style={{ width: '100%', padding: '13px 0', borderRadius: 8, border: '1px solid rgba(185,28,28,0.25)', background: 'rgba(220,38,38,0.06)', color: 'var(--c-danger, #B5564A)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar pedido</button>
         )
       )}
     </div>
@@ -1844,11 +1844,11 @@ function HistorialAsignacion({ pedidoId }) {
   const fmt = iso => iso ? new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''
 
   const iconoEstado = (estado) => {
-    if (estado === 'aceptado') return { icon: '✅', label: 'Aceptado', color: '#8B9D7A' }
-    if (estado === 'rechazado') return { icon: '❌', label: 'Rechazado', color: '#B5564A' }
-    if (estado === 'timeout') return { icon: '⏱', label: 'Timeout', color: '#C99551' }
+    if (estado === 'aceptado') return { icon: '✅', label: 'Aceptado', color: 'var(--c-success, #8B9D7A)' }
+    if (estado === 'rechazado') return { icon: '❌', label: 'Rechazado', color: 'var(--c-danger, #B5564A)' }
+    if (estado === 'timeout') return { icon: '⏱', label: 'Timeout', color: 'var(--c-warning, #C99551)' }
     if (estado === 'cancelado') return { icon: '⊘', label: 'Cancelado', color: 'var(--c-muted)' }
-    return { icon: '⏳', label: 'Esperando aceptación', color: '#C99551' }
+    return { icon: '⏳', label: 'Esperando aceptación', color: 'var(--c-warning, #C99551)' }
   }
 
   return (

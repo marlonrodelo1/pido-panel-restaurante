@@ -46,6 +46,23 @@
   --c-cream: #F7F3EC;
   --c-cream-2: #EFE9DD;
   --c-paper: #FBF8F2;
+
+  /* Variantes suaves de la paleta de `uiStyles`. Se llaman -tint y NO -soft a
+     proposito: los --c-*-soft de arriba son rgba y valen otra cosa. */
+  --c-primary-tint: #F1D9CC;
+  --c-primary-border: rgba(197,86,44,0.32);
+  --c-success-tint: #DDE3D3;
+  --c-success-strong: #6F8460;
+  --c-danger-tint: #F1D0CB;
+  --c-danger-text: #A8451F;
+  --c-warning-tint: #F0E1C8;
+  --c-warning-text: #8B6126;
+  --c-info-tint: #DBE0E8;
+  --c-info-text: #4A6480;
+  --c-violet: #7C3AED;
+  --c-on-primary: #F7F3EC;
+  --c-shadow-glossy: inset 0 1px 0 rgba(255,255,255,0.10), 0 1px 2px rgba(26,24,21,0.20);
+
   --c-ink: #1A1815;
   --c-ink-2: #2B2823;
   --c-stone: #6B6356;
@@ -171,4 +188,81 @@ body {
    sidebars o modales (causa típica de "no sale el autocompletado"). */
 .pac-container {
   z-index: 100000 !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EL TEMA OSCURO DE LA CAPA DEL TPV.
+
+   Cuando el modulo TPV esta activo, el TPV es la aplicacion entera y las pantallas
+   del panel (Pedidos, Historial, Carta, Impresora) se abren DENTRO de el. El TPV es
+   negro y el panel es crema: sin esto, abrir un pedido saltaba de un tema a otro y
+   parecian dos aplicaciones.
+
+   Aqui solo se redefinen VARIABLES. Ni una linea de esas pantallas cambia.
+
+   Los valores salen de `lib/tpvTheme.js`, no estan inventados, y el contraste esta
+   MEDIDO sobre la superficie #1A1815:
+     texto #F5F5F5 ... 15,9:1     apagado #A8A08F ... 5,4:1
+     naranja #FF6B2C .. 6,1:1     verde   #8FC46B ... 8,4:1
+     rojo    #FF7A6B .. 6,8:1     ambar   #E0A85C ... 8,0:1
+   El terracota del panel (#C5562C) NO se usa como texto: sobre negro se queda en
+   3,7:1 y no llega a AA.
+   ───────────────────────────────────────────────────────────────────────── */
+.tpv-capa {
+  --c-bg: #12100E;
+  --c-cream: #12100E;
+  --c-cream-2: #221F1B;
+  --c-paper: #1A1815;
+  --c-surface: #1A1815;
+  --c-surface2: #221F1B;
+  --c-surface3: #2A2621;
+  --c-elev: #1A1815;
+  --c-elev2: #221F1B;
+  --c-border: #332E28;
+  --c-border-strong: #453E36;
+
+  --c-text: #F5F5F5;
+  --c-text-soft: #E4E0DA;
+  --c-muted: #A8A08F;
+  --c-text-faint: #8C8377;
+
+  /* El naranja del TPV. El de RELLENO es el oscuro, porque encima lleva texto. */
+  --c-primary: #FF6B2C;
+  --c-primary-dark: #BF4A18;
+  --c-primary-tint: rgba(255,107,44,0.18);
+  --c-primary-light: rgba(255,107,44,0.10);
+  --c-primary-soft: rgba(255,107,44,0.18);
+  --c-primary-border: rgba(255,107,44,0.42);
+
+  --c-success: #8FC46B;
+  --c-success-strong: #A8D488;
+  --c-success-tint: rgba(143,196,107,0.18);
+  --c-success-soft: rgba(143,196,107,0.18);
+  --c-danger: #FF7A6B;
+  --c-danger-tint: rgba(255,122,107,0.18);
+  --c-danger-soft: rgba(255,122,107,0.18);
+  --c-danger-text: #FF9C90;
+  --c-warning: #E0A85C;
+  --c-warning-tint: rgba(224,168,92,0.18);
+  --c-warning-soft: rgba(224,168,92,0.18);
+  --c-warning-text: #E8B978;
+  --c-info: #9DB4CE;
+  --c-info-tint: rgba(157,180,206,0.18);
+  --c-info-soft: rgba(157,180,206,0.18);
+  --c-info-text: #A9C0DA;
+  --c-violet: #B79CF5;
+
+  /* Lo que va ENCIMA de un relleno naranja. Blanco sobre #FF6B2C son 2,84:1 y no
+     pasa; tinta oscura encima da 6,2:1. Es la regla del tema del TPV. */
+  --c-on-primary: #1A1815;
+
+  /* Una sombra negra sobre fondo negro no separa nada: hay que subirla o el modal
+     de reasignar se queda pegado al fondo. */
+  --c-shadow: 0 1px 3px rgba(0,0,0,0.55);
+  --c-shadow-md: 0 6px 18px rgba(0,0,0,0.6);
+  --c-shadow-lg: 0 18px 44px rgba(0,0,0,0.7);
+  --c-shadow-glossy: inset 0 1px 0 rgba(255,255,255,0.07), 0 1px 2px rgba(0,0,0,0.55);
+
+  background: var(--c-bg);
+  color: var(--c-text);
 }
