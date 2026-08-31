@@ -119,7 +119,7 @@ export async function checkPrinterConnection(ip, port = 9100) {
  * Connect to a printer: save config + send test ticket
  * Returns { ok: boolean }
  */
-export async function connectAndTestPrinter(ip, port = 9100) {
+export async function connectAndTestPrinter(ip, port = 9100, logoBytes = null) {
   // Save config
   savePrinterConfig({ ip, port, enabled: true })
 
@@ -131,11 +131,24 @@ export async function connectAndTestPrinter(ip, port = 9100) {
     ESC, 0x40, // Init
     ESC, 0x74, 0x02, // CP850
     ESC, 0x61, 0x01, // Center
+  ])
 
-    // Logo PIDO grande
+  // EL LOGO DEL RESTAURANTE, si se ha podido preparar.
+  //
+  // No es adorno en una prueba: es la unica forma de comprobar de un CLIC que el mapa
+  // de bits llega entero a la impresora y sale bien. Antes habia que crear un pedido de
+  // prueba, aceptarlo y mirar el papel — y si no salia, no sabias si el fallo estaba en
+  // la conversion, en el envio o en la impresora. Estos son EXACTAMENTE los mismos
+  // bytes que se ven en la vista previa de arriba.
+  const conLogo = logoBytes && logoBytes.length
+    ? [...data, ...logoBytes, LF]
+    : [...data]
+
+  const resto = new Uint8Array([
+    // Cabecera de la prueba
     GS, 0x21, 0x11, // Double size
     ESC, 0x45, 0x01, // Bold
-    ...t('PIDOO'), LF,
+    ...t('PRUEBA'), LF,
     GS, 0x21, 0x00, // Normal
     ESC, 0x45, 0x00,
     LF,
@@ -161,7 +174,13 @@ export async function connectAndTestPrinter(ip, port = 9100) {
     GS, 0x56, 0x01, // Partial cut
   ])
 
-  const ok = await sendRawToIp(ip, port, data)
+  // Cabecera + logo + resto, en un solo envio. En dos envios la impresora puede cortar
+  // en medio o reordenar, y el logo saldria suelto en su propio trozo de papel.
+  const todo = new Uint8Array(conLogo.length + resto.length)
+  todo.set(conLogo, 0)
+  todo.set(resto, conLogo.length)
+
+  const ok = await sendRawToIp(ip, port, todo)
   if (!ok) {
     // Revert if failed
     savePrinterConfig({ ip: '', port: 9100, enabled: false })

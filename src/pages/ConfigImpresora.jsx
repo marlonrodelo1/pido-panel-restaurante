@@ -27,6 +27,9 @@ export default function ConfigImpresora() {
 
   // Vista previa del logo del ticket.
   const [logoPrevia, setLogoPrevia] = useState(null)
+  // Los BYTES, no solo la imagen: son los que se mandan al pulsar Probar, para que la
+  // prueba recorra el mismo camino que un ticket de verdad.
+  const [logoBytes, setLogoBytes] = useState(null)
   const [logoCargando, setLogoCargando] = useState(false)
   const [logoIntento, setLogoIntento] = useState(0)
 
@@ -58,7 +61,7 @@ export default function ConfigImpresora() {
   async function handleConnect(ip, port = 9100) {
     setConnecting(ip)
     setConnectResult(null)
-    const result = await connectAndTestPrinter(ip, port)
+    const result = await connectAndTestPrinter(ip, port, logoBytes)
     setConnecting(null)
     if (result.ok) {
       setPrinterIp(ip)
@@ -98,7 +101,7 @@ export default function ConfigImpresora() {
     if (!printerIp) return
     setConnecting(printerIp)
     setConnectResult(null)
-    const result = await connectAndTestPrinter(printerIp, printerPort)
+    const result = await connectAndTestPrinter(printerIp, printerPort, logoBytes)
     setConnecting(null)
     setConnectResult({ ip: printerIp, ok: result.ok })
     setTimeout(() => setConnectResult(null), 5000)
@@ -123,6 +126,7 @@ export default function ConfigImpresora() {
       setLogoCargando(true)
       const bytes = await bytesDelLogo(url)
       if (!vivo) return
+      setLogoBytes(bytes || null)
       setLogoPrevia(bytes ? previsualizar(bytes) : null)
       setLogoCargando(false)
     })()
