@@ -133,9 +133,21 @@ Deno.serve(async (req) => {
     .eq('id', establecimiento_id).maybeSingle()
   if (estErr || !est) return json({ error: 'establecimiento_no_encontrado' }, 404)
 
+  // Quien puede cobrar aqui: el DUENO, alguien de su EQUIPO, o Pidoo.
+  //
+  // El equipo (`establecimiento_usuarios`) se anadio el 31 ago 2026. Esta edge corre
+  // con service_role, asi que la RLS NO la mira: la comprobacion hay que hacerla a
+  // mano, y por eso existe este bloque. Sin la parte del equipo, un companero entra
+  // al panel, ve la carta... y al cobrar le sale "esta cuenta no puede cobrar en este
+  // restaurante" con el cliente delante.
   if (usuarioAutenticado && est.user_id !== usuarioAutenticado) {
-    const { data: rolRow } = await sb.from('usuarios').select('rol').eq('id', usuarioAutenticado).maybeSingle()
-    if (rolRow?.rol !== 'admin' && rolRow?.rol !== 'superadmin') return json({ error: 'forbidden' }, 403)
+    const [{ data: enEquipo }, { data: rolRow }] = await Promise.all([
+      sb.from('establecimiento_usuarios').select('user_id')
+        .eq('establecimiento_id', establecimiento_id).eq('user_id', usuarioAutenticado).maybeSingle(),
+      sb.from('usuarios').select('rol').eq('id', usuarioAutenticado).maybeSingle(),
+    ])
+    const esDePidoo = rolRow?.rol === 'admin' || rolRow?.rol === 'superadmin'
+    if (!enEquipo && !esDePidoo) return json({ error: 'forbidden' }, 403)
   }
 
   // ── El modulo tiene que estar encendido ──

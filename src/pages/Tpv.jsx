@@ -160,6 +160,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
   const esMonitor = useEsMonitor()
   // Elige entre los tres escalones: telefono, tablet, monitor.
   const tam = (movil, tablet, monitor) => (esMovil ? movil : esMonitor ? monitor : tablet)
+
+  // Las dos columnas a lo alto SOLO cuando el TPV es dueno de la pantalla. Dentro del
+  // panel es una seccion de una pagina que scrollea, y ahi forzar el alto completo
+  // saca el contenido por debajo del borde.
+  const altoCompleto = esMonitor && (modoApp || pantallaCompleta)
   // En el telefono la venta se ve en una hoja a pantalla completa. Empieza cerrada:
   // lo que se toca cien veces al dia es la carta, no el ticket.
   const [hojaVenta, setHojaVenta] = useState(false)
@@ -451,8 +456,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
 
   return (
     <div style={modoApp || pantallaCompleta
-      // Ocupando la pantalla, la caja ES la pantalla: sin esquinas ni tope de alto.
-      ? { ...caja, padding: esMovil ? 10 : 16, borderRadius: 0, minHeight: '100vh' }
+      // Ocupando la pantalla, la caja ES la pantalla: columna flex de alto completo,
+      // para que la fila de abajo pueda quedarse con lo que sobre SIN numeros magicos.
+      ? {
+          ...caja, padding: esMovil ? 10 : 16, borderRadius: 0,
+          // 🔴 El alto FIJO solo donde la fila de abajo es `flex: 1`. En telefono y
+          // tablet las dos columnas se apilan y crecen: una caja de 100dvh ahi dejaria
+          // el contenido colgando por fuera. Esos siguen con minHeight, que crece.
+          ...(altoCompleto
+            ? { height: '100dvh', minHeight: '100dvh', display: 'flex', flexDirection: 'column' }
+            : { minHeight: '100vh' }),
+        }
       : esMovil ? { ...caja, padding: 10, borderRadius: 12 } : caja}>
       {/* Mostrador y Pedidos en la misma pantalla: durante el servicio no se puede
           estar saltando de una sección a otra. No hay pestaña de Reservas porque
@@ -463,7 +477,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
       {/* Tambien a pantalla completa en escritorio: sin la cabecera del panel detras,
           el nombre del local y si esta abierto no se ven en ningun sitio. */}
       {(modoApp || pantallaCompleta) && <CabeceraApp restaurante={restaurante} esMovil={esMovil}
-        onAbrir={() => modoApp ? setPantalla('impresora') : null} />}
+        onAbrir={() => {
+          // En la app, el interruptor de abrir/cerrar vive en la pantalla de
+          // Impresora. En escritorio vive en Ajustes, que esta FUERA del TPV: hay que
+          // salir de pantalla completa y navegar. Antes esto no hacia absolutamente
+          // nada en escritorio — un boton muerto en la cabecera.
+          if (modoApp) { setPantalla('impresora'); return }
+          onAlternarPantalla?.()
+          window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'ajustes' }))
+        }} />}
 
       {/* Fila flex de verdad, no un centrado con el menu en absolute encima: asi el
           menu ocupa su sitio y las pestanas no pueden crecer por debajo de el. Antes,
@@ -519,18 +541,26 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
       // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
       // desplaza por su cuenta: la carta puede tener 160 productos y la venta cuatro
       // lineas, y hacerlas scrollear juntas aleja el total del sitio donde se cobra.
-      // En telefono y tablet siguen apilandose como hasta ahora.
+      //
+      // 🔴 `flex: 1` y NO `calc(100vh - Xpx)`: ese numero habria que ajustarlo a mano
+      // segun lo que haya encima, y encima hay cosas distintas en cada sitio (en el
+      // panel, migas y a veces el banner de datos fiscales). Con flex, la fila se
+      // queda con lo que sobre, valga lo que valga la cabecera.
+      //
+      // Y solo cuando el TPV es DUENO de la pantalla. Dentro del panel el TPV es una
+      // seccion de una pagina que scrollea: forzar ahi el alto completo saca el
+      // contenido por abajo.
       // (Comentario JS y no {/* */}: en la rama de un ternario solo cabe UNA expresion.)
       <div style={{
         display: 'flex', gap: esMonitor ? 16 : 14, alignItems: 'flex-start', flexWrap: 'wrap',
-        ...(esMonitor ? { height: 'calc(100vh - 150px)', flexWrap: 'nowrap' } : null),
+        ...(altoCompleto ? { flex: 1, minHeight: 0, flexWrap: 'nowrap' } : null),
       }}>
       {/* ── Izquierda: la carta ─────────────────────────────────────────── */}
       {/* En telefono la carta es TODA la pantalla, y se le deja hueco abajo para que
           la barra de la venta no tape la ultima fila de productos. */}
       <div style={{
         flex: '1 1 420px', minWidth: 0, paddingBottom: esMovil ? 84 : 0,
-        ...(esMonitor ? { height: '100%', overflowY: 'auto', paddingRight: 4 } : null),
+        ...(altoCompleto ? { height: '100%', overflowY: 'auto', paddingRight: 4 } : null),
       }}>
         {impresora.configurada && impresora.viva === false && (
           <div style={{
@@ -663,6 +693,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                     tieneExtras={tieneExtras}
                     yaLleva={yaLleva}
                     esMovil={esMovil}
+                    esMonitor={esMonitor}
                     tam={tam}
                     precioBarra={precioBarra}
                     onClick={() => tocarProducto(p)}
@@ -688,7 +719,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
         position: 'fixed', inset: 0, zIndex: 1000, background: T.bg,
         padding: 10, overflowY: 'auto', WebkitOverflowScrolling: 'touch',
         display: hojaVenta ? 'block' : 'none',
-      } : esMonitor ? {
+      } : altoCompleto ? {
         // Ancho FIJO en monitor: la venta no debe encogerse porque la carta tenga
         // muchos productos, y a mas de 400 px se queda vacia mirando al techo.
         flex: '0 0 380px', width: 380, height: '100%',
@@ -711,7 +742,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           // desplazandose en medio y el total anclado abajo. Asi el importe y los
           // botones de cobro estan SIEMPRE en el mismo sitio, lleve la venta dos
           // lineas o veinte: el camarero no tiene que buscarlos.
-          ...(esMonitor ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : null),
+          ...(altoCompleto ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : null),
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <strong style={{ fontSize: 15, color: T.text }}>Venta en curso</strong>
@@ -728,12 +759,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           {carrito.length === 0 ? (
             <div style={{
               padding: '28px 10px', textAlign: 'center', color: T.muted, fontSize: 14,
-              ...(esMonitor ? { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' } : null),
+              ...(altoCompleto ? { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' } : null),
             }}>
               Toca un producto para empezar.
             </div>
           ) : (
-            <div style={esMonitor
+            <div style={altoCompleto
               ? { flex: 1, minHeight: 0, overflowY: 'auto', marginBottom: 12 }
               : { maxHeight: '44vh', overflowY: 'auto', marginBottom: 12 }}>
               {carrito.map((l) => (
@@ -1391,8 +1422,11 @@ function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
 // SIN FOTO: hoy 122 de 160 productos no tienen. Una tarjeta alta y negra con el nombre
 // perdido en medio se lee peor que una fila compacta, asi que esas mantienen el
 // formato de texto de siempre. Dos formas para dos casos, a proposito.
-function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, tam, precioBarra, onClick }) {
-  const conFoto = !!p.imagen_url
+function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, esMonitor, tam, precioBarra, onClick }) {
+  // 🔴 SOLO en monitor. En telefono y tablet se queda la tarjeta de siempre: ahi la
+  // pantalla es pequena y una tarjeta de 126 px de alto en una rejilla de 3 columnas
+  // deja ver media carta. El formato con foto se penso para un monitor.
+  const conFoto = !!p.imagen_url && esMonitor
   const precio = (
     <>
       {tams.length ? 'desde ' : ''}
@@ -1441,7 +1475,7 @@ function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, tam, precioBa
   }
 
   return (
-    <button onClick={onClick} style={{ ...marco, height: tam(126, 150, 132) }}>
+    <button onClick={onClick} title={p.nombre} style={{ ...marco, height: tam(126, 150, 132) }}>
       <img src={p.imagen_url} alt="" loading="lazy" style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%',
         objectFit: 'cover', display: 'block',
