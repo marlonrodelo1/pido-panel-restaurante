@@ -31,6 +31,7 @@ import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
   Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
+  Maximize2, Minimize2,
   ShoppingBag,
   Sandwich, Croissant, Beef, Beer, CupSoda, Coffee, Pizza, Salad, CakeSlice, IceCream,
   Fish, Drumstick, Soup, Cookie, Utensils, Wine, Ham, Popcorn, Carrot, EggFried,
@@ -101,7 +102,7 @@ const PANTALLAS = {
   impresora: 'Impresora y cuenta',
 }
 
-export default function Tpv({ modoApp = false }) {
+export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlternarPantalla }) {
   const { restaurante, tpvConfig, stockActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
 
@@ -432,8 +433,8 @@ export default function Tpv({ modoApp = false }) {
 
 
   return (
-    <div style={modoApp
-      // Como app, la caja ES la pantalla: sin esquinas redondeadas ni tope de alto.
+    <div style={modoApp || pantallaCompleta
+      // Ocupando la pantalla, la caja ES la pantalla: sin esquinas ni tope de alto.
       ? { ...caja, padding: esMovil ? 10 : 16, borderRadius: 0, minHeight: '100vh' }
       : esMovil ? { ...caja, padding: 10, borderRadius: 12 } : caja}>
       {/* Mostrador y Pedidos en la misma pantalla: durante el servicio no se puede
@@ -460,6 +461,18 @@ export default function Tpv({ modoApp = false }) {
         {/* El menú va en la esquina y no encima del ticket: es de la pantalla
             entera, no de la venta que estés cobrando. La etiqueta dice "del TPV"
             porque el header de la app ya tiene su propio botón de menú. */}
+        {/* Ampliar a toda la pantalla. Solo en escritorio: en la app el TPV YA la
+            ocupa entera, y el boton no tendria nada que hacer. */}
+        {onAlternarPantalla && (
+          <button onClick={onAlternarPantalla} style={{
+            ...btnIcono, flexShrink: 0,
+            width: esMovil ? 40 : 44, height: esMovil ? 40 : 44, borderRadius: 12,
+          }}
+            aria-label={pantallaCompleta ? 'Salir de pantalla completa' : 'TPV a pantalla completa'}
+            title={pantallaCompleta ? 'Salir de pantalla completa (Esc)' : 'TPV a pantalla completa'}>
+            {pantallaCompleta ? <Minimize2 size={19} /> : <Maximize2 size={19} />}
+          </button>
+        )}
         <button onClick={() => setMenu(true)} aria-label="Menú del TPV" style={{
           ...btnIcono, flexShrink: 0,
           width: esMovil ? 40 : 44, height: esMovil ? 40 : 44, borderRadius: 12,
@@ -519,18 +532,28 @@ export default function Tpv({ modoApp = false }) {
                   grande y en escritorio se REPARTEN EN FILAS y se ven TODAS, que es
                   lo que ahorra toques: la categoria que buscas ya esta a la vista. */}
               <div style={{
-                display: 'flex', gap: 8, maxWidth: '100%',
-                justifyContent: 'center',
+                maxWidth: '100%',
                 ...(esMovil
-                  ? { overflowX: 'auto', paddingBottom: 2, scrollSnapType: 'x proximity' }
-                  : { flexWrap: 'wrap' }),
+                  // TELEFONO: una sola fila que se desliza. Apilarlas se comeria media
+                  // pantalla de carta.
+                  ? { display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2,
+                      scrollSnapType: 'x proximity' }
+                  // ESCRITORIO: REJILLA de celdas iguales, no un `flex-wrap` centrado.
+                  // Con 7 categorias el wrap centrado deja filas de 3, 3 y 1 con los
+                  // bordes descuadrados: parece un muro de pegatinas. En rejilla, las
+                  // filas se alinean y el bloque se lee de un vistazo.
+                  : { display: 'grid', gap: 8, width: '100%',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }),
               }}>
                 {categorias.map((c) => {
                   const Icono = iconoDe(c.nombre)
                   const activa = c.id === catSel && !busqueda
                   return (
                     <button key={c.id} onClick={() => { setCatSel(c.id); setBusqueda('') }} style={{
-                      flex: '0 0 auto', height: esMovil ? 46 : 56, padding: esMovil ? '0 12px' : '0 16px', cursor: 'pointer',
+                      // En movil no encoge (fila deslizante); en rejilla la celda manda
+                      // y el nombre largo se corta con puntos suspensivos.
+                      flex: esMovil ? '0 0 auto' : '1 1 auto', minWidth: 0,
+                      height: esMovil ? 46 : 56, padding: esMovil ? '0 12px' : '0 14px', cursor: 'pointer',
                       scrollSnapAlign: 'start', fontFamily: 'inherit',
                       border: `1px solid ${activa ? T.accent : T.border}`,
                       borderRadius: 12,
@@ -539,10 +562,13 @@ export default function Tpv({ modoApp = false }) {
                       display: 'flex', alignItems: 'center', gap: 9,
                       fontSize: esMovil ? 13 : 14, fontWeight: activa ? 700 : 500,
                     }}>
-                      <Icono size={esMovil ? 16 : 18} color={activa ? T.onAccent : T.accent} />
-                      {c.nombre}
+                      <Icono size={esMovil ? 16 : 18} color={activa ? T.onAccent : T.accent} style={{ flexShrink: 0 }} />
                       <span style={{
-                        fontSize: 12, opacity: 0.65, fontWeight: 500,
+                        minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap', textAlign: 'left', flex: 1,
+                      }}>{c.nombre}</span>
+                      <span style={{
+                        fontSize: 12, opacity: 0.65, fontWeight: 500, flexShrink: 0,
                       }}>{contarPorCategoria[c.id] || 0}</span>
                     </button>
                   )

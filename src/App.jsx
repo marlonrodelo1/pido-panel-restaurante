@@ -488,6 +488,24 @@ function Breadcrumbs({ seccion }) {
 
 function AppInner({ seccion, setSeccion, nav }) {
   const { restaurante, user, logout, tpvActivo, stockActivo } = useRest()
+
+  // El TPV a pantalla completa. En un monitor, la barra lateral y las migas le comen
+  // un tercio de la pantalla, y en un TPV el sitio son productos que se ven sin
+  // buscar. Se guarda para que no haya que darle cada vez que se abre la caja.
+  const [tpvExpandido, setTpvExpandido] = useState(() => {
+    try { return localStorage.getItem('pidoo_tpv_pantalla_completa') === '1' } catch { return false }
+  })
+  const alternarTpv = () => setTpvExpandido((v) => {
+    try { localStorage.setItem('pidoo_tpv_pantalla_completa', v ? '0' : '1') } catch { /* modo incognito */ }
+    return !v
+  })
+  // Escape para salir, que es lo que todo el mundo prueba primero.
+  useEffect(() => {
+    if (!tpvExpandido) return
+    const salir = (e) => { if (e.key === 'Escape') alternarTpv() }
+    window.addEventListener('keydown', salir)
+    return () => window.removeEventListener('keydown', salir)
+  }, [tpvExpandido])
   const { pedidosNuevos } = usePedidoAlert()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sociosPendientes, setSociosPendientes] = useState(0)
@@ -599,7 +617,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'finanzas-riders' && <FinanzasRiders />}
       {seccion === 'liquidacion-pido' && <LiquidacionPido />}
       {seccion === 'creadores' && !isNative && <Creadores />}
-      {seccion === 'tpv' && <Tpv />}
+      {seccion === 'tpv' && <Tpv pantallaCompleta={tpvExpandido} onAlternarPantalla={alternarTpv} />}
       {/* El almacen es de ESCRITORIO: dar de alta articulos y escribir escandallos
           con el dedo en una tablet es inviable, y meterlo en la APK obligaria a un
           AAB por cada retoque. En la tablet solo va lo del servicio, dentro del TPV. */}
@@ -639,6 +657,18 @@ function AppInner({ seccion, setSeccion, nav }) {
   // ─────────────────────────────────────────────────────────────────────────
   // SHELL DESKTOP (≥1024px, no native)
   // ─────────────────────────────────────────────────────────────────────────
+  // TPV a pantalla completa: se pinta SOLO el, sin barra lateral ni migas. Es el
+  // mismo componente y el mismo arbol, asi que el carrito a medias no se pierde al
+  // ampliar o reducir.
+  if (isDesktop && !isNative && seccion === 'tpv' && tpvExpandido) {
+    return (
+      <div style={{ ...shell, minHeight: '100vh', background: '#12100E' }}>
+        <style>{css}</style>
+        <Tpv pantallaCompleta onAlternarPantalla={alternarTpv} />
+      </div>
+    )
+  }
+
   if (isDesktop && !isNative) {
     return (
       <div style={{ ...shell, minHeight: '100vh', display: 'flex' }}>
