@@ -50,6 +50,20 @@ import CrearEnvio from './CrearEnvio'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
+// Un MONITOR no es una tablet grande. Los tamanos pensados para tocar a un brazo de
+// distancia, en 1900 px se ven enormes (Marlon: "se ve muy grande"). Tercer escalon.
+function useEsMonitor() {
+  const [grande, setGrande] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)')
+    const on = (e) => setGrande(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return grande
+}
+
 // Un TELEFONO no es una tablet estrecha. En 375 px las dos columnas del mostrador se
 // apilan y el ticket queda debajo de toda la carta: para cobrar habria que bajar 77
 // productos. El corte esta en 760 px, que deja fuera al iPad en vertical (768).
@@ -143,6 +157,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
   // se puede. `avisoFuera` guarda el ultimo pedido que se aparto: si entra OTRO
   // despues, el aviso vuelve a salir.
   const esMovil = useEsMovil()
+  const esMonitor = useEsMonitor()
+  // Elige entre los tres escalones: telefono, tablet, monitor.
+  const tam = (movil, tablet, monitor) => (esMovil ? movil : esMonitor ? monitor : tablet)
   // En el telefono la venta se ve en una hoja a pantalla completa. Empieza cerrada:
   // lo que se toca cien veces al dia es la carta, no el ticket.
   const [hojaVenta, setHojaVenta] = useState(false)
@@ -450,12 +467,24 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           menu ocupa su sitio y las pestanas no pueden crecer por debajo de el. Antes,
           con el contador puesto, "Pedidos" se metia 18 px DEBAJO del boton del menu
           (medido a 375 px: 8 px de holgura y 26 que ocupa el contador). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+      {/* FIJA arriba: al bajar por la carta, el cambio de Mostrador/Pedidos y el menu
+          tienen que seguir ahi. Son los dos sitios a los que se salta a mitad de
+          servicio, y perseguirlos con el scroll es tiempo con el cliente delante.
+          Lleva el fondo del TPV porque los productos pasan por DEBAJO. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        position: 'sticky', top: 0, zIndex: 20,
+        background: T.bg,
+        paddingTop: modoApp || pantallaCompleta ? 6 : 0,
+        paddingBottom: 10, marginBottom: 6,
+      }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Pestana activa={pestana === 'mostrador'} onClick={() => setPestana('mostrador')}
-            esMovil={esMovil} icono={<Calculator size={esMovil ? 16 : 17} />} texto="Mostrador" />
+            esMovil={esMovil} esMonitor={esMonitor}
+            icono={<Calculator size={tam(16, 17, 16)} />} texto="Mostrador" />
           <Pestana activa={pestana === 'pedidos'} onClick={() => setPestana('pedidos')}
-            esMovil={esMovil} icono={<Bike size={esMovil ? 16 : 17} />} texto="Pedidos"
+            esMovil={esMovil} esMonitor={esMonitor}
+            icono={<Bike size={tam(16, 17, 16)} />} texto="Pedidos"
             contador={pedidosNuevos?.length || 0} />
         </div>
         {/* El menú va en la esquina y no encima del ticket: es de la pantalla
@@ -466,7 +495,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
         {onAlternarPantalla && (
           <button onClick={onAlternarPantalla} style={{
             ...btnIcono, flexShrink: 0,
-            width: esMovil ? 40 : 44, height: esMovil ? 40 : 44, borderRadius: 12,
+            width: tam(40, 44, 40), height: tam(40, 44, 40), borderRadius: 11,
           }}
             aria-label={pantallaCompleta ? 'Salir de pantalla completa' : 'TPV a pantalla completa'}
             title={pantallaCompleta ? 'Salir de pantalla completa (Esc)' : 'TPV a pantalla completa'}>
@@ -475,7 +504,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
         )}
         <button onClick={() => setMenu(true)} aria-label="Menú del TPV" style={{
           ...btnIcono, flexShrink: 0,
-          width: esMovil ? 40 : 44, height: esMovil ? 40 : 44, borderRadius: 12,
+          width: tam(40, 44, 40), height: tam(40, 44, 40), borderRadius: 11,
         }}>
           <Menu size={20} />
         </button>
@@ -543,7 +572,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                   // bordes descuadrados: parece un muro de pegatinas. En rejilla, las
                   // filas se alinean y el bloque se lee de un vistazo.
                   : { display: 'grid', gap: 8, width: '100%',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }),
+                      gridTemplateColumns: `repeat(auto-fill, minmax(${esMonitor ? 168 : 190}px, 1fr))` }),
               }}>
                 {categorias.map((c) => {
                   const Icono = iconoDe(c.nombre)
@@ -553,16 +582,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                       // En movil no encoge (fila deslizante); en rejilla la celda manda
                       // y el nombre largo se corta con puntos suspensivos.
                       flex: esMovil ? '0 0 auto' : '1 1 auto', minWidth: 0,
-                      height: esMovil ? 46 : 56, padding: esMovil ? '0 12px' : '0 14px', cursor: 'pointer',
+                      height: tam(46, 56, 44), padding: esMovil ? '0 12px' : '0 12px', cursor: 'pointer',
                       scrollSnapAlign: 'start', fontFamily: 'inherit',
                       border: `1px solid ${activa ? T.accent : T.border}`,
                       borderRadius: 12,
                       background: activa ? T.accentFill : T.surface2,
                       color: activa ? T.onAccent : T.text,
                       display: 'flex', alignItems: 'center', gap: 9,
-                      fontSize: esMovil ? 13 : 14, fontWeight: activa ? 700 : 500,
+                      fontSize: tam(13, 14, 13), fontWeight: activa ? 700 : 500,
                     }}>
-                      <Icono size={esMovil ? 16 : 18} color={activa ? T.onAccent : T.accent} style={{ flexShrink: 0 }} />
+                      <Icono size={tam(16, 18, 15)} color={activa ? T.onAccent : T.accent} style={{ flexShrink: 0 }} />
                       <span style={{
                         minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap', textAlign: 'left', flex: 1,
@@ -603,7 +632,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                 return (
                   <button key={p.id} onClick={() => tocarProducto(p)} style={{
                     position: 'relative', overflow: 'hidden',
-                    minHeight: esMovil ? 78 : 92, padding: 0, textAlign: 'left', cursor: 'pointer',
+                    minHeight: tam(78, 92, 78), padding: 0, textAlign: 'left', cursor: 'pointer',
                     border: `1px solid ${yaLleva ? T.accent : T.border}`, borderRadius: esMovil ? 10 : 12,
                     background: T.surface2,
                     display: 'flex', flexDirection: 'column',
@@ -613,7 +642,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                         una caja gris con un icono de "sin imagen" es peor que nada. */}
                     {p.imagen_url && (
                       <img src={p.imagen_url} alt="" loading="lazy" style={{
-                        width: '100%', height: esMovil ? 58 : 74, objectFit: 'cover', display: 'block',
+                        width: '100%', height: tam(58, 74, 62), objectFit: 'cover', display: 'block',
                       }} />
                     )}
                     {yaLleva > 0 && (
@@ -631,11 +660,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                       gap: esMovil ? 3 : 5, flex: 1, justifyContent: 'space-between',
                     }}>
                       <span style={{
-                        fontSize: esMovil ? 12 : 14, fontWeight: 500,
+                        fontSize: tam(12, 14, 12.5), fontWeight: 500,
                         lineHeight: esMovil ? 1.2 : 1.25,
                       }}>{p.nombre}</span>
                       <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: esMovil ? 13 : 15, fontWeight: 700, color: T.accent }}>
+                        <span style={{ fontSize: tam(13, 15, 13.5), fontWeight: 700, color: T.accent }}>
                           {tams.length ? 'desde ' : ''}
                           {eur(tams.length ? Math.min(...tams.map((t) => precioBarra(p, t))) : precioBarra(p))}
                         </span>
@@ -726,7 +755,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           }}>
             <span style={{ fontSize: 13, color: T.muted }}>{totalUnidades} art.</span>
             <span style={{
-              fontSize: esMovil ? 26 : 30, fontWeight: 800, color: T.text,
+              fontSize: tam(26, 30, 26), fontWeight: 800, color: T.text,
               fontVariantNumeric: 'tabular-nums',
             }}>
               {eur(totalCarrito)}
@@ -1152,12 +1181,13 @@ function Bloque({ titulo, obligatorio, nota, children }) {
   )
 }
 
-function Pestana({ activa, onClick, icono, texto, contador, esMovil }) {
+function Pestana({ activa, onClick, icono, texto, contador, esMovil, esMonitor }) {
+  const compacto = esMovil || esMonitor
   return (
     <button onClick={onClick} style={{
-      height: esMovil ? 40 : 44, padding: esMovil ? '0 14px' : '0 18px',
-      borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-      fontSize: esMovil ? 14 : 15, fontWeight: activa ? 800 : 600,
+      height: compacto ? 40 : 44, padding: compacto ? '0 14px' : '0 18px',
+      borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
+      fontSize: compacto ? 14 : 15, fontWeight: activa ? 800 : 600,
       border: `1px solid ${activa ? T.accent : T.border}`,
       background: activa ? T.accentFill : T.surface2,
       color: activa ? T.onAccent : T.text,

@@ -111,7 +111,13 @@ body {
   display: none;
 }
 
-input, select, textarea, button {
+/* Safari en iOS HACE ZOOM a la pagina cuando enfocas un campo con letra menor de 16px.
+   Por eso esta esta regla desde el primer dia, y en los campos hay que dejarla.
+   🔴 PERO `button` estaba dentro, y con `!important`: eso pisaba EL TAMANO DE LETRA DE
+   TODOS LOS BOTONES DEL PANEL. Cinco meses ignorando cada `fontSize` que se pusiera en
+   un boton — por eso todo se veia grande y los ajustes de tamano "no hacian nada".
+   Un boton no es editable, asi que nunca provoco ese zoom: no pintaba nada aqui. */
+input, select, textarea {
   font-size: 16px !important;
 }
 
