@@ -42,6 +42,7 @@ import TpvPedidos from '../components/TpvPedidos'
 import TpvCaja from '../components/TpvCaja'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
 import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
+import { prepararLogo } from '../lib/logoTicket'
 import TpvStock from '../components/TpvStock'
 import PedidosEnVivo from './PedidosEnVivo'
 import HistorialMovil from './HistorialMovil'
@@ -168,6 +169,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
     window.addEventListener('pidoo:goto', ir)
     return () => window.removeEventListener('pidoo:goto', ir)
   }, [])
+
+  // El logo del ticket, listo ANTES de que haga falta. Convertirlo es una descarga mas
+  // un rato de canvas, y el momento de hacerlo no es con el ticket ya saliendo y el
+  // cliente esperando el cambio. Si falla no pasa nada: se reintenta sola la proxima
+  // vez (desde el 31 ago los fallos ya NO se guardan).
+  useEffect(() => { prepararLogo(restaurante?.logo_url) }, [restaurante?.logo_url])
 
   const idemRef = useRef(null)
   const enVueloRef = useRef(false)

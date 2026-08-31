@@ -131,20 +131,32 @@ function leerGuardado(url, ancho) {
     if (!bruto) return undefined
     const g = JSON.parse(bruto)
     if (g.url !== url || g.ancho !== ancho) return undefined
-    if (g.bytes === null) return null            // se intento y no se pudo
+    // 🔴 Un `bytes: null` guardado por la version anterior significaba «se intento y
+    // no se pudo, no lo vuelvas a intentar NUNCA». Ahora se ignora y se reintenta:
+    // ver el comentario de `guardar`.
+    if (g.bytes === null) return undefined
     return Uint8Array.from(atob(g.bytes), (c) => c.charCodeAt(0))
   } catch { return undefined }
 }
 
+// 🔴 SOLO SE GUARDAN LOS EXITOS.
+//
+// La primera version guardaba tambien los fallos (`bytes: null`) para no reintentar
+// una conversion imposible. El efecto real fue el contrario de lo buscado: un corte de
+// red de un segundo, o abrir la pantalla sin conexion una sola vez, dejaba el logo
+// APAGADO PARA SIEMPRE en ese ordenador. Y como `localStorage` sobrevive al reinicio,
+// ni cerrando la app volvia: el ticket salia sin logo, sin ningun error, sin nada que
+// mirar. Un fallo mudo y permanente causado por algo pasajero.
+//
+// Ahora un fallo no se guarda: la proxima vez se vuelve a intentar. El coste de
+// reintentar es una descarga que casi siempre funciona; el coste de no reintentar era
+// que el restaurante no volviera a ver su logo nunca.
 function guardar(url, ancho, bytes) {
+  if (!bytes) return
   try {
-    let b64 = null
-    if (bytes) {
-      let bin = ''
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-      b64 = btoa(bin)
-    }
-    localStorage.setItem(CLAVE, JSON.stringify({ url, ancho, bytes: b64 }))
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    localStorage.setItem(CLAVE, JSON.stringify({ url, ancho, bytes: btoa(bin) }))
   } catch { /* sin sitio o en incognito: se convertira otra vez, no pasa nada */ }
 }
 
@@ -157,8 +169,19 @@ export async function bytesDelLogo(url, ancho = ANCHO_POR_DEFECTO) {
   const guardado = leerGuardado(url, ancho)
   if (guardado !== undefined) return guardado
   const bytes = await rasterDesdeUrl(url, ancho)
-  guardar(url, ancho, bytes)
+  guardar(url, ancho, bytes)   // solo si salio bien
   return bytes
+}
+
+/**
+ * Deja el logo listo ANTES de que haga falta.
+ *
+ * Se llama al abrir el TPV: convertir tarda y hace una descarga, y no es momento de
+ * hacerlo con el ticket ya saliendo. Si falla no pasa nada — se reintentara sola.
+ */
+export function prepararLogo(url) {
+  if (!url) return
+  bytesDelLogo(url).catch(() => {})
 }
 
 // ─── Vista previa ───────────────────────────────────────────────────────────
