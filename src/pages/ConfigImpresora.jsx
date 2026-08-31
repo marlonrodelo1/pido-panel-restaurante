@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Browser } from '@capacitor/browser'
-import { Printer, Wifi, LogOut, AlertTriangle, Globe } from 'lucide-react'
+import { Printer, Wifi, LogOut, AlertTriangle, Globe, Image as IconoImagen, RefreshCw } from 'lucide-react'
 import { useRest } from '../context/RestContext'
-import { colors, type, ds } from '../lib/uiStyles'
+import { colors, type, ds, radius } from '../lib/uiStyles'
 import {
   getPrinterConfig, savePrinterConfig,
   scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa,
 } from '../lib/printService'
+import { bytesDelLogo, previsualizar, olvidarLogo } from '../lib/logoTicket'
 
 export default function ConfigImpresora() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -23,6 +24,11 @@ export default function ConfigImpresora() {
   const [connectResult, setConnectResult] = useState(null)
   const [manualIp, setManualIp] = useState('')
   const [ticketCount, setTicketCount] = useState(2)
+
+  // Vista previa del logo del ticket.
+  const [logoPrevia, setLogoPrevia] = useState(null)
+  const [logoCargando, setLogoCargando] = useState(false)
+  const [logoIntento, setLogoIntento] = useState(0)
 
   useEffect(() => {
     const cfg = getPrinterConfig()
@@ -103,6 +109,25 @@ export default function ConfigImpresora() {
     height: 42,
     fontSize: type.sm,
   }
+
+  // La vista previa del logo del ticket. Se prepara sola al abrir la pantalla: es la
+  // MISMA conversion que usa la impresion, asi que de paso deja el logo ya guardado y
+  // el primer cobro no tiene que esperar por ella.
+  // Todos los cambios de estado van DENTRO de la funcion asincrona, no sueltos en el
+  // cuerpo del efecto: es el patron de la casa y lo que pide `react-hooks`.
+  useEffect(() => {
+    let vivo = true
+    ;(async () => {
+      const url = restaurante?.logo_url
+      if (!url) { if (vivo) { setLogoPrevia(null); setLogoCargando(false) } return }
+      setLogoCargando(true)
+      const bytes = await bytesDelLogo(url)
+      if (!vivo) return
+      setLogoPrevia(bytes ? previsualizar(bytes) : null)
+      setLogoCargando(false)
+    })()
+    return () => { vivo = false }
+  }, [restaurante?.logo_url, logoIntento])
 
   return (
     <div>
@@ -307,6 +332,7 @@ export default function ConfigImpresora() {
                   : 'Se imprimirá solo la comanda para cocina.'}
               </div>
             </div>
+
           </div>
         ) : (
           /* DESCONECTADA */
@@ -469,6 +495,62 @@ export default function ConfigImpresora() {
             )}
           </div>
         )}
+
+          {/* EL LOGO DEL TICKET.
+              En pantalla el logo se ve en color y con degradados; en el papel son
+              puntos negros o nada. Un logo con sombras o poco contraste puede acabar
+              en una mancha, y descubrirlo con la impresora echando papel es tarde.
+              Esto ensena los MISMOS bits que se van a mandar. */}
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${colors.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+              <IconoImagen size={14} color={colors.stone} strokeWidth={2.2} />
+              <span style={{ ...ds.label, marginBottom: 0 }}>Logo del ticket</span>
+            </div>
+
+            {!restaurante?.logo_url ? (
+              <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 6, lineHeight: 1.5 }}>
+                Este restaurante no tiene logo. Súbelo en Ajustes y aparecerá arriba
+                del ticket.
+              </div>
+            ) : logoCargando ? (
+              <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 6 }}>Preparándolo…</div>
+            ) : !logoPrevia ? (
+              <div style={{ fontSize: type.xxs, color: 'var(--c-warning-text, #7A5520)', marginTop: 6, lineHeight: 1.5 }}>
+                No se ha podido preparar el logo, así que el ticket saldrá sin él.
+                El resto del ticket no cambia.
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: type.xxs, color: colors.stone, marginBottom: 10, lineHeight: 1.5 }}>
+                  Así saldrá impreso, punto por punto.
+                </div>
+                <div style={{
+                  display: 'inline-block', background: '#FFFFFF', padding: 12,
+                  borderRadius: radius.sm, border: `1px solid ${colors.border}`,
+                }}>
+                  <img
+                    src={logoPrevia.url}
+                    alt="Vista previa del logo tal como se imprimirá"
+                    // A tamano real (1 punto = 1 pixel): ampliarlo mentiria sobre lo
+                    // que se va a ver en el papel.
+                    style={{ display: 'block', width: logoPrevia.ancho, height: logoPrevia.alto, imageRendering: 'pixelated' }}
+                  />
+                </div>
+                <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 8 }}>
+                  {logoPrevia.ancho} × {logoPrevia.alto} puntos · {logoPrevia.mm} mm de ancho
+                </div>
+                <button
+                  onClick={() => { olvidarLogo(); setLogoIntento((n) => n + 1) }}
+                  style={{ ...ds.ghostBtn, marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <RefreshCw size={13} strokeWidth={2.2} /> Volver a generarlo
+                </button>
+                <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 6, lineHeight: 1.5 }}>
+                  Solo hace falta si acabas de cambiar el logo en Ajustes.
+                </div>
+              </>
+            )}
+          </div>
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

@@ -161,6 +161,46 @@ export async function bytesDelLogo(url, ancho = ANCHO_POR_DEFECTO) {
   return bytes
 }
 
+// ─── Vista previa ───────────────────────────────────────────────────────────
+
+/**
+ * Deshace el mapa de bits para poder VERLO antes de gastar papel.
+ *
+ * No es una aproximacion ni una miniatura del original: se leen los MISMOS bits que
+ * se van a mandar a la impresora, uno a uno. Lo que sale aqui es exactamente lo que
+ * saldra en el ticket — que es justo lo que hay que poder juzgar. Un logo con
+ * sombras o poco contraste puede convertirse en una mancha, y descubrirlo en pantalla
+ * cuesta cero.
+ *
+ * Devuelve { url, ancho, alto, mm } o null.
+ */
+export function previsualizar(bytes) {
+  if (!bytes || bytes.length < 9) return null
+  try {
+    const bytesPorFila = bytes[4] | (bytes[5] << 8)
+    const alto = bytes[6] | (bytes[7] << 8)
+    const ancho = bytesPorFila * 8
+    if (!ancho || !alto) return null
+
+    const lienzo = document.createElement('canvas')
+    lienzo.width = ancho
+    lienzo.height = alto
+    const ctx = lienzo.getContext('2d')
+    const im = ctx.createImageData(ancho, alto)
+    for (let y = 0; y < alto; y++) {
+      for (let x = 0; x < ancho; x++) {
+        const bit = (bytes[8 + y * bytesPorFila + (x >> 3)] >> (7 - (x & 7))) & 1
+        const p = (y * ancho + x) * 4
+        const v = bit ? 0 : 255
+        im.data[p] = v; im.data[p + 1] = v; im.data[p + 2] = v; im.data[p + 3] = 255
+      }
+    }
+    ctx.putImageData(im, 0, 0)
+    // 203 puntos por pulgada es la resolucion de casi todas las termicas de 80 mm.
+    return { url: lienzo.toDataURL('image/png'), ancho, alto, mm: +(ancho / 203 * 25.4).toFixed(1) }
+  } catch { return null }
+}
+
 /** Para el boton "volver a probar" si el dueno cambia el logo. */
 export function olvidarLogo() {
   try { localStorage.removeItem(CLAVE) } catch { /* da igual */ }
