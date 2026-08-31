@@ -460,8 +460,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
       {/* En modo app no hay cabecera de panel detrás, así que el nombre y el estado
           van aquí. El estado importa: si la app se queda sin conexión, el sistema
           cierra el restaurante solo a los 5 minutos y conviene verlo de un vistazo. */}
-      {modoApp && <CabeceraApp restaurante={restaurante} esMovil={esMovil}
-        onAbrir={() => setPantalla('impresora')} />}
+      {/* Tambien a pantalla completa en escritorio: sin la cabecera del panel detras,
+          el nombre del local y si esta abierto no se ven en ningun sitio. */}
+      {(modoApp || pantallaCompleta) && <CabeceraApp restaurante={restaurante} esMovil={esMovil}
+        onAbrir={() => modoApp ? setPantalla('impresora') : null} />}
 
       {/* Fila flex de verdad, no un centrado con el menu en absolute encima: asi el
           menu ocupa su sitio y las pestanas no pueden crecer por debajo de el. Antes,
@@ -514,11 +516,22 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
         <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil}
           onNuevo={(tipo) => setNuevoPedido(tipo)} />
       ) : (
-      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
+      // desplaza por su cuenta: la carta puede tener 160 productos y la venta cuatro
+      // lineas, y hacerlas scrollear juntas aleja el total del sitio donde se cobra.
+      // En telefono y tablet siguen apilandose como hasta ahora.
+      // (Comentario JS y no {/* */}: en la rama de un ternario solo cabe UNA expresion.)
+      <div style={{
+        display: 'flex', gap: esMonitor ? 16 : 14, alignItems: 'flex-start', flexWrap: 'wrap',
+        ...(esMonitor ? { height: 'calc(100vh - 150px)', flexWrap: 'nowrap' } : null),
+      }}>
       {/* ── Izquierda: la carta ─────────────────────────────────────────── */}
       {/* En telefono la carta es TODA la pantalla, y se le deja hueco abajo para que
           la barra de la venta no tape la ultima fila de productos. */}
-      <div style={{ flex: '1 1 420px', minWidth: 0, paddingBottom: esMovil ? 84 : 0 }}>
+      <div style={{
+        flex: '1 1 420px', minWidth: 0, paddingBottom: esMovil ? 84 : 0,
+        ...(esMonitor ? { height: '100%', overflowY: 'auto', paddingRight: 4 } : null),
+      }}>
         {impresora.configurada && impresora.viva === false && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', marginBottom: 12,
@@ -530,16 +543,24 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           </div>
         )}
 
-        <div style={{ position: 'relative', marginBottom: 14 }}>
-          <Search size={16} style={{ position: 'absolute', left: 12, top: 15, color: T.muted }} />
+        {/* En MONITOR el buscador va estrecho y a la izquierda de las categorias:
+            a todo lo ancho se comia una franja entera para un campo que casi nunca se
+            usa (la carta se toca, no se escribe). En telefono y tablet sigue ancho,
+            que es donde escribir sale mas a cuenta que buscar con el dedo. */}
+        <div style={{
+          position: 'relative', marginBottom: esMonitor ? 10 : 14,
+          width: esMonitor ? 260 : '100%', flexShrink: 0,
+        }}>
+          <Search size={16} style={{ position: 'absolute', left: 12, top: esMonitor ? 14 : 15, color: T.muted }} />
           <input
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar producto"
             style={{
-              width: '100%', height: 46, paddingLeft: 36, paddingRight: 12,
-              borderRadius: 12, border: `1px solid ${T.border}`,
-              background: T.surface2, color: T.text, fontSize: 15, fontFamily: 'inherit',
+              width: '100%', height: esMonitor ? 44 : 46, paddingLeft: 36, paddingRight: 12,
+              borderRadius: 11, border: `1px solid ${T.border}`,
+              background: T.surface2, color: T.text,
+              fontSize: esMonitor ? 14 : 15, fontFamily: 'inherit',
             }}
           />
         </div>
@@ -555,7 +576,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                 bajos, no tarjetas altas — así caben más y sobra sitio para los
                 productos, que es lo que de verdad se toca. Se centra cuando cabe y
                 se desliza cuando no. */}
-            <div style={{ position: 'relative', marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
+            <div style={{
+              position: 'relative', marginBottom: esMonitor ? 12 : 14,
+              display: 'flex', justifyContent: esMonitor ? 'flex-start' : 'center',
+            }}>
               {/* En TELEFONO las categorias van en una sola fila que se desliza: no
                   caben y apilarlas se comeria media pantalla de carta. En tablet
                   grande y en escritorio se REPARTEN EN FILAS y se ven TODAS, que es
@@ -567,21 +591,23 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                   // pantalla de carta.
                   ? { display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2,
                       scrollSnapType: 'x proximity' }
-                  // ESCRITORIO: REJILLA de celdas iguales, no un `flex-wrap` centrado.
-                  // Con 7 categorias el wrap centrado deja filas de 3, 3 y 1 con los
-                  // bordes descuadrados: parece un muro de pegatinas. En rejilla, las
-                  // filas se alinean y el bloque se lee de un vistazo.
-                  : { display: 'grid', gap: 8, width: '100%',
-                      gridTemplateColumns: `repeat(auto-fill, minmax(${esMonitor ? 168 : 190}px, 1fr))` }),
+                  // ESCRITORIO: fila de ancho NATURAL alineada a la IZQUIERDA.
+                  // La rejilla de celdas iguales cuadraba pero dejaba huecos raros con
+                  // los nombres cortos. Y lo que se veia "apilado" era el wrap
+                  // CENTRADO: bordes irregulares por los dos lados. Alineado a la
+                  // izquierda solo queda corta la ultima fila, que es como se lee.
+                  : { display: 'flex', flexWrap: 'wrap', gap: 8, width: '100%',
+                      justifyContent: 'flex-start' }),
               }}>
                 {categorias.map((c) => {
                   const Icono = iconoDe(c.nombre)
                   const activa = c.id === catSel && !busqueda
                   return (
                     <button key={c.id} onClick={() => { setCatSel(c.id); setBusqueda('') }} style={{
-                      // En movil no encoge (fila deslizante); en rejilla la celda manda
-                      // y el nombre largo se corta con puntos suspensivos.
-                      flex: esMovil ? '0 0 auto' : '1 1 auto', minWidth: 0,
+                      // No encoge en ninguno de los dos: cada categoria ocupa lo que
+                      // mide su nombre. Un tope evita que "Bebidas Alcoholicas" se lleve
+                      // media fila.
+                      flex: '0 0 auto', minWidth: 0, maxWidth: esMonitor ? 230 : '100%',
                       height: tam(46, 56, 44), padding: esMovil ? '0 12px' : '0 12px', cursor: 'pointer',
                       scrollSnapAlign: 'start', fontFamily: 'inherit',
                       border: `1px solid ${activa ? T.accent : T.border}`,
@@ -630,48 +656,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                 const tieneExtras = (gruposDe[p.id] || []).length > 0
                 const yaLleva = enCarritoPorProducto[p.id] || 0
                 return (
-                  <button key={p.id} onClick={() => tocarProducto(p)} style={{
-                    position: 'relative', overflow: 'hidden',
-                    minHeight: tam(78, 92, 78), padding: 0, textAlign: 'left', cursor: 'pointer',
-                    border: `1px solid ${yaLleva ? T.accent : T.border}`, borderRadius: esMovil ? 10 : 12,
-                    background: T.surface2,
-                    display: 'flex', flexDirection: 'column',
-                    fontFamily: 'inherit', color: T.text,
-                  }}>
-                    {/* La foto solo si existe: hoy la tienen 38 de 160 productos, y
-                        una caja gris con un icono de "sin imagen" es peor que nada. */}
-                    {p.imagen_url && (
-                      <img src={p.imagen_url} alt="" loading="lazy" style={{
-                        width: '100%', height: tam(58, 74, 62), objectFit: 'cover', display: 'block',
-                      }} />
-                    )}
-                    {yaLleva > 0 && (
-                      <span style={{
-                        position: 'absolute', top: 5, right: 5,
-                        minWidth: esMovil ? 20 : 24, height: esMovil ? 20 : 24,
-                        padding: '0 5px', borderRadius: 7, background: T.accentFill, color: T.onAccent,
-                        fontSize: esMovil ? 11 : 13, fontWeight: 700, display: 'flex', alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>{yaLleva}</span>
-                    )}
-                    <span style={{
-                      padding: esMovil ? '7px 8px 8px' : '10px 10px 11px',
-                      display: 'flex', flexDirection: 'column',
-                      gap: esMovil ? 3 : 5, flex: 1, justifyContent: 'space-between',
-                    }}>
-                      <span style={{
-                        fontSize: tam(12, 14, 12.5), fontWeight: 500,
-                        lineHeight: esMovil ? 1.2 : 1.25,
-                      }}>{p.nombre}</span>
-                      <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: tam(13, 15, 13.5), fontWeight: 700, color: T.accent }}>
-                          {tams.length ? 'desde ' : ''}
-                          {eur(tams.length ? Math.min(...tams.map((t) => precioBarra(p, t))) : precioBarra(p))}
-                        </span>
-                        {tieneExtras && <span style={{ fontSize: esMovil ? 10 : 11, color: T.muted }}>+ extras</span>}
-                      </span>
-                    </span>
-                  </button>
+                  <TarjetaProducto
+                    key={p.id}
+                    p={p}
+                    tams={tams}
+                    tieneExtras={tieneExtras}
+                    yaLleva={yaLleva}
+                    esMovil={esMovil}
+                    tam={tam}
+                    precioBarra={precioBarra}
+                    onClick={() => tocarProducto(p)}
+                  />
                 )
               })}
               {!visibles.length && (
@@ -693,6 +688,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
         position: 'fixed', inset: 0, zIndex: 1000, background: T.bg,
         padding: 10, overflowY: 'auto', WebkitOverflowScrolling: 'touch',
         display: hojaVenta ? 'block' : 'none',
+      } : esMonitor ? {
+        // Ancho FIJO en monitor: la venta no debe encogerse porque la carta tenga
+        // muchos productos, y a mas de 400 px se queda vacia mirando al techo.
+        flex: '0 0 380px', width: 380, height: '100%',
+        display: 'flex', flexDirection: 'column', minHeight: 0,
       } : { flex: '0 1 360px', minWidth: 300, position: 'sticky', top: 12 }}>
         {esMovil && (
           <div style={{
@@ -705,7 +705,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
             </button>
           </div>
         )}
-        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 14 }}>
+        <div style={{
+          background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 14,
+          // En monitor la tarjeta ocupa TODO el alto de su columna, con las lineas
+          // desplazandose en medio y el total anclado abajo. Asi el importe y los
+          // botones de cobro estan SIEMPRE en el mismo sitio, lleve la venta dos
+          // lineas o veinte: el camarero no tiene que buscarlos.
+          ...(esMonitor ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : null),
+        }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <strong style={{ fontSize: 15, color: T.text }}>Venta en curso</strong>
             {carrito.length > 0 && (
@@ -719,11 +726,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           </div>
 
           {carrito.length === 0 ? (
-            <div style={{ padding: '28px 10px', textAlign: 'center', color: T.muted, fontSize: 14 }}>
+            <div style={{
+              padding: '28px 10px', textAlign: 'center', color: T.muted, fontSize: 14,
+              ...(esMonitor ? { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' } : null),
+            }}>
               Toca un producto para empezar.
             </div>
           ) : (
-            <div style={{ maxHeight: '44vh', overflowY: 'auto', marginBottom: 12 }}>
+            <div style={esMonitor
+              ? { flex: 1, minHeight: 0, overflowY: 'auto', marginBottom: 12 }
+              : { maxHeight: '44vh', overflowY: 'auto', marginBottom: 12 }}>
               {carrito.map((l) => (
                 <div key={l.clave} style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
@@ -1366,5 +1378,105 @@ function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// La tarjeta de un producto en el mostrador.
+//
+// CON FOTO: la foto ocupa la tarjeta entera y el nombre va ENCIMA, abajo, sobre un
+// degradado. Se busca el plato mirando la foto, no leyendo: la foto tiene que mandar.
+// Antes la imagen era una franja y debajo habia otra franja de texto casi igual de
+// alta, y en un monitor eso deja la foto diminuta.
+//
+// SIN FOTO: hoy 122 de 160 productos no tienen. Una tarjeta alta y negra con el nombre
+// perdido en medio se lee peor que una fila compacta, asi que esas mantienen el
+// formato de texto de siempre. Dos formas para dos casos, a proposito.
+function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, tam, precioBarra, onClick }) {
+  const conFoto = !!p.imagen_url
+  const precio = (
+    <>
+      {tams.length ? 'desde ' : ''}
+      {eur(tams.length ? Math.min(...tams.map((t) => precioBarra(p, t))) : precioBarra(p))}
+    </>
+  )
+
+  const contador = yaLleva > 0 && (
+    <span style={{
+      position: 'absolute', top: 6, right: 6,
+      minWidth: esMovil ? 20 : 24, height: esMovil ? 20 : 24,
+      padding: '0 5px', borderRadius: 7, background: T.accentFill, color: T.onAccent,
+      fontSize: esMovil ? 11 : 13, fontWeight: 800,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      // Sobre una foto clara, el naranja solo no separa: hace falta la sombra.
+      boxShadow: '0 2px 6px rgba(0,0,0,0.45)',
+    }}>{yaLleva}</span>
+  )
+
+  const marco = {
+    position: 'relative', overflow: 'hidden', padding: 0, textAlign: 'left',
+    cursor: 'pointer', fontFamily: 'inherit', color: T.text,
+    border: `1px solid ${yaLleva ? T.accent : T.border}`,
+    borderRadius: esMovil ? 10 : 12,
+    background: T.surface2,
+    display: 'flex', flexDirection: 'column',
+  }
+
+  if (!conFoto) {
+    return (
+      <button onClick={onClick} style={{ ...marco, minHeight: tam(64, 78, 68) }}>
+        {contador}
+        <span style={{
+          padding: esMovil ? '8px 9px' : '10px 11px',
+          display: 'flex', flexDirection: 'column', gap: esMovil ? 3 : 5,
+          flex: 1, justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: tam(12, 14, 12.5), fontWeight: 500, lineHeight: 1.25 }}>{p.nombre}</span>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: tam(13, 15, 13.5), fontWeight: 700, color: T.accent }}>{precio}</span>
+            {tieneExtras && <span style={{ fontSize: esMovil ? 10 : 11, color: T.muted }}>+ extras</span>}
+          </span>
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <button onClick={onClick} style={{ ...marco, height: tam(126, 150, 132) }}>
+      <img src={p.imagen_url} alt="" loading="lazy" style={{
+        position: 'absolute', inset: 0, width: '100%', height: '100%',
+        objectFit: 'cover', display: 'block',
+      }} />
+      {/* El degradado NO es adorno: sin el, un nombre blanco sobre una foto clara
+          (unas papas, un plato con luz) no se lee. Sube casi hasta media tarjeta
+          porque el texto puede ocupar dos lineas. */}
+      <span style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, top: '38%',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 45%, rgba(0,0,0,0.88) 100%)',
+        pointerEvents: 'none',
+      }} />
+      {contador}
+      <span style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        padding: esMovil ? '0 8px 8px' : '0 10px 10px',
+        display: 'flex', flexDirection: 'column', gap: 2,
+      }}>
+        <span style={{
+          fontSize: tam(12, 14, 12.5), fontWeight: 600, lineHeight: 1.25, color: '#FFFFFF',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          // Por si el degradado se queda corto con una foto muy blanca.
+          textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+        }}>{p.nombre}</span>
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
+          <span style={{
+            fontSize: tam(13, 15, 13.5), fontWeight: 800, color: T.accent,
+            textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+          }}>{precio}</span>
+          {tieneExtras && (
+            <span style={{ fontSize: esMovil ? 10 : 11, color: 'rgba(255,255,255,0.75)' }}>+ extras</span>
+          )}
+        </span>
+      </span>
+    </button>
   )
 }
