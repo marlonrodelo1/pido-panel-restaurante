@@ -41,6 +41,7 @@ import { T, FONT, cents, eur, caja, btnIcono, btnAccion, btnSecundario } from '.
 import TpvPedidos from '../components/TpvPedidos'
 import TpvCaja from '../components/TpvCaja'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
+import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
 import TpvStock from '../components/TpvStock'
 import PedidosEnVivo from './PedidosEnVivo'
 import HistorialMovil from './HistorialMovil'
@@ -52,34 +53,6 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 // Un MONITOR no es una tablet grande. Los tamanos pensados para tocar a un brazo de
 // distancia, en 1900 px se ven enormes (Marlon: "se ve muy grande"). Tercer escalon.
-function useEsMonitor() {
-  const [grande, setGrande] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1280px)')
-    const on = (e) => setGrande(e.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return grande
-}
-
-// Un TELEFONO no es una tablet estrecha. En 375 px las dos columnas del mostrador se
-// apilan y el ticket queda debajo de toda la carta: para cobrar habria que bajar 77
-// productos. El corte esta en 760 px, que deja fuera al iPad en vertical (768).
-function useEsMovil() {
-  const [movil, setMovil] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 760px)')
-    const on = (e) => setMovil(e.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return movil
-}
-
-
 
 // Icono por categoría. Se mira el nombre porque `categorias` no guarda ningún icono
 // ni imagen. Con la carta de un bar (bocadillos, croissants, papas, perritos…) el
@@ -896,7 +869,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
 
       {nuevoPedido && (
         <Modal titulo={nuevoPedido === 'reparto' ? 'Nuevo reparto' : 'Nueva recogida'}
-          onCerrar={() => setNuevoPedido(null)}>
+          onCerrar={() => setNuevoPedido(null)}
+          ancho={esMonitor ? 1240 : 440} altoFijo={esMonitor}>
           <TpvNuevoPedido restaurante={restaurante} modo={nuevoPedido}
             onCancelar={() => setNuevoPedido(null)}
             onHecho={() => setNuevoPedido(null)} />
@@ -1188,7 +1162,11 @@ function ModalEfectivo({ total_c, cobrando, onCerrar, onCobrar }) {
 }
 
 // ── Piezas sueltas ──────────────────────────────────────────────────────────
-function Modal({ titulo, children, onCerrar }) {
+// `ancho` sube el tope de 440 px para el contenido que necesita mas sitio (la
+// pantalla de nuevo pedido en un monitor son tres columnas). `altoFijo` le pasa el
+// scroll a los hijos: sin el, el modal entero scrollea como un bloque y las tres
+// columnas se mueven juntas, que es justo lo que no queremos.
+function Modal({ titulo, children, onCerrar, ancho = 440, altoFijo = false }) {
   return (
     <div onClick={onCerrar} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 900,
@@ -1196,16 +1174,22 @@ function Modal({ titulo, children, onCerrar }) {
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: T.surface, border: `1px solid ${T.border}`, borderRadius: 18, padding: 18,
-        width: '100%', maxWidth: 440, maxHeight: '88vh', overflowY: 'auto',
+        width: '100%', maxWidth: ancho, maxHeight: '88vh',
         fontFamily: FONT,
+        ...(altoFijo
+          ? { height: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+          : { overflowY: 'auto' }),
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginBottom: 14, flexShrink: 0,
+        }}>
           <strong style={{ fontSize: 17, color: T.text }}>{titulo}</strong>
           <button onClick={onCerrar} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.muted }}>
             <X size={20} />
           </button>
         </div>
-        {children}
+        {altoFijo ? <div style={{ flex: 1, minHeight: 0 }}>{children}</div> : children}
       </div>
     </div>
   )
