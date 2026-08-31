@@ -4,7 +4,7 @@ import { useRest } from '../context/RestContext'
 import { usePedidoAlert } from '../context/PedidoAlertContext'
 import { stopAlarm, unlockAudio, startAlarm, notificarNuevoPedido } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
-import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
+import { imprimirPedido, imprimirPedidoWeb, hayImpresoraNativa } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { toast } from '../App'
@@ -348,7 +348,7 @@ export default function PedidosEnVivo() {
         setItemsMap(prev => ({ ...prev, [p.id]: lineas }))
         setActivos(prev => (prev.some(x => x.id === p.id) ? prev : [p, ...prev]))
 
-        if (Capacitor.isNativePlatform()) {
+        if (hayImpresoraNativa) {
           notificarNuevoPedido(p.codigo)
           // La impresora vive en la red local del bar: solo la alcanza la
           // tablet. En web no se imprime nada a propósito — `imprimirPedidoWeb`
@@ -528,7 +528,10 @@ export default function PedidosEnVivo() {
     setPedidoDetalleId(null)
     toast('Pedido aceptado correctamente', 'success')
     if (pedido.usuario_id) sendPush({ targetType: 'cliente', targetId: pedido.usuario_id, title: 'Pedido aceptado', body: `Tu pedido ${pedido.codigo} está siendo preparado (~${minutos} min)` })
-    if (Capacitor.isNativePlatform()) {
+    // `hayImpresoraNativa`, no Capacitor: en la app de Windows hay socket TCP a la
+    // impresora igual que en la tablet, y preguntando por Capacitor se aceptaba el
+    // pedido sin que cocina viera la comanda.
+    if (hayImpresoraNativa) {
       imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
     }
     if (pedido.modo_entrega === 'delivery') {
@@ -569,6 +572,11 @@ export default function PedidosEnVivo() {
     }
   }
 
+  // Los estados en los que un pedido sigue VIVO. Se usa como candado al cancelar: sin
+  // el, cancelar un pedido ya entregado lo revive como cancelado y —si fue con
+  // tarjeta— dispara un reembolso de algo que el cliente ya se ha comido.
+  const VIVOS = ['nuevo', 'aceptado', 'preparando', 'listo', 'recogido', 'en_camino']
+
   // Reembolso Stripe con aviso visible si falla (antes se tragaba el error en silencio → cliente sin devolver).
   function reembolsarConAviso(pedidoId) {
     supabase.functions.invoke('crear_reembolso_stripe', { body: { pedido_id: pedidoId } })
@@ -579,10 +587,20 @@ export default function PedidosEnVivo() {
   async function rechazarPedido(id, motivo) {
     const pedido = entrantes.find(p => p.id === id)
     const motivoTexto = MOTIVOS_RECHAZO.find(m => m.id === motivo)?.label || motivo || 'El restaurante no pudo aceptar tu pedido'
-    const { error } = await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', id)
+    // 🔴 CANDADO `.eq('estado','nuevo')`, igual que en `marcarRecogido`. Sin el, si el
+    // auto-cancelador (o la otra tablet) ya cancelo y REEMBOLSO este pedido, pulsar
+    // Rechazar volvia a llamar a `crear_reembolso_stripe` por segunda vez.
+    const { data: filas, error } = await supabase.from('pedidos')
+      .update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() })
+      .eq('id', id).eq('estado', 'nuevo').select('id')
     if (error) {
       console.error('[rechazarPedido] Error actualizando BD:', error)
       toast('No se pudo rechazar el pedido. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
+    if (!filas?.length) {
+      toast('Ese pedido ya se gestionó desde otro sitio.', 'error')
+      fetchPedidos()
       return
     }
     setEntrantes(prev => { const r = prev.filter(p => p.id !== id); if (!r.length) stopAlarm(); return r })
@@ -611,10 +629,19 @@ export default function PedidosEnVivo() {
 
   async function cancelarPedidoActivo(pedido, motivoId) {
     const motivoTexto = MOTIVOS_CANCELACION.find(m => m.id === motivoId)?.label || 'Cancelado por el restaurante'
-    const { error } = await supabase.from('pedidos').update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() }).eq('id', pedido.id)
+    // 🔴 CANDADO: solo se cancela lo que sigue vivo. Cancelar dos veces disparaba dos
+    // reembolsos, y cancelar uno ya entregado devolvia el dinero de una comida servida.
+    const { data: filas, error } = await supabase.from('pedidos')
+      .update({ estado: 'cancelado', motivo_cancelacion: motivoTexto, cancelado_at: new Date().toISOString() })
+      .eq('id', pedido.id).in('estado', VIVOS).select('id')
     if (error) {
       console.error('[cancelarPedidoActivo] Error actualizando BD:', error)
       toast('No se pudo cancelar el pedido. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
+    if (!filas?.length) {
+      toast('Ese pedido ya ha cambiado de estado.', 'error')
+      fetchPedidos()
       return
     }
     setActivos(prev => prev.filter(p => p.id !== pedido.id))
@@ -626,10 +653,22 @@ export default function PedidosEnVivo() {
 
   async function marcarListo(id) {
     const pedido = activos.find(p => p.id === id)
-    const { error } = await supabase.from('pedidos').update({ estado: 'listo' }).eq('id', id)
+    // 🔴 CANDADO. Era la unica de las cinco que escribia sin mirar el estado: un pedido
+    // ya `recogido` o `en_camino` se podia arrastrar HACIA ATRAS a `listo` desde otra
+    // tablet o con un doble toque, y de paso le sonaba al cliente otra vez el aviso de
+    // "tu pedido esta listo" cuando el rider ya lo llevaba en la mochila.
+    // Los estados validos son los mismos que enseñan el boton (ver `preparando`, mas abajo).
+    const { data: filas, error } = await supabase.from('pedidos')
+      .update({ estado: 'listo' })
+      .eq('id', id).in('estado', ['aceptado', 'preparando']).select('id')
     if (error) {
       console.error('[marcarListo] Error actualizando BD:', error)
       toast('No se pudo marcar como listo. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
+    if (!filas?.length) {
+      toast('Ese pedido ya ha cambiado de estado.', 'error')
+      fetchPedidos()
       return
     }
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'listo' } : p))
@@ -701,7 +740,9 @@ export default function PedidosEnVivo() {
 
   function reimprimir(pedido) {
     const items = itemsMap[pedido.id] || []
-    if (Capacitor.isNativePlatform()) {
+    // Igual aqui: con puente nativo se manda al papel; el dialogo del navegador es
+    // solo para quien NO tiene impresora conectada.
+    if (hayImpresoraNativa) {
       imprimirPedido(pedido, items, restaurante).then(r => { if (!r?.ok) toast('No se pudo imprimir. Verifica la IP de la impresora en Config.') }).catch(() => toast('Error de conexión con la impresora.'))
     } else {
       imprimirPedidoWeb(pedido, items, restaurante)
@@ -1775,6 +1816,17 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
         {pedido.coste_envio > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--c-muted)', marginBottom: 6 }}>
             <span>Coste de Envío</span><span>{(pedido.coste_envio || 0).toFixed(2)}€</span>
+          </div>
+        )}
+        {/* 🔴 La PROPINA faltaba, y el orden de arriba no es decorativo: es el mismo que
+            usa `enforce_pedido_total()` en la base de datos —
+            total = subtotal + coste_envio + propina - descuento.
+            Sin esta fila, el desglose NO sumaba el Total en los 21 pedidos que llevan
+            propina (25,00 € en total), y como `escpos.js` SI la imprime, el papel y la
+            pantalla decian cosas distintas con el cliente delante. */}
+        {pedido.propina > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--c-muted)', marginBottom: 6 }}>
+            <span>Propina</span><span>{(pedido.propina || 0).toFixed(2)}€</span>
           </div>
         )}
         {pedido.descuento > 0 && (

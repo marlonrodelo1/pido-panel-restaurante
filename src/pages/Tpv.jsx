@@ -144,20 +144,30 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
 
   const [avisoFuera, setAvisoFuera] = useState(null)
   const pedidoAvisado = pedidosNuevos?.[0] || null
-  const hayAviso = modoApp && pedidoAvisado && avisoFuera !== pedidoAvisado.id && pantalla !== 'pedidos'
+  // 🔴 Sin `modoApp`. Ese candado dejaba a la app de WINDOWS sin aviso de pedido nuevo:
+  // el TPV ocupa la pantalla entera, el pedido entraba y no se enteraba nadie.
+  const hayAviso = pedidoAvisado && avisoFuera !== pedidoAvisado.id && pantalla !== 'pedidos'
 
   // Volver a Pedidos desde donde sea. `TpvPedidos` y `CrearEnvio` piden ir alli con
-  // este evento; en la shell normal lo recoge `App.jsx`, pero aqui NO hay secciones
-  // y sin esto tocar una tarjeta de pedido no haria absolutamente nada.
+  // este evento.
+  //
+  // 🔴 Antes empezaba con `if (!modoApp) return`, y eso dejaba la app de WINDOWS sin
+  // salida: `PedidosEnVivo` —el UNICO sitio del sistema que escribe el estado de un
+  // pedido— solo se monta aqui (esta capa) o en `App.jsx:605`, y las dos puertas
+  // exigian Capacitor. Electron no es Capacitor, asi que desde Windows NO se podia
+  // aceptar ni un solo pedido: el evento se lo quedaba `App.jsx`, ponia
+  // `seccion='pedidos'`, se dejaba de cumplir `seccion === 'tpv'` y el usuario salia
+  // del TPV a una pagina en blanco.
+  //
+  // Como capa, ademas, el mostrador se queda DETRAS: el carrito a medias no se pierde.
   useEffect(() => {
-    if (!modoApp) return
     const ir = (e) => {
       const d = e?.detail
       if (PANTALLAS[d]) setPantalla(d)
     }
     window.addEventListener('pidoo:goto', ir)
     return () => window.removeEventListener('pidoo:goto', ir)
-  }, [modoApp])
+  }, [])
 
   const idemRef = useRef(null)
   const enVueloRef = useRef(false)

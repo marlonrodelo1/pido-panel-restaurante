@@ -111,10 +111,18 @@ function AppContent() {
     return 'historial'
   })
 
-  // En la shell normal, un pedido nuevo lleva a Pedidos. En la shell TPV NO se usa:
-  // alli el propio TPV abre su capa de Pedidos encima, sin desmontar el mostrador.
+  // En la shell normal, un pedido nuevo lleva a Pedidos.
+  //
+  // 🔴 Pero NUNCA si estas en el TPV. Antes saltaba siempre, en todas las plataformas:
+  // entraba un pedido, el <Tpv/> se desmontaba y el carrito —que vive solo en
+  // `useState`, sin persistir nada— se perdia ENTERO con el cliente delante esperando
+  // a pagar. Y en escritorio aterrizabas ademas en una seccion vacia, porque
+  // `PedidosEnVivo` solo se monta si `isNative`.
+  //
+  // Estando en el TPV no hace falta ir a ningun lado: el propio TPV levanta su aviso
+  // (`AvisoPedido`) y abre la capa de Pedidos ENCIMA, dejando el mostrador detras.
   const handleNuevoPedido = useCallback(() => {
-    setSeccion('pedidos')
+    setSeccion((actual) => (actual === 'tpv' ? actual : 'pedidos'))
   }, [])
 
   // Navegacion entre secciones via window event (usado por Ajustes para abrir
