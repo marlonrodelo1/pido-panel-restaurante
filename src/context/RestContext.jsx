@@ -63,13 +63,32 @@ export function RestProvider({ children }) {
         return
       }
 
-      // First try by user_id (new system), fallback to email (legacy)
-      let { data } = await supabase.from('establecimientos').select('*').eq('user_id', userId).single()
+      // Tres formas de encontrar el restaurante, en este orden:
+      //   1. Es el DUEÑO (`establecimientos.user_id`). Lo normal.
+      //   2. Por correo, que es como se ataban las cuentas antiguas.
+      //   3. Es del EQUIPO (`establecimiento_usuarios`): varias personas en el mismo
+      //      restaurante. Sin este tercer paso, un companero entra y se queda en
+      //      "Cargando restaurante..." para siempre, aunque la RLS ya le deje ver
+      //      todo lo demas.
+      let { data } = await supabase.from('establecimientos').select('*').eq('user_id', userId).maybeSingle()
       if (!data) {
         const { data: userData } = await supabase.auth.getUser()
         const email = userData?.user?.email
         if (email) {
-          const res = await supabase.from('establecimientos').select('*').eq('email', email).single()
+          const res = await supabase.from('establecimientos').select('*').eq('email', email).maybeSingle()
+          data = res.data
+        }
+      }
+      if (!data) {
+        const { data: equipo } = await supabase
+          .from('establecimiento_usuarios')
+          .select('establecimiento_id')
+          .eq('user_id', userId)
+          .limit(1)
+          .maybeSingle()
+        if (equipo?.establecimiento_id) {
+          const res = await supabase.from('establecimientos').select('*')
+            .eq('id', equipo.establecimiento_id).maybeSingle()
           data = res.data
         }
       }
