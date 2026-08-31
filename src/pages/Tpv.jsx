@@ -538,7 +538,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
 
       {pestana === 'pedidos' ? (
         <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil}
-          onNuevo={(tipo) => setNuevoPedido(tipo)} />
+          onNuevo={(tipo) => setNuevoPedido(tipo)}
+          onAbrirPedidos={() => setPantalla('pedidos')} />
       ) : (
       // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
       // desplaza por su cuenta: la carta puede tener 160 productos y la venta cuatro

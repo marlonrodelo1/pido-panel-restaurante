@@ -65,7 +65,7 @@ const FILTROS = [
   { id: 'mostrador', texto: 'Mostrador', Icono: Store },
 ]
 
-export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo }) {
+export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo, onAbrirPedidos }) {
   // En un monitor cabe el servicio entero de un vistazo; en una tablet, no.
   const esMonitor = useEsMonitor()
 
@@ -121,7 +121,22 @@ export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo
   const enMarcha = delFiltro.filter((p) => EN_CURSO.includes(p.estado))
   const cerrados = delFiltro.filter((p) => CERRADOS.includes(p.estado))
 
-  const irAPedidos = () => window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'pedidos' }))
+  // 🔴 Aviso DIRECTO al padre, no un evento global.
+  //
+  // Antes esto disparaba `pidoo:goto 'pedidos'` por `window`, y ese evento lo escuchan
+  // DOS sitios: el TPV (que abre su capa encima, dejando el mostrador detras) y
+  // `App.jsx` (que cambia de seccion). En la app de Windows se ejecutaban los dos: la
+  // capa se abria y acto seguido App.jsx cambiaba `seccion` a 'pedidos', dejaba de
+  // cumplirse `seccion === 'tpv'` y el <Tpv/> se DESMONTABA entero. Resultado: tocabas
+  // un pedido y acababas en una pagina en blanco, con el carrito perdido.
+  //
+  // Un evento global no tiene destinatario: lo coge quien pilla. Con un prop, el que
+  // abre la capa es exactamente quien la tiene.
+  const irAPedidos = () => {
+    if (onAbrirPedidos) { onAbrirPedidos(); return }
+    // Sin padre que escuche (montado desde otro sitio), el evento sigue valiendo.
+    window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'pedidos' }))
+  }
 
   // En Reparto y en Recogida se ofrece crear uno nuevo; en Todos no, porque no
   // sabríamos de qué tipo.

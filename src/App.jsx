@@ -122,8 +122,17 @@ function AppContent() {
   // Estando en el TPV no hace falta ir a ningun lado: el propio TPV levanta su aviso
   // (`AvisoPedido`) y abre la capa de Pedidos ENCIMA, dejando el mostrador detras.
   const handleNuevoPedido = useCallback(() => {
-    setSeccion((actual) => (actual === 'tpv' ? actual : 'pedidos'))
-  }, [])
+    setSeccion((actual) => {
+      if (actual === 'tpv') return actual
+      // 🔴 En ESCRITORIO la seccion 'pedidos' NO PINTA NADA: `PedidosEnVivo` solo se
+      // monta si `isNative` (mas abajo), y la app de Windows es Electron, no Capacitor.
+      // Mandar ahi a alguien es dejarlo en una pagina en blanco. Con el modulo de TPV
+      // encendido, los pedidos se ven y se aceptan DENTRO del TPV, asi que ahi se va.
+      if (!isNative && tpvActivo && TPV_EN_ESTA_PLATAFORMA) return 'tpv'
+      if (!isNative) return actual   // sin TPV no hay donde llevarle: mejor no moverlo
+      return 'pedidos'
+    })
+  }, [tpvActivo])
 
   // Navegacion entre secciones via window event (usado por Ajustes para abrir
   // /eliminar-cuenta sin pasar setSeccion por props).
