@@ -9,7 +9,7 @@
 // Y por eso carga la URL REMOTA en vez de empaquetar el frontend: cuando se despliega
 // panel.pidoo.es, el escritorio se actualiza solo. Solo hay que volver a firmar y
 // distribuir el instalador cuando cambie ESTA carcasa, que es casi nunca.
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron')
 const path = require('node:path')
 // La parte que habla con la impresora vive aparte para poder PROBARLA sin Electron:
 // `node prueba-impresion.js`. Ver ahi lo que cubre.
@@ -19,6 +19,15 @@ const URL_PANEL = process.env.PIDOO_URL || 'https://panel.pidoo.es'
 const ORIGEN = new URL(URL_PANEL).origin
 
 registrarCanales(ipcMain)
+
+// Fuera el menu de fabrica de Electron (File / Edit / View / Window / Help). En el
+// ordenador de un restaurante no pinta nada, y dentro de "View" hay "Recargar" y
+// "Herramientas de desarrollo": un camarero puede abrir la consola sin querer y
+// quedarse mirando una pantalla que no entiende en mitad de un servicio.
+//
+// Los atajos que SI importan (copiar, pegar, seleccionar todo) siguen funcionando:
+// son del sistema, no del menu.
+Menu.setApplicationMenu(null)
 
 // ─── La ventana ─────────────────────────────────────────────────────────────
 

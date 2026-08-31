@@ -213,9 +213,6 @@ function AppContent() {
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
-        // En Windows SI hay impresora, asi que hay que poder configurarla. En el
-        // navegador no aparece: alli el boton no podria hacer nada.
-        ...(esEscritorio ? [{ id: 'impresora', label: 'Impresora' }] : []),
         { id: 'ajustes', label: 'Ajustes' },
       ]
 
@@ -304,6 +301,9 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
     { id: 'crear-envio', Icon: PhoneCall, label: 'Pedido telefónico' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
     ...(stockActivo ? [{ id: 'almacen', Icon: Boxes, label: 'Almacén' }] : []),
+    // Solo en la app de Windows: alli SI se puede hablar con la impresora por el
+    // puerto 9100. En un navegador la entrada no podria hacer nada.
+    ...(esEscritorio ? [{ id: 'impresora', Icon: Printer, label: 'Impresora' }] : []),
     { id: 'promos', Icon: Tag, label: 'Promociones' },
     { id: 'resenas', Icon: Star, label: 'Reseñas' },
     { id: 'ajustes', Icon: Settings, label: 'Ajustes' },
