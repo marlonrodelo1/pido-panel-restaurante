@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { T, cents, eur, btnAccion, btnSecundario } from '../lib/tpvTheme'
+import { hayQueCobrar } from '../lib/metodoPago'
 import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, Plus } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
@@ -30,7 +31,7 @@ const COLUMNAS = [
 
 const ETIQUETA_ESTADO = {
   nuevo: 'Nuevo', aceptado: 'Aceptado', preparando: 'Preparando', listo: 'Listo',
-  recogido: 'Recogido', en_camino: 'En camino', entregado: 'Cobrado',
+  recogido: 'Recogido', en_camino: 'En camino', entregado: 'Entregado',
   cancelado: 'Cancelado', fallido: 'Fallido', rechazado: 'Rechazado',
 }
 
@@ -41,7 +42,21 @@ const tipoDe = (p) => (p.origen_pedido === 'tpv' ? 'mostrador'
 
 const ICONO_TIPO = { mostrador: Store, reparto: Bike, recogida: ShoppingBag }
 
-export default function TpvPedidos({ establecimientoId, onNuevo }) {
+// Solo hay que cobrar si el pedido sigue VIVO y no es una venta de mostrador: esa se
+// cobra en el acto, el dinero ya esta en el cajon. Avisar de cobrar algo ya cobrado es
+// peor que no avisar: el camarero deja de fiarse del aviso.
+const pendienteDeCobro = (p) =>
+  EN_CURSO.includes(p.estado) && p.origen_pedido !== 'tpv' && hayQueCobrar(p.metodo_pago)
+
+// Los cuatro filtros, definidos UNA vez: arriba en escritorio, abajo en telefono.
+const FILTROS = [
+  { id: 'todos', texto: 'Todos' },
+  { id: 'reparto', texto: 'Reparto', Icono: Bike },
+  { id: 'recogida', texto: 'Recogida', Icono: ShoppingBag },
+  { id: 'mostrador', texto: 'Mostrador', Icono: Store },
+]
+
+export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo }) {
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [vista, setVista] = useState('columnas')
@@ -55,7 +70,7 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
     desde.setHours(5, 0, 0, 0)
 
     const { data } = await supabase.from('pedidos')
-      .select('id, codigo, estado, modo_entrega, origen_pedido, total, created_at, guest_nombre')
+      .select('id, codigo, estado, modo_entrega, origen_pedido, total, created_at, guest_nombre, metodo_pago')
       .eq('establecimiento_id', establecimientoId)
       .or(`estado.in.(${EN_CURSO.join(',')}),created_at.gte.${desde.toISOString()}`)
       .order('created_at', { ascending: false })
@@ -102,17 +117,15 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
     : filtro === 'recogida' ? 'Nueva recogida' : null
 
   return (
-    <div>
+    <div style={esMovil ? { paddingBottom: 78 } : undefined}>
+      {/* En ESCRITORIO los filtros van arriba, que hay sitio de sobra. En TELEFONO se
+          van a la barra de abajo: cuatro pastillas mas dos iconos se parten en dos filas
+          y se comen media pantalla, justo la que hace falta para ver los pedidos. */}
       <div style={{
         display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap',
-        alignItems: 'center', justifyContent: 'center',
+        alignItems: 'center', justifyContent: esMovil ? 'flex-end' : 'center',
       }}>
-        {[
-          { id: 'todos', texto: 'Todos' },
-          { id: 'reparto', texto: 'Reparto', Icono: Bike },
-          { id: 'recogida', texto: 'Recogida', Icono: ShoppingBag },
-          { id: 'mostrador', texto: 'Mostrador', Icono: Store },
-        ].map((f) => (
+        {!esMovil && FILTROS.map((f) => (
           <Filtro key={f.id} activo={filtro === f.id} onClick={() => setFiltro(f.id)}
             texto={f.texto} Icono={f.Icono}
             cuantos={cuenta[f.id]} urgentes={sinAceptar(f.id)} />
@@ -130,7 +143,8 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
 
       {nuevo && (
         <button onClick={() => onNuevo?.(filtro)} style={{
-          ...btnAccion, width: '100%', height: 50, fontSize: 15, borderRadius: RADIO, marginBottom: 12,
+          ...btnAccion, width: '100%', maxWidth: 820, marginLeft: 'auto', marginRight: 'auto',
+          height: 50, fontSize: 15, borderRadius: RADIO, marginBottom: 12,
         }}>
           <Plus size={18} style={{ marginRight: 8 }} /> {nuevo}
         </button>
@@ -147,7 +161,10 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
               <div style={{ fontSize: 13, marginTop: 3 }}>Los que entren por Pidoo aparecen aquí solos.</div>
             </div>
           ) : vista === 'columnas' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr', gap: 10,
+              maxWidth: 820, marginLeft: 'auto', marginRight: 'auto',
+            }}>
               {COLUMNAS.map((col) => {
                 const suyos = enMarcha.filter((p) => col.estados.includes(p.estado))
                 return (
@@ -158,7 +175,10 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
                     }}>
                       {col.titulo}{suyos.length > 0 && ` · ${suyos.length}`}
                     </div>
-                    <div style={{ display: 'grid', gap: 6 }}>
+                    {/* Las secciones se apilan (vertical), pero DENTRO de cada una las
+                        tarjetas fluyen a lo ancho: asi una seccion con seis pedidos
+                        aprovecha la pantalla en vez de hacer una tira larguisima. */}
+                    <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
                       {suyos.map((p) => <Tarjeta key={p.id} p={p} onClick={irAPedidos} />)}
                       {!suyos.length && <div style={{ fontSize: 12, color: T.muted, opacity: 0.5 }}>—</div>}
                     </div>
@@ -186,20 +206,75 @@ export default function TpvPedidos({ establecimientoId, onNuevo }) {
 
           {enMarcha.length > 0 && (
             <button onClick={irAPedidos} style={{
-              ...btnSecundario, width: '100%', height: 44, borderRadius: RADIO, marginTop: 12,
+              ...btnSecundario, width: '100%', maxWidth: 820, marginLeft: 'auto', marginRight: 'auto',
+              height: 44, borderRadius: RADIO, marginTop: 12,
             }}>
               Gestionar en Pedidos <ArrowRight size={15} style={{ marginLeft: 6 }} />
             </button>
           )}
         </>
       )}
+
+      {/* La barra de abajo. zIndex 800 a proposito: por DEBAJO de la capa de pantallas
+          del TPV (900), que si no se veria a traves de ella. */}
+      {esMovil && (
+        <div style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 800,
+          display: 'flex', background: T.surface,
+          borderTop: `1px solid ${T.border}`,
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}>
+          {FILTROS.map((f) => (
+            <PestanaAbajo key={f.id} activo={filtro === f.id} onClick={() => setFiltro(f.id)}
+              texto={f.texto} Icono={f.Icono}
+              cuantos={cuenta[f.id]} urgentes={sinAceptar(f.id)} />
+          ))}
+        </div>
+      )}
     </div>
+  )
+}
+
+// Una pestana de la barra de abajo: icono arriba, etiqueta debajo, y el numero en una
+// chapa sobre el icono. La activa se rellena; asi se sabe donde estas sin leer.
+function PestanaAbajo({ activo, onClick, texto, Icono, cuantos = 0, urgentes = 0 }) {
+  return (
+    <button onClick={onClick} style={{
+      flex: 1, minWidth: 0, height: 62, border: 'none', background: 'none',
+      cursor: 'pointer', fontFamily: 'inherit', padding: '6px 2px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+      color: activo ? T.onAccent : T.muted,
+    }}>
+      <span style={{
+        position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 46, height: 26, borderRadius: 999,
+        background: activo ? T.accentFill : 'transparent',
+      }}>
+        {Icono ? <Icono size={17} /> : <LayoutGrid size={17} />}
+        {cuantos > 0 && (
+          <span style={{
+            position: 'absolute', top: -4, right: 2,
+            minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+            // Naranja solo si hay alguno SIN ACEPTAR: no es lo mismo tener tres en el
+            // horno que tres esperando a que alguien les diga que si.
+            background: urgentes > 0 ? T.accent : T.border,
+            color: urgentes > 0 ? T.bg : T.text,
+          }}>{cuantos}</span>
+        )}
+      </span>
+      <span style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%',
+      }}>{texto}</span>
+    </button>
   )
 }
 
 function Listado({ pedidos, onClick, apagado }) {
   return (
-    <div style={{ background: T.surface, borderRadius: RADIO, overflow: 'hidden' }}>
+    <div style={{ background: T.surface, borderRadius: RADIO, overflow: 'hidden', maxWidth: 820, marginLeft: 'auto', marginRight: 'auto' }}>
       {pedidos.map((p, i) => {
         const Icono = ICONO_TIPO[tipoDe(p)]
         return (
@@ -214,6 +289,9 @@ function Listado({ pedidos, onClick, apagado }) {
               <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: T.text }}>{p.codigo}</span>
               <span style={{ display: 'block', fontSize: 12, color: T.muted }}>
                 {ETIQUETA_ESTADO[p.estado] || p.estado} · {hora(p.created_at)}
+                {pendienteDeCobro(p) && (
+                  <span style={{ color: T.accent, fontWeight: 700 }}> · COBRAR</span>
+                )}
               </span>
             </span>
             <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{eur(cents(p.total))}</span>
@@ -238,7 +316,13 @@ function Tarjeta({ p, onClick }) {
         <span style={{ fontSize: 13, fontWeight: 600 }}>{p.codigo}</span>
         <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700 }}>{eur(cents(p.total))}</span>
       </div>
-      <div style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>{hora(p.created_at)}</div>
+      <div style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>
+        {hora(p.created_at)}
+        {/* Un pedido que hay que cobrar y uno ya pagado se pintaban IGUAL. */}
+        {pendienteDeCobro(p) && (
+          <span style={{ color: T.accent, fontWeight: 700 }}> · COBRAR</span>
+        )}
+      </div>
     </button>
   )
 }

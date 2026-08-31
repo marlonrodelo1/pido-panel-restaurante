@@ -445,8 +445,12 @@ export default function Tpv({ modoApp = false }) {
       {modoApp && <CabeceraApp restaurante={restaurante} esMovil={esMovil}
         onAbrir={() => setPantalla('impresora')} />}
 
-      <div style={{ position: 'relative', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+      {/* Fila flex de verdad, no un centrado con el menu en absolute encima: asi el
+          menu ocupa su sitio y las pestanas no pueden crecer por debajo de el. Antes,
+          con el contador puesto, "Pedidos" se metia 18 px DEBAJO del boton del menu
+          (medido a 375 px: 8 px de holgura y 26 que ocupa el contador). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Pestana activa={pestana === 'mostrador'} onClick={() => setPestana('mostrador')}
             esMovil={esMovil} icono={<Calculator size={esMovil ? 16 : 17} />} texto="Mostrador" />
           <Pestana activa={pestana === 'pedidos'} onClick={() => setPestana('pedidos')}
@@ -457,7 +461,7 @@ export default function Tpv({ modoApp = false }) {
             entera, no de la venta que estés cobrando. La etiqueta dice "del TPV"
             porque el header de la app ya tiene su propio botón de menú. */}
         <button onClick={() => setMenu(true)} aria-label="Menú del TPV" style={{
-          ...btnIcono, position: 'absolute', right: 0, top: esMovil ? 4 : 6,
+          ...btnIcono, flexShrink: 0,
           width: esMovil ? 40 : 44, height: esMovil ? 40 : 44, borderRadius: 12,
         }}>
           <Menu size={20} />
@@ -465,7 +469,8 @@ export default function Tpv({ modoApp = false }) {
       </div>
 
       {pestana === 'pedidos' ? (
-        <TpvPedidos establecimientoId={restaurante.id} onNuevo={(tipo) => setNuevoPedido(tipo)} />
+        <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil}
+          onNuevo={(tipo) => setNuevoPedido(tipo)} />
       ) : (
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* ── Izquierda: la carta ─────────────────────────────────────────── */}

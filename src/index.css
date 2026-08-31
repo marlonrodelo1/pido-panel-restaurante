@@ -56,7 +56,9 @@
   --c-danger-tint: #F1D0CB;
   --c-danger-text: #A8451F;
   --c-warning-tint: #F0E1C8;
-  --c-warning-text: #8B6126;
+  /* #8B6126 sobre el ambar suave se queda en 4,27:1 y el sello COBRAR va a 10 px en
+     negrita, que exige 4,5. #7A5520 da 5,1:1. */
+  --c-warning-text: #7A5520;
   --c-info-tint: #DBE0E8;
   --c-info-text: #4A6480;
   --c-violet: #7C3AED;

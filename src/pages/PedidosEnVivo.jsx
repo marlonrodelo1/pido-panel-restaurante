@@ -8,7 +8,7 @@ import { imprimirPedido, imprimirPedidoWeb } from '../lib/printService'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { toast } from '../App'
-import { Truck, Bell, BellOff, Bike, ShoppingBag } from 'lucide-react'
+import { Truck, Bell, BellOff, Bike, ShoppingBag, Banknote } from 'lucide-react'
 import { colors, type, ds, stateBadge } from '../lib/uiStyles'
 import { etiquetaPago, hayQueCobrar } from '../lib/metodoPago'
 
@@ -109,9 +109,7 @@ function AlertaNuevoPedido({ entrantes, timers, silenciada, onVer, onSilenciar }
   const nuevo = entrantes[0]
   if (!nuevo) return null
   const n = entrantes.length
-  const nombre = nuevo.usuarios?.nombre
-    ? `${nuevo.usuarios.nombre}${nuevo.usuarios.apellido ? ' ' + nuevo.usuarios.apellido : ''}`
-    : 'Cliente'
+  const nombre = nombreCliente(nuevo)
   const isDelivery = nuevo.modo_entrega === 'delivery'
   const timer = timers[nuevo.id]
 
@@ -192,6 +190,16 @@ function AlertaNuevoPedido({ entrantes, timers, silenciada, onVer, onSilenciar }
 }
 
 // ─── Componente principal ──────────────────────────────────────────────────
+// El nombre del cliente, mire quien lo mire. Un pedido SIN CUENTA
+// (`crear_pedido_invitado`) no tiene fila en `usuarios`, asi que la relacion viene
+// vacia y el nombre vive en `guest_nombre`. Mismo orden que el ticket impreso
+// (`escpos.js:117-120`): antes el papel decia "Esther" y la pantalla "Cliente".
+function nombreCliente(pedido) {
+  const u = pedido?.usuarios
+  if (u?.nombre) return [u.nombre, u.apellido].filter(Boolean).join(' ')
+  return pedido?.guest_nombre || 'Cliente'
+}
+
 export default function PedidosEnVivo() {
   const { restaurante } = useRest()
   // pedidosNuevos viene del contexto global (fuente única de verdad para "nuevos").
@@ -640,10 +648,19 @@ export default function PedidosEnVivo() {
 
   async function marcarRecogido(id) {
     const pedido = activos.find(p => p.id === id)
-    const { error } = await supabase.from('pedidos').update({ estado: 'recogido', recogido_at: new Date().toISOString() }).eq('id', id)
+    // `.eq('estado','listo')` es un CANDADO, no un adorno: si otra tablet ya lo movio,
+    // esto no escribe nada en vez de tirar el pedido hacia atras.
+    const { data: filas, error } = await supabase.from('pedidos')
+      .update({ estado: 'recogido', recogido_at: new Date().toISOString() })
+      .eq('id', id).eq('estado', 'listo').select('id')
     if (error) {
       console.error('[marcarRecogido] Error actualizando BD:', error)
       toast('No se pudo marcar como recogido. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
+    if (!filas?.length) {
+      toast('Ese pedido ya ha cambiado de estado.', 'error')
+      fetchPedidos()
       return
     }
     setActivos(prev => prev.map(p => p.id === id ? { ...p, estado: 'recogido' } : p))
@@ -652,17 +669,30 @@ export default function PedidosEnVivo() {
         targetType: 'cliente',
         targetId: pedido.usuario_id,
         title: 'Pedido en camino',
-        body: `El rider tiene tu pedido ${pedido.codigo} y va de camino.`,
+        // Sin socio asignado reparte el propio restaurante: hablar de "el rider" seria
+        // mentirle al cliente justo en los locales que reparten ellos mismos.
+        body: pedido.socio_id
+          ? `El rider tiene tu pedido ${pedido.codigo} y va de camino.`
+          : `Tu pedido ${pedido.codigo} ya va de camino.`,
       })
     }
   }
 
   async function marcarEntregado(id) {
     const pedido = activos.find(p => p.id === id)
-    const { error } = await supabase.from('pedidos').update({ estado: 'entregado', entregado_at: new Date().toISOString() }).eq('id', id)
+    // Mismo candado: solo se entrega lo que aun no estaba entregado. Sin esto, dos
+    // tablets podian re-congelar la liquidacion del socio con una fecha nueva.
+    const { data: filas, error } = await supabase.from('pedidos')
+      .update({ estado: 'entregado', entregado_at: new Date().toISOString() })
+      .eq('id', id).in('estado', ['listo', 'recogido', 'en_camino']).select('id')
     if (error) {
       console.error('[marcarEntregado] Error actualizando BD:', error)
       toast('No se pudo marcar como entregado. Revisa tu conexión e inténtalo de nuevo.', 'error')
+      return
+    }
+    if (!filas?.length) {
+      toast('Ese pedido ya ha cambiado de estado.', 'error')
+      fetchPedidos()
       return
     }
     setActivos(prev => prev.filter(p => p.id !== id))
@@ -1023,10 +1053,12 @@ function SeccionSplit({ tone, label, count, children }) {
 }
 
 // Línea de pedido compacta para el split view (la versión mobile sigue intacta).
+// La vista partida de tablet apaisada. Es LA que se usa en cocina, asi que lo que se
+// vea aqui importa mas que en ningun otro sitio.
 function LineaPedidoSplit({ pedido, timer, isNuevo, selected, onTap }) {
-  const nombre = pedido.usuarios?.nombre
-    ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
-    : 'Cliente'
+  const nombre = nombreCliente(pedido)
+  // Faltaba justo aqui: esta es la vista de la tablet en cocina, la que mas se mira.
+  const cobrar = hayQueCobrar(pedido.metodo_pago) && pedido.origen_pedido !== 'tpv'
   const colorMap = {
     nuevo:      colors.stateNew,
     aceptado:   colors.statePrep,
@@ -1060,6 +1092,15 @@ function LineaPedidoSplit({ pedido, timer, isNuevo, selected, onTap }) {
           }}>
             {pedido.modo_entrega === 'delivery' ? 'Delivery' : 'Recogida'}
           </span>
+          {cobrar && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              background: colors.warningSoft, color: 'var(--c-warning-text, #7A5520)',
+              fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.03em',
+            }}>
+              <Banknote size={10} strokeWidth={2.4} /> COBRAR
+            </span>
+          )}
         </div>
         <span style={{ fontSize: type.base, color: colors.ink, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
           {(pedido.total || 0).toFixed(2)}€
@@ -1142,9 +1183,7 @@ function EstadoVacioDetalle({ hayAlgo }) {
 
 // ─── Línea de pedido móvil (card con border-left color estado, estilo bundle) ─
 function LineaPedido({ pedido, timer, isNuevo, onTap }) {
-  const nombre = pedido.usuarios?.nombre
-    ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
-    : 'Cliente'
+  const nombre = nombreCliente(pedido)
 
   const colorMap = {
     nuevo:      colors.stateNew,
@@ -1156,9 +1195,16 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
   }
   const accent = colorMap[pedido.estado] || colors.stone
 
+  // Nombra la accion que hay DENTRO de la ficha, no el estado en el que esta. Antes
+  // decia 'RECOGIDO' en `listo` sin mirar el modo de entrega, y el camarero pulsaba
+  // para aterrizar en una pantalla donde ese boton no existia.
   const accionLabel = ['aceptado', 'preparando'].includes(pedido.estado) ? 'MARCAR LISTO'
-    : pedido.estado === 'listo' ? 'RECOGIDO'
-    : pedido.estado === 'recogido' || pedido.estado === 'en_camino' ? 'ENTREGADO'
+    : pedido.estado === 'listo'
+      // Con socio, el reparto lo cierra SU app y la ficha ya no pinta boton: prometerlo
+      // aqui volveria a mandar al camarero a una pantalla donde no esta.
+      ? (pedido.modo_entrega === 'recogida' ? 'ENTREGAR' : (pedido.socio_id ? null : 'YA LO RECOGIÓ'))
+      : (pedido.estado === 'recogido' || pedido.estado === 'en_camino')
+        ? (pedido.socio_id ? null : 'ENTREGAR')
     : null
   const accionStyle = ['aceptado', 'preparando'].includes(pedido.estado)
     ? { background: colors.warningSoft, color: 'var(--c-warning-text, #8B6126)' }
@@ -1195,6 +1241,18 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
             {isDelivery ? <Bike size={10} strokeWidth={2.4} /> : <ShoppingBag size={10} strokeWidth={2.4} />}
             {isDelivery ? 'Delivery' : 'Recogida'}
           </span>
+          {/* Si hay que cobrar, se ve SIN abrir el pedido. `hayQueCobrar` trata como
+              "cobrar" cualquier metodo que no conozcamos: al reves el fallo es
+              silencioso y cuesta dinero. */}
+          {hayQueCobrar(pedido.metodo_pago) && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              background: colors.warningSoft, color: 'var(--c-warning-text, #8B6126)',
+              fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.03em',
+            }}>
+              <Banknote size={10} strokeWidth={2.4} /> COBRAR
+            </span>
+          )}
         </div>
         <span style={{ fontSize: type.base, color: colors.ink, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
           {(pedido.total || 0).toFixed(2)}€
@@ -1560,9 +1618,10 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
     && ['nuevo', 'aceptado', 'preparando', 'listo'].includes(pedido.estado)
     && sociosVinc.length > 1
 
-  const nombre = pedido.usuarios?.nombre
-    ? `${pedido.usuarios.nombre}${pedido.usuarios.apellido ? ' ' + pedido.usuarios.apellido : ''}`
-    : 'Cliente'
+  const nombre = nombreCliente(pedido)
+  // Un pedido SIN CUENTA no tiene fila en `usuarios`: el telefono vive en
+  // `cliente_telefono` o en `guest_telefono`. Mismo orden que `escpos.js:121`.
+  const telefono = pedido.usuarios?.telefono || pedido.cliente_telefono || pedido.guest_telefono
 
   // En modo embedded (split view tablet): no auto-cerrar el detalle tras acciones.
   // El padre re-renderiza con el pedido actualizado o lo elimina del array.
@@ -1641,12 +1700,12 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
       <div style={seccionCard}>
         <span style={seccionLabel}>Cliente</span>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-text)', marginBottom: 4 }}>{nombre}</div>
-        {(pedido.cliente_telefono || pedido.usuarios?.telefono) && (
+        {telefono && (
           <a
-            href={`tel:${pedido.cliente_telefono || pedido.usuarios.telefono}`}
+            href={`tel:${telefono}`}
             style={{ display: 'inline-block', fontSize: 12, color: 'var(--c-primary)', fontWeight: 600, textDecoration: 'none', marginBottom: pedido.direccion_entrega ? 8 : 0 }}
           >
-            📞 {pedido.cliente_telefono || pedido.usuarios.telefono}
+            📞 {telefono}
           </a>
         )}
         {pedido.direccion_entrega && (
@@ -1779,24 +1838,30 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
         </div>
       )}
 
-      {/* LISTO: delivery */}
+      {/* LISTO: delivery.
+          🔴 El boton no es un adorno: sin el, un reparto NO SE PUEDE CERRAR desde el
+          panel. Con socio lo adelanta el webhook, pero quien reparte por su cuenta
+          (`establecimientos.delivery_sin_socio`) se quedaba con el pedido clavado en
+          `listo` para siempre. Va en secundario a proposito: lo normal es que lo
+          mueva el repartidor, esto es la salida cuando no la hay. */}
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
-        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-success, #8B9D7A)', marginBottom: 12, border: '1px solid rgba(74,222,128,0.2)' }}>
-          Esperando repartidor
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-success, #8B9D7A)', border: '1px solid rgba(74,222,128,0.2)' }}>Esperando repartidor</div>
+          {!pedido.socio_id && (
+            <button onClick={() => { onMarcarRecogido(pedido.id); afterAction() }} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Ya lo recogió</button>
+          )}
         </div>
       )}
 
-      {/* RECOGIDO */}
-      {pedido.estado === 'recogido' && (
-        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'var(--c-info-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-info, #7B8FA8)', marginBottom: 12, border: '1px solid rgba(96,165,250,0.2)' }}>
-          Repartidor recogió el pedido — en camino al cliente
-        </div>
-      )}
-
-      {/* EN CAMINO */}
-      {pedido.estado === 'en_camino' && (
-        <div style={{ padding: '13px 16px', borderRadius: 8, background: 'rgba(124,58,237,0.10)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-violet, #7C3AED)', marginBottom: 12, border: '1px solid rgba(167,139,250,0.2)' }}>
-          Repartidor en camino al cliente
+      {/* RECOGIDO y EN CAMINO: los dos terminan igual, marcando la entrega. */}
+      {(pedido.estado === 'recogido' || pedido.estado === 'en_camino') && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: pedido.estado === 'recogido' ? 'var(--c-info-soft)' : 'rgba(124,58,237,0.10)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: pedido.estado === 'recogido' ? 'var(--c-info, #7B8FA8)' : 'var(--c-violet, #7C3AED)', border: pedido.estado === 'recogido' ? '1px solid rgba(96,165,250,0.2)' : '1px solid rgba(167,139,250,0.2)' }}>
+            {pedido.estado === 'recogido' ? 'Recogido — en camino al cliente' : 'Repartidor en camino al cliente'}
+          </div>
+          {!pedido.socio_id && (
+            <button onClick={() => { onMarcarEntregado(pedido.id); afterAction() }} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Entregado</button>
+          )}
         </div>
       )}
 
