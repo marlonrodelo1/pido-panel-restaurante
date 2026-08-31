@@ -209,19 +209,43 @@ export function generarComandaCocina(pedido, items, restaurante) {
  * TICKET CLIENTE - Customer receipt
  * Full info with prices, restaurant branding
  */
-export function generarTicketCliente(pedido, items, restaurante) {
+// Que puertas de entrada son de PIDOO. Solo en esas se menciona a Pidoo al pie: si el
+// restaurante cogio el pedido por telefono o el cliente lo pidio desde el QR de la mesa,
+// Pidoo no le trajo a nadie y no pinta nada en ese papel.
+const ORIGENES_DE_PIDOO = ['pido', 'tienda_publica', 'marketplace_socio']
+
+export function generarTicketCliente(pedido, items, restaurante, logoBytes = null) {
   const bytes = [
     ...init(),
     ...codepage850(),
-
-    // Restaurant header
     ...center(),
+  ]
+
+  // EL LOGO ES EL DEL RESTAURANTE, NUNCA EL DE PIDOO.
+  //
+  // Este papel es una factura simplificada que emite el RESTAURANTE: lleva su nombre,
+  // su direccion y su telefono. Poner encima el logo de Pidoo daria a entender que el
+  // vendedor es Pidoo, que no lo es — Pidoo cobra una comision por traerle el pedido.
+  //
+  // Y comercialmente seria el peor sitio: quedarse con el recibo del restaurante es
+  // exactamente lo que hace Glovo y por lo que los hosteleros lo odian. Pidoo va al
+  // PIE, en texto, y con un enlace que devuelve el cliente AL RESTAURANTE.
+  //
+  // Va despues de `center()` porque la alineacion tambien manda sobre los mapas de
+  // bits. Si no hay logo, el ticket sale igual: nunca puede costar una factura.
+  if (logoBytes && logoBytes.length) {
+    bytes.push(...logoBytes)
+    bytes.push(...feed(1))
+  }
+
+  bytes.push(
+    // Restaurant header
     ...doubleSize(),
     ...boldOn(),
     ...line(restaurante?.nombre || 'PIDO'),
     ...normalSize(),
     ...boldOff(),
-  ]
+  )
 
   if (restaurante?.direccion) {
     bytes.push(...line(restaurante.direccion))
@@ -353,7 +377,17 @@ export function generarTicketCliente(pedido, items, restaurante) {
     ...boldOn(),
     ...line('Gracias por tu pedido!'),
     ...boldOff(),
-    ...line('pidoo.es'),
+  )
+
+  // Pidoo al PIE y en texto, no como logo, y solo si el pedido entro por Pidoo. El
+  // enlace lleva a la tienda DEL RESTAURANTE: al cliente le da el camino de vuelta y
+  // al restaurante no le molesta, porque se lo devuelve a el.
+  if (ORIGENES_DE_PIDOO.includes(pedido?.origen_pedido)) {
+    bytes.push(...line('Pedido recibido por pidoo.es'))
+    if (restaurante?.slug) bytes.push(...line('Repite en pidoo.es/' + restaurante.slug))
+  }
+
+  bytes.push(
     ...feed(3),
     ...cut(),
   )

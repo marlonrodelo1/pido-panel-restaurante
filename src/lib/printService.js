@@ -184,13 +184,20 @@ export async function imprimirPedido(pedido, items, restaurante) {
   const config = getPrinterConfig()
   if (!config.enabled || !config.ip) return { ok: false, reason: 'not_configured' }
 
+  // La COMANDA DE COCINA va SIN logo, a proposito. Ese papel lo lee el de la plancha y
+  // lo tira: un logo son ~30 mm de papel y unos segundos de impresion en CADA pedido,
+  // a cambio de nada. Ahi lo que importa es el codigo grande y las notas.
   const cocina = generarComandaCocina(pedido, items, restaurante)
   const r1 = await sendToThermalPrinter(cocina)
 
   let r2 = true
   if (config.tickets !== 1) {
     await new Promise(r => setTimeout(r, 500))
-    const cliente = generarTicketCliente(pedido, items, restaurante)
+    // El TICKET DEL CLIENTE si: es el que va en la bolsa y el que lee el cliente.
+    // Se pide DESPUES de mandar la comanda para no retrasar a cocina si el logo
+    // hubiera que descargarlo (solo pasa la primera vez; luego va guardado).
+    const logo = await bytesDelLogo(restaurante?.logo_url).catch(() => null)
+    const cliente = generarTicketCliente(pedido, items, restaurante, logo)
     r2 = await sendToThermalPrinter(cliente)
   }
 
