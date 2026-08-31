@@ -822,7 +822,7 @@ export default function PedidosEnVivo() {
       {entrantes.length > 0 && (
         <SeccionMobile tone="danger" label="Nuevos" count={entrantes.length}>
           {entrantes.map(p => (
-            <LineaPedido key={p.id} pedido={p} timer={timers[p.id]} isNuevo onTap={() => setPedidoDetalleId(p.id)} />
+            <LineaPedido key={p.id} pedido={p} repartoPropio={!!restaurante?.delivery_sin_socio} timer={timers[p.id]} isNuevo onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionMobile>
       )}
@@ -830,7 +830,7 @@ export default function PedidosEnVivo() {
       {preparando.length > 0 && (
         <SeccionMobile tone="warning" label="En preparación" count={preparando.length}>
           {preparando.map(p => (
-            <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
+            <LineaPedido key={p.id} pedido={p} repartoPropio={!!restaurante?.delivery_sin_socio} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionMobile>
       )}
@@ -838,7 +838,7 @@ export default function PedidosEnVivo() {
       {listos.length > 0 && (
         <SeccionMobile tone="sage" label="Listos" count={listos.length}>
           {listos.map(p => (
-            <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
+            <LineaPedido key={p.id} pedido={p} repartoPropio={!!restaurante?.delivery_sin_socio} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionMobile>
       )}
@@ -846,7 +846,7 @@ export default function PedidosEnVivo() {
       {enCamino.length > 0 && (
         <SeccionMobile tone="info" label="En camino" count={enCamino.length}>
           {enCamino.map(p => (
-            <LineaPedido key={p.id} pedido={p} onTap={() => setPedidoDetalleId(p.id)} />
+            <LineaPedido key={p.id} pedido={p} repartoPropio={!!restaurante?.delivery_sin_socio} onTap={() => setPedidoDetalleId(p.id)} />
           ))}
         </SeccionMobile>
       )}
@@ -1182,7 +1182,7 @@ function EstadoVacioDetalle({ hayAlgo }) {
 }
 
 // ─── Línea de pedido móvil (card con border-left color estado, estilo bundle) ─
-function LineaPedido({ pedido, timer, isNuevo, onTap }) {
+function LineaPedido({ pedido, timer, isNuevo, onTap, repartoPropio }) {
   const nombre = nombreCliente(pedido)
 
   const colorMap = {
@@ -1202,9 +1202,13 @@ function LineaPedido({ pedido, timer, isNuevo, onTap }) {
     : pedido.estado === 'listo'
       // Con socio, el reparto lo cierra SU app y la ficha ya no pinta boton: prometerlo
       // aqui volveria a mandar al camarero a una pantalla donde no esta.
-      ? (pedido.modo_entrega === 'recogida' ? 'ENTREGAR' : (pedido.socio_id ? null : 'YA LO RECOGIÓ'))
+      // Solo hay boton dentro si el restaurante reparte POR SU CUENTA y el pedido no
+      // tiene socio. Cuando el dispatcher no encuentra a nadie, un pedido de un
+      // restaurante normal tambien se queda sin socio: ahi NO hay boton que prometer.
+      ? (pedido.modo_entrega === 'recogida' ? 'ENTREGAR'
+        : (!pedido.socio_id && repartoPropio) ? 'YA LO RECOGIÓ' : null)
       : (pedido.estado === 'recogido' || pedido.estado === 'en_camino')
-        ? (pedido.socio_id ? null : 'ENTREGAR')
+        ? ((!pedido.socio_id && repartoPropio) ? 'ENTREGAR' : null)
     : null
   const accionStyle = ['aceptado', 'preparando'].includes(pedido.estado)
     ? { background: colors.warningSoft, color: 'var(--c-warning-text, #8B6126)' }
@@ -1621,7 +1625,9 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
   const nombre = nombreCliente(pedido)
   // Un pedido SIN CUENTA no tiene fila en `usuarios`: el telefono vive en
   // `cliente_telefono` o en `guest_telefono`. Mismo orden que `escpos.js:121`.
-  const telefono = pedido.usuarios?.telefono || pedido.cliente_telefono || pedido.guest_telefono
+  // El del CHECKOUT primero: es el que dejo el cliente para ESTE pedido. El de la
+  // cuenta puede ser otro y mas viejo, y es a quien llama el restaurante si algo falla.
+  const telefono = pedido.cliente_telefono || pedido.usuarios?.telefono || pedido.guest_telefono
 
   // En modo embedded (split view tablet): no auto-cerrar el detalle tras acciones.
   // El padre re-renderiza con el pedido actualizado o lo elimina del array.
@@ -1847,7 +1853,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
       {pedido.estado === 'listo' && pedido.modo_entrega !== 'recogida' && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-success, #8B9D7A)', border: '1px solid rgba(74,222,128,0.2)' }}>Esperando repartidor</div>
-          {!pedido.socio_id && (
+          {!pedido.socio_id && restaurante?.delivery_sin_socio && (
             <button onClick={() => { onMarcarRecogido(pedido.id); afterAction() }} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Ya lo recogió</button>
           )}
         </div>
@@ -1859,7 +1865,7 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
           <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: pedido.estado === 'recogido' ? 'var(--c-info-soft)' : 'rgba(124,58,237,0.10)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: pedido.estado === 'recogido' ? 'var(--c-info, #7B8FA8)' : 'var(--c-violet, #7C3AED)', border: pedido.estado === 'recogido' ? '1px solid rgba(96,165,250,0.2)' : '1px solid rgba(167,139,250,0.2)' }}>
             {pedido.estado === 'recogido' ? 'Recogido — en camino al cliente' : 'Repartidor en camino al cliente'}
           </div>
-          {!pedido.socio_id && (
+          {!pedido.socio_id && restaurante?.delivery_sin_socio && (
             <button onClick={() => { onMarcarEntregado(pedido.id); afterAction() }} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Entregado</button>
           )}
         </div>

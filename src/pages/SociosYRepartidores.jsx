@@ -3,6 +3,12 @@ import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { toast } from '../App'
 import { colors, type, ds } from '../lib/uiStyles'
+
+// Un color al 33 %. Antes se hacia pegandole '55' al hex, pero la paleta ya no son hex
+// sueltos sino variables CSS: `var(--c-danger, #B5564A)55` no es un color valido y la
+// propiedad entera se caia (el chip se quedaba SIN borde y el boton de desvincular
+// pasaba de rojo suave a rojo solido). `color-mix` no necesita saber que hay dentro.
+const mezcla = (color, pct = 33) => `color-mix(in srgb, ${color} ${pct}%, transparent)`
 import { formatTarifa, compararTarifas, formatCuentaAtras, formatFechaCorta, fmtPct } from '../lib/tarifas'
 
 const SUPABASE_URL = 'https://rmrbxrabngdmpgpfmjbo.supabase.co'
@@ -282,7 +288,7 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
                       title={tooltipDiffs}
                       style={{
                         padding: '8px 10px', borderRadius: 8,
-                        background: colors.statePrepSoft, border: `1px solid ${colors.statePrep}55`,
+                        background: colors.statePrepSoft, border: `1px solid ${mezcla(colors.statePrep)}`,
                         fontSize: type.xs, color: colors.statePrep, fontWeight: 600,
                         cursor: 'help',
                       }}
@@ -309,7 +315,7 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
             <button onClick={() => onDesvincular(row.id)} style={{
               ...ds.secondaryBtn,
               color: colors.danger,
-              borderColor: `${colors.danger}55`,
+              borderColor: mezcla(colors.danger),
               background: colors.dangerSoft,
             }}>Desvincular socio</button>
           </div>
