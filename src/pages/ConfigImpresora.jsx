@@ -6,7 +6,7 @@ import { useRest } from '../context/RestContext'
 import { colors, type, ds } from '../lib/uiStyles'
 import {
   getPrinterConfig, savePrinterConfig,
-  scanPrinters, connectAndTestPrinter, disconnectPrinter,
+  scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa,
 } from '../lib/printService'
 
 export default function ConfigImpresora() {
@@ -456,7 +456,7 @@ export default function ConfigImpresora() {
               </button>
             </div>
 
-            {!Capacitor.isNativePlatform() && (
+            {!hayImpresoraNativa && (
               <div style={{
                 marginTop: 12, padding: '10px 14px', borderRadius: 8,
                 background: colors.warningSoft, color: '#8B6126',
@@ -464,7 +464,7 @@ export default function ConfigImpresora() {
                 display: 'flex', alignItems: 'flex-start', gap: 8,
               }}>
                 <AlertTriangle size={14} strokeWidth={2.2} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span>La búsqueda automática y la impresión directa solo funcionan en la app Android.</span>
+                <span>La búsqueda automática y la impresión directa funcionan en la app, tanto en Android como en Windows. En el navegador no: no puede abrir una conexión con la impresora.</span>
               </div>
             )}
           </div>

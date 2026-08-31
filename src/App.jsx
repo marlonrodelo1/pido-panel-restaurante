@@ -41,13 +41,21 @@ const isNative = Capacitor.isNativePlatform()
 // El TPV es de la APK: es donde estan la impresora y el cajon, y es el aparato
 // que se queda en el mostrador. En la web solo aparece en desarrollo, para poder
 // afinar la pantalla sin compilar un AAB por cada cambio de tipografia.
-const TPV_EN_ESTA_PLATAFORMA = isNative || import.meta.env.DEV
+// La app de WINDOWS. Es la web de siempre metida en una carcasa de Electron que
+// aporta UNA cosa: el socket TCP a la impresora del puerto 9100, que un navegador no
+// puede abrir. `window.pidooDesktop` lo pone su preload.
+const esEscritorio = typeof window !== 'undefined' && !!window.pidooDesktop
+
+// Donde tiene sentido el TPV: donde se puede imprimir y abrir el cajon. Eso es la
+// tablet (Android) y ahora tambien Windows. En un navegador normal no, porque cobraria
+// sin sacar el ticket.
+const TPV_EN_ESTA_PLATAFORMA = isNative || esEscritorio || import.meta.env.DEV
 
 // Llave de desarrollo para probar la shell TPV en el navegador: `?tpvapp=1`.
 const FORZAR_TPV_APP = import.meta.env.DEV &&
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('tpvapp')
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes }
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes, impresora: Printer }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer, tpv: Calculator }
 
 // Etiquetas legibles para breadcrumbs y títulos
@@ -205,6 +213,9 @@ function AppContent() {
         { id: 'historial', label: 'Historial' },
         { id: 'carta', label: 'Carta' },
         { id: 'promos', label: 'Promos' },
+        // En Windows SI hay impresora, asi que hay que poder configurarla. En el
+        // navegador no aparece: alli el boton no podria hacer nada.
+        ...(esEscritorio ? [{ id: 'impresora', label: 'Impresora' }] : []),
         { id: 'ajustes', label: 'Ajustes' },
       ]
 

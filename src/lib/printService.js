@@ -7,11 +7,27 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
 
-// Capacitor plugin bridge (registered in Android native code)
+// EL PUENTE CON LA IMPRESORA. Hay DOS implementaciones y el resto del fichero no
+// necesita saber en cual esta:
+//   - Android: el plugin nativo `ThermalPrinter` (java, socket TCP).
+//   - Windows: `window.pidooDesktop`, que expone el preload de Electron.
+// Las dos ofrecen los MISMOS tres metodos con los MISMOS argumentos —print,
+// checkConnection, scanNetwork— a proposito: si algun dia divergen, este fichero se
+// llena de condicionales y la impresion es justo donde no se quieren condicionales.
+//
+// Un navegador normal no tiene ninguno de los dos: no puede abrir un socket crudo al
+// puerto 9100, no hay API para eso. Ahi `puente` es null y se cae al `window.print()`.
 let ThermalPrinter = null
 if (Capacitor.isNativePlatform()) {
   ThermalPrinter = registerPlugin('ThermalPrinter')
 }
+
+const escritorio = (typeof window !== 'undefined' && window.pidooDesktop) || null
+const puente = ThermalPrinter || escritorio
+
+// Para que la interfaz pueda decir "esto solo va en la app" con propiedad.
+export const hayImpresoraNativa = !!puente
+export const esEscritorio = !!escritorio
 
 // Escape HTML to prevent XSS when interpolating user data into ticket HTML
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
@@ -43,10 +59,10 @@ function uint8ToBase64(uint8Array) {
  * Send raw bytes to a specific printer IP (overrides config)
  */
 export async function sendRawToIp(ip, port, data) {
-  if (!Capacitor.isNativePlatform() || !ThermalPrinter) return false
+  if (!puente) return false
   try {
     const base64 = uint8ToBase64(data)
-    await ThermalPrinter.print({ ip, port: port || 9100, data: base64 })
+    await puente.print({ ip, port: port || 9100, data: base64 })
     return true
   } catch (err) {
     console.error('[Print] Error:', err)
@@ -71,11 +87,11 @@ async function sendToThermalPrinter(data) {
  * Returns: { printers: [{ ip, port, hostname? }], subnet, scanned }
  */
 export async function scanPrinters() {
-  if (!Capacitor.isNativePlatform() || !ThermalPrinter) {
-    return { printers: [], error: 'Solo disponible en la app Android' }
+  if (!puente) {
+    return { printers: [], error: 'Solo disponible en la app (Android o Windows)' }
   }
   try {
-    const result = await ThermalPrinter.scanNetwork({ port: 9100 })
+    const result = await puente.scanNetwork({ port: 9100 })
     return { printers: result.printers || [], subnet: result.subnet, scanned: result.scanned }
   } catch (err) {
     console.error('[Print] Error al escanear:', err)
@@ -87,11 +103,11 @@ export async function scanPrinters() {
  * Check if a printer is reachable at the given IP
  */
 export async function checkPrinterConnection(ip, port = 9100) {
-  if (!Capacitor.isNativePlatform() || !ThermalPrinter) {
-    return { ok: false, error: 'Solo disponible en la app Android' }
+  if (!puente) {
+    return { ok: false, error: 'Solo disponible en la app (Android o Windows)' }
   }
   try {
-    await ThermalPrinter.checkConnection({ ip, port })
+    await puente.checkConnection({ ip, port })
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err.message }

@@ -41,3 +41,7 @@ android/keystore.properties
 
 # Temporales de la CLI de Supabase
 supabase/.temp/
+
+# App de escritorio (Electron)
+desktop/node_modules/
+desktop/dist/
