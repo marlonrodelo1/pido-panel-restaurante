@@ -13,16 +13,12 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
 const path = require('node:path')
 // La parte que habla con la impresora vive aparte para poder PROBARLA sin Electron:
 // `node prueba-impresion.js`. Ver ahi lo que cubre.
-const { enviarBytes, comprobar, escanear } = require('./impresion')
+const { registrarCanales } = require('./impresion')
 
 const URL_PANEL = process.env.PIDOO_URL || 'https://panel.pidoo.es'
 const ORIGEN = new URL(URL_PANEL).origin
 
-// Los tres metodos, con los mismos nombres y la misma forma que en Android, para que
-// el frontend no tenga que saber en cual de las dos esta.
-ipcMain.handle('pidoo:print', (_e, { ip, port, data }) => enviarBytes(ip, port || 9100, data))
-ipcMain.handle('pidoo:check', (_e, { ip, port }) => comprobar(ip, port || 9100))
-ipcMain.handle('pidoo:scan', (_e, { port } = {}) => escanear(port || 9100))
+registrarCanales(ipcMain)
 
 // ─── La ventana ─────────────────────────────────────────────────────────────
 

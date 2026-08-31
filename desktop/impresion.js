@@ -93,4 +93,16 @@ async function escanear(puerto = 9100, bases = subredes()) {
   return { printers: encontradas, subnet: `${bases[0]}.0/24`, scanned: miradas }
 }
 
-module.exports = { enviarBytes, comprobar, escanear, subredes }
+// Los tres canales, con los mismos nombres y la misma forma que en Android, para que
+// el frontend no tenga que saber en cual de las dos plataformas esta.
+//
+// `ipcMain` entra POR ARGUMENTO y no por `require('electron')` para que este fichero
+// siga arrancando fuera de Electron: es lo que permite que la prueba use exactamente
+// este cableado en vez de uno copiado, que es como se cuelan las diferencias.
+function registrarCanales(ipcMain) {
+  ipcMain.handle('pidoo:print', (_e, { ip, port, data }) => enviarBytes(ip, port || 9100, data))
+  ipcMain.handle('pidoo:check', (_e, { ip, port }) => comprobar(ip, port || 9100))
+  ipcMain.handle('pidoo:scan', (_e, { port } = {}) => escanear(port || 9100))
+}
+
+module.exports = { enviarBytes, comprobar, escanear, subredes, registrarCanales }
