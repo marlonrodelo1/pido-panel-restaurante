@@ -404,7 +404,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
       else toast(`Cobrado ${eur(cents(body.pedido?.total))}${body.repetida ? ' (ya estaba cobrado)' : ''}`, 'success')
 
       if (body.ticket) {
-        imprimirTicketTpv(body.ticket, body.pedido, body.items, body.establecimiento, {
+        imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
           pieTicket: body.config?.pie_ticket,
           abrirCajonTambien: !!body.config?.abrir_cajon,
         }).then((r) => {
@@ -419,10 +419,22 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
     }
   }
 
+  // 🔴 El establecimiento que devuelve `tpv-venta` NO trae `logo_url`: su consulta pide
+  // lo FISCAL (razon social, NIF, direccion, telefono) y nada mas. Por eso el ticket
+  // salia sin logo aunque el restaurante tenga uno puesto — `bytesDelLogo(undefined)`
+  // devuelve null y el ticket se imprime igual, sin el, que es el comportamiento
+  // correcto cuando algo falla pero aqui no fallaba nada: es que nunca llegaba la URL.
+  //
+  // Se completa AQUI y no ampliando la consulta del edge a proposito: los datos
+  // fiscales tienen que venir del servidor porque son los que se imprimen en una
+  // factura, pero el logo es cosmetico y el panel ya lo tiene cargado en el contexto.
+  // Asi no hay que desplegar una edge que cobra dinero para arreglar una imagen.
+  const conLogo = (est) => ({ ...est, logo_url: est?.logo_url || restaurante?.logo_url || null })
+
   async function reimprimir() {
     if (!ultimaVenta?.ticket) return
     const r = await imprimirTicketTpv(ultimaVenta.ticket, ultimaVenta.pedido, ultimaVenta.items,
-      ultimaVenta.establecimiento, { pieTicket: ultimaVenta.config?.pie_ticket })
+      conLogo(ultimaVenta.establecimiento), { pieTicket: ultimaVenta.config?.pie_ticket })
     toast(r.ticket ? 'Ticket reimpreso' : 'La impresora no responde', r.ticket ? 'success' : 'error')
   }
 
