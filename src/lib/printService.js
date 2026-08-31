@@ -6,6 +6,7 @@
  */
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
+import { bytesDelLogo } from './logoTicket'
 
 // EL PUENTE CON LA IMPRESORA. Hay DOS implementaciones y el resto del fichero no
 // necesita saber en cual esta:
@@ -305,7 +306,10 @@ export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opci
   try {
     // El pulso del cajon viaja dentro del propio ticket: mas fiable que abrir una
     // segunda conexion justo cuando la impresora esta cortando el papel.
-    const data = generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirCajonTambien)
+    // El logo se prepara aparte y se guarda: la primera vez cuesta una descarga, las
+    // siguientes es instantaneo. Si falla devuelve null y el ticket sale sin el.
+    const logo = await bytesDelLogo(restaurante?.logo_url).catch(() => null)
+    const data = generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirCajonTambien, logo)
     resultado.ticket = await sendRawToIp(config.ip, config.port, data)
     resultado.cajon = resultado.ticket && abrirCajonTambien
   } catch (err) {

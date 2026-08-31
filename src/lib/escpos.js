@@ -385,11 +385,19 @@ export function abrirCajon() {
  * recalcula nada: se imprimen los importes que congelo el servidor al emitir el
  * ticket, que son los que constan en `tpv_tickets`.
  */
-export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false) {
+export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null) {
   const bytes = []
   const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
 
   bytes.push(...init(), ...codepage850(), ...center())
+
+  // El logo del restaurante, si se ha podido preparar (ver `lib/logoTicket.js`).
+  // Va DESPUES de `center()` porque la alineacion tambien manda sobre los mapas de
+  // bits. Si no hay, el ticket sale igual: un logo nunca puede costar una factura.
+  if (logoBytes && logoBytes.length) {
+    bytes.push(...logoBytes)
+    bytes.push(...feed(1))
+  }
 
   // Emisor: la razon social manda sobre el nombre comercial en un documento fiscal
   bytes.push(...boldOn(), ...wideSize())
