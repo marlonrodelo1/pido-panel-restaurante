@@ -14,10 +14,19 @@ import { supabase } from '../lib/supabase'
 import { T, cents, eur, btnAccion, btnSecundario } from '../lib/tpvTheme'
 import { hayQueCobrar } from '../lib/metodoPago'
 import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, Plus } from 'lucide-react'
+import { useEsMonitor } from '../lib/tamanoPantalla'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
 const RADIO = 12
+
+// El ancho de la pantalla. En tablet y telefono se centra una columna de 820 px, que es
+// lo que se lee comodo. En MONITOR no se limita: lo que Marlon vio el 31 ago en la app de
+// Windows eran ~600 px muertos a cada lado y las cuatro secciones apiladas en bandas
+// vacias. Ir centrado a 820 en una pantalla de 1440 es tirar media pantalla.
+const anchoDe = (esMonitor) => (esMonitor
+  ? { width: '100%' }
+  : { maxWidth: 820, marginLeft: 'auto', marginRight: 'auto' })
 
 const EN_CURSO = ['nuevo', 'aceptado', 'preparando', 'listo', 'recogido', 'en_camino']
 const CERRADOS = ['entregado', 'cancelado', 'fallido', 'rechazado']
@@ -57,6 +66,9 @@ const FILTROS = [
 ]
 
 export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo }) {
+  // En un monitor cabe el servicio entero de un vistazo; en una tablet, no.
+  const esMonitor = useEsMonitor()
+
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [vista, setVista] = useState('columnas')
@@ -143,7 +155,7 @@ export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo
 
       {nuevo && (
         <button onClick={() => onNuevo?.(filtro)} style={{
-          ...btnAccion, width: '100%', maxWidth: 820, marginLeft: 'auto', marginRight: 'auto',
+          ...btnAccion, width: '100%', ...anchoDe(esMonitor),
           height: 50, fontSize: 15, borderRadius: RADIO, marginBottom: 12,
         }}>
           <Plus size={18} style={{ marginRight: 8 }} /> {nuevo}
@@ -161,9 +173,17 @@ export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo
               <div style={{ fontSize: 13, marginTop: 3 }}>Los que entren por Pidoo aparecen aquí solos.</div>
             </div>
           ) : vista === 'columnas' ? (
+            // 🔴 En MONITOR, CUATRO COLUMNAS de verdad, una por estado, y cada una
+            // se desplaza por su cuenta. Es como se mira un servicio: de izquierda a
+            // derecha segun avanza el pedido, y de un vistazo se ve donde se atasca.
+            // Apiladas —como estaban— hay que scrollear para saber si hay algo listo.
+            // En tablet y telefono se siguen apilando: cuatro columnas en 768 px son
+            // cuatro tiras de 180 px donde no cabe ni el codigo del pedido.
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr', gap: 10,
-              maxWidth: 820, marginLeft: 'auto', marginRight: 'auto',
+              display: 'grid', gap: 10,
+              gridTemplateColumns: esMonitor ? 'repeat(4, minmax(0, 1fr))' : '1fr',
+              alignItems: esMonitor ? 'start' : undefined,
+              ...anchoDe(esMonitor),
             }}>
               {COLUMNAS.map((col) => {
                 const suyos = enMarcha.filter((p) => col.estados.includes(p.estado))
@@ -175,10 +195,15 @@ export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo
                     }}>
                       {col.titulo}{suyos.length > 0 && ` · ${suyos.length}`}
                     </div>
-                    {/* Las secciones se apilan (vertical), pero DENTRO de cada una las
-                        tarjetas fluyen a lo ancho: asi una seccion con seis pedidos
-                        aprovecha la pantalla en vez de hacer una tira larguisima. */}
-                    <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                    {/* En MONITOR cada seccion YA es una columna estrecha, asi que
+                        dentro va una tarjeta por fila. En tablet y telefono la seccion
+                        ocupa todo el ancho y las tarjetas fluyen, que si no una seccion
+                        con seis pedidos hace una tira larguisima. */}
+                    <div style={{
+                      display: 'grid', gap: 6,
+                      gridTemplateColumns: esMonitor ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
+                      ...(esMonitor ? { maxHeight: '52vh', overflowY: 'auto' } : null),
+                    }}>
                       {suyos.map((p) => <Tarjeta key={p.id} p={p} onClick={irAPedidos} />)}
                       {!suyos.length && <div style={{ fontSize: 12, color: T.muted, opacity: 0.5 }}>—</div>}
                     </div>
@@ -187,7 +212,7 @@ export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo
               })}
             </div>
           ) : (
-            <Listado pedidos={enMarcha} onClick={irAPedidos} />
+            <Listado pedidos={enMarcha} onClick={irAPedidos} esMonitor={esMonitor} />
           )}
 
           {/* El registro del día: aquí caen solas las ventas del mostrador en cuanto
@@ -200,13 +225,13 @@ export default function TpvPedidos({ establecimientoId, esMovil = false, onNuevo
               }}>
                 Cerrados hoy · {cerrados.length}
               </div>
-              <Listado pedidos={cerrados} onClick={irAPedidos} apagado />
+              <Listado pedidos={cerrados} onClick={irAPedidos} apagado esMonitor={esMonitor} />
             </>
           )}
 
           {enMarcha.length > 0 && (
             <button onClick={irAPedidos} style={{
-              ...btnSecundario, width: '100%', maxWidth: 820, marginLeft: 'auto', marginRight: 'auto',
+              ...btnSecundario, width: '100%', ...anchoDe(esMonitor),
               height: 44, borderRadius: RADIO, marginTop: 12,
             }}>
               Gestionar en Pedidos <ArrowRight size={15} style={{ marginLeft: 6 }} />
@@ -272,9 +297,15 @@ function PestanaAbajo({ activo, onClick, texto, Icono, cuantos = 0, urgentes = 0
   )
 }
 
-function Listado({ pedidos, onClick, apagado }) {
+function Listado({ pedidos, onClick, apagado, esMonitor = false }) {
   return (
-    <div style={{ background: T.surface, borderRadius: RADIO, overflow: 'hidden', maxWidth: 820, marginLeft: 'auto', marginRight: 'auto' }}>
+    // En monitor va en DOS columnas: una fila de 1400 px de ancho para un codigo, una
+    // hora y un importe deja el 80 % del renglon vacio y obliga a barrer con la vista
+    // de un extremo al otro para leer un solo pedido.
+    <div style={{
+      background: T.surface, borderRadius: RADIO, overflow: 'hidden', ...anchoDe(esMonitor),
+      ...(esMonitor ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } : null),
+    }}>
       {pedidos.map((p, i) => {
         const Icono = ICONO_TIPO[tipoDe(p)]
         return (
