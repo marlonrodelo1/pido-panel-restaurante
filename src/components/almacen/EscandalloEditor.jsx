@@ -91,7 +91,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
     setMontando(true)
     try {
       await arranqueDesdeCarta(estId, [producto.id])
-      toast(`«${producto.nombre}» ya descuenta del almacén`, 'success')
+      toast(`«${producto.nombre}» ya descuenta del almacén: lo tienes también en Artículos de compra`, 'success')
       onGuardado()
     } catch (e) {
       toast(e.message, 'error')
@@ -161,13 +161,13 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
     <div style={ds.modal} onClick={onCerrar}>
       <div style={{ ...ds.modalContent, maxWidth: 680 }} onClick={e => e.stopPropagation()}>
         <h2 style={{ ...ds.h2, marginBottom: 2 }}>{producto.nombre}</h2>
-        <div style={{ ...ds.muted, marginBottom: 18 }}>Qué lleva y cuánto te cuesta.</div>
+        <div style={{ ...ds.muted, marginBottom: 18 }}>Escandallo: qué lleva una ración y cuánto te cuesta.</div>
 
         {cargando ? (
           <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>Cargando…</div>
         ) : (
           <>
-            <div style={ds.label}>Ingredientes</div>
+            <div style={ds.label}>Ingredientes de una ración</div>
             {lineas.map((l, i) => (
               <FilaIngrediente key={i} linea={l} articulos={articulos} porId={porId}
                 onCambio={(c, v) => setLinea(i, c, v)}
@@ -179,16 +179,16 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
                 border: `1px solid ${colors.border}`, background: colors.surface2,
               }}>
                 <div style={{ fontSize: type.sm, color: colors.textDim, lineHeight: 1.6 }}>
-                  Todavía no lleva nada. Añade abajo lo que lleva una ración.
+                  Todavía no lleva nada. Añade abajo los artículos que le echas a una ración: la carne, el pan, el queso.
                 </div>
                 <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.6 }}>
-                  ¿Es de los que entran y salen igual, como una lata o un agua? Entonces
-                  no hace falta que escribas nada:
+                  ¿Es de los que compras y vendes igual, como una lata o un agua? Entonces
+                  no hace falta receta: te lo damos de alta también como artículo y listo.
                 </div>
                 <button onClick={seVendeTalCual} disabled={montando} style={{
                   ...ds.secondaryBtn, marginTop: 10, opacity: montando ? 0.5 : 1,
                 }}>
-                  <Wand2 size={14} /> {montando ? 'Creando…' : 'Se vende tal cual'}
+                  <Wand2 size={14} /> {montando ? 'Dándolo de alta…' : 'Se vende tal cual'}
                 </button>
               </div>
             )}
@@ -218,7 +218,8 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
             {costeBase === 0 && lineas.length > 0 && (
               <div style={{ ...ds.muted, marginTop: 8, lineHeight: 1.5 }}>
                 Te cuesta 0 € porque esos artículos todavía no tienen precio de coste.
-                Entra solo con la primera factura de compra, o ponlo en un recuento.
+                El precio entra solo cuando metes la primera factura en Compras, o se lo
+                pones tú en un recuento.
               </div>
             )}
 
@@ -278,7 +279,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
                             <button onClick={() => setPropias({ ...propias, [k]: [...propias[k], { articulo_id: '', cantidad: '' }] })}
                               style={ds.miniBtn}><Plus size={12} /> Ingrediente</button>
                             <button onClick={() => { const p = { ...propias }; delete p[k]; setPropias(p); setAbierta(null) }}
-                              style={ds.miniBtn}>Volver al factor</button>
+                              style={ds.miniBtn}>Volver a la proporción</button>
                           </div>
                         </div>
                       )}
@@ -309,7 +310,7 @@ function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
       <select value={linea.articulo_id} onChange={e => onCambio('articulo_id', e.target.value)}
         style={{ ...ds.select, flex: 1, height: 36 }}>
-        <option value="">— Elige un artículo —</option>
+        <option value="">— Elige de tus artículos —</option>
         {articulos.filter(a => a.activo).map(a => (
           <option key={a.id} value={a.id}>{a.nombre}</option>
         ))}

@@ -50,9 +50,10 @@ export default function StockConfigCard() {
         {stockConfig.activo && !v.pausado_por_restaurante && <span style={chip('var(--c-success)')}>Activo</span>}
       </div>
       <div style={nota}>
-        Se gestiona desde la sección <strong>Almacén</strong> de este panel. En la tablet
-        del mostrador tienes lo del día a día dentro del TPV: ver lo que queda, apuntar
-        una merma y hacer recuento.
+        Aquí llevas lo que compras a tus proveedores —pan, carne, queso— y el escandallo
+        de cada plato: su receta, para saber lo que te cuesta. Se gestiona desde la sección{' '}
+        <strong>Almacén</strong> de este panel. En la tablet del mostrador tienes lo del día
+        a día dentro del TPV: ver lo que queda, apuntar una merma y hacer recuento.
       </div>
 
       {!stockConfig.arranque_at && stockConfig.activo && (
@@ -70,7 +71,7 @@ export default function StockConfigCard() {
         titulo="Pausar el almacén"
         texto={v.pausado_por_restaurante
           ? 'En pausa: las ventas no descuentan existencias. Cuando lo reactives, lo vendido mientras tanto no se habrá restado — hazte un recuento.'
-          : 'Funcionando. Cada venta descuenta los artículos de la receta.'}
+          : 'Funcionando. Cada plato que vendes descuenta los artículos de su receta.'}
         valor={!!v.pausado_por_restaurante}
         onChange={x => cambiar('pausado_por_restaurante', x)}
         alerta={!!v.pausado_por_restaurante}
@@ -79,7 +80,7 @@ export default function StockConfigCard() {
       <Interruptor
         titulo="Agotar productos en la web cuando no queden existencias"
         texto={v.agotar_web
-          ? 'Si se acaba un ingrediente, los platos que lo llevan dejan de poder pedirse en pidoo.es y en la carta QR. En el mostrador se sigue vendiendo igual: la barra nunca se frena.'
+          ? 'Si se acaba un ingrediente, los platos que lo llevan desaparecen de la carta en pidoo.es y en el QR hasta que vuelva a entrar género. En el mostrador se sigue vendiendo igual: la barra nunca se frena.'
           : 'No se apaga nada solo. Podrás recibir pedidos de platos sin género.'}
         valor={!!v.agotar_web}
         onChange={x => cambiar('agotar_web', x)}

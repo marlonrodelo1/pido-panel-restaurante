@@ -45,11 +45,12 @@ export default function ComprasTab({ estId, articulos, onCambio }) {
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ flex: 1, ...ds.muted }}>
-          Mete aquí lo que te traen tus proveedores. Al contabilizar la factura, la
-          mercancía entra en el almacén y se recalcula lo que te cuesta cada cosa.
+          Mete aquí las facturas de tus proveedores. Al contabilizar una, la mercancía
+          entra en el almacén y cada artículo se queda con el precio que has pagado por
+          él. De ahí salen los costes de tus escandallos.
         </div>
         <button onClick={() => setAbierta({})} style={ds.primaryBtn}>
-          <Plus size={15} /> Factura
+          <Plus size={15} /> Nueva factura
         </button>
       </div>
 
@@ -59,8 +60,10 @@ export default function ComprasTab({ estId, articulos, onCambio }) {
           border: `1px solid ${colors.warning}`, background: colors.warningSoft,
           fontSize: type.sm, lineHeight: 1.6, color: colors.text,
         }}>
-          Todavía no tienes artículos. Créalos en la pestaña <strong>Artículos</strong>:
-          una factura se compone de artículos de tu almacén.
+          Todavía no tienes artículos. En una factura solo entra lo que le compras al
+          proveedor —el pan, la carne, el aceite, los refrescos—, no los platos de tu carta.
+          Puedes crearlos sin salir de aquí: dale a <strong>Nueva factura</strong> y, en cada
+          línea, elige <strong>«+ Crear un artículo nuevo»</strong>.
         </div>
       )}
 
@@ -91,7 +94,7 @@ export default function ComprasTab({ estId, articulos, onCambio }) {
             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, color: colors.text }}>
               {f.stock_proveedores?.nombre || 'Sin proveedor'}
               <div style={{ ...ds.muted, fontWeight: 400, marginTop: 1 }}>
-                {f.contabilizada ? 'Contabilizada' : 'Borrador · no ha entrado en el almacén'}
+                {f.contabilizada ? 'Contabilizada · ya en tu almacén' : 'Borrador · no ha entrado en el almacén'}
               </div>
             </div>
             <div style={{ ...col(104, 'left'), color: colors.textMute,
@@ -108,7 +111,7 @@ export default function ComprasTab({ estId, articulos, onCambio }) {
         {!facturas.length && (
           <div style={{ ...ds.muted, padding: 34, textAlign: 'center' }}>
             <FileText size={22} color={colors.borderStrong} style={{ marginBottom: 8 }} />
-            <div>Todavía no has metido ninguna factura.</div>
+            <div>Todavía no has metido ninguna factura. Cada una pone al día lo que te cuesta cada artículo.</div>
           </div>
         )}
       </div>

@@ -60,7 +60,7 @@ export default function TpvStock({ establecimientoId, vistaInicial = 'existencia
 
   async function guardarMerma() {
     const n = num(cant)
-    if (!elegido || !(n > 0)) return toast('Elige el artículo y pon cuánto se ha perdido', 'error')
+    if (!elegido || !(n > 0)) return toast('Elige qué se ha perdido y pon cuánto', 'error')
     setGuardando(true)
     try {
       await apuntarMerma(elegido.id, n, motivo)
@@ -102,8 +102,8 @@ export default function TpvStock({ establecimientoId, vistaInicial = 'existencia
 
       {!cargando && !arts.length && (
         <div style={{ color: T.muted, padding: 26, textAlign: 'center', lineHeight: 1.6 }}>
-          Todavía no hay artículos en el almacén.<br />
-          Se dan de alta desde el panel web, en la sección Almacén.
+          Todavía no hay nada en el almacén.<br />
+          Lo que compras (pan, carne, queso) se da de alta desde el ordenador, en Almacén.
         </div>
       )}
 
@@ -185,7 +185,7 @@ export default function TpvStock({ establecimientoId, vistaInicial = 'existencia
                   </div>
 
                   <div style={{ color: T.muted, fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-                    ¿CUÁNTO SE HA PERDIDO?
+                    CUÁNTO SE HA PERDIDO
                   </div>
                   <input autoFocus inputMode="decimal" value={cant}
                     onChange={e => setCant(e.target.value.replace(/[^\d.,]/g, ''))}
@@ -193,7 +193,7 @@ export default function TpvStock({ establecimientoId, vistaInicial = 'existencia
                     style={{ ...inputOscuro, height: 62, fontSize: 26, fontWeight: 800, textAlign: 'right' }} />
 
                   <div style={{ color: T.muted, fontSize: 12, fontWeight: 700, margin: '18px 0 6px' }}>
-                    ¿QUÉ HA PASADO?
+                    QUÉ HA PASADO
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {MOTIVOS_MERMA.map(m => (
@@ -251,7 +251,7 @@ export default function TpvStock({ establecimientoId, vistaInicial = 'existencia
                             fontSize: 12, marginTop: 2, fontWeight: 700,
                             color: dif > 0 ? T.ok : T.danger,
                           }}>
-                            {dif > 0 ? '+' : '−'}{cantidad(Math.abs(dif), a.unidad)} respecto al sistema
+                            {dif > 0 ? '+' : '−'}{cantidad(Math.abs(dif), a.unidad)} respecto a lo apuntado
                           </div>
                         )}
                       </div>

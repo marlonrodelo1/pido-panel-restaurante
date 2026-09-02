@@ -3,7 +3,7 @@ import { Plus, X, TriangleAlert } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type, col } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
-import { eur, contabilizarFactura, descontabilizarFactura } from '../../lib/stock'
+import { eur, UNIDADES, contabilizarFactura, descontabilizarFactura } from '../../lib/stock'
 
 // El albarán: qué te ha traído el proveedor y a qué precio.
 //
@@ -28,6 +28,19 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
   const [nuevoProv, setNuevoProv] = useState('')
   const [cargando, setCargando] = useState(!nueva)
   const [guardando, setGuardando] = useState(false)
+  // Artículos dados de alta desde la propia factura. Van aparte del prop `articulos`
+  // —que solo se recarga al cerrar el albarán— para que aparezcan en los desplegables
+  // sin salir de aquí. No se muta el prop: eso es lo que hace `crearProveedor` y
+  // funciona de milagro, porque no dispara render por sí solo.
+  const [nuevosArt, setNuevosArt] = useState([])
+  const [creando, setCreando] = useState(null)      // { linea, nombre, unidad }
+  const [creandoArt, setCreandoArt] = useState(false)
+
+  // Los archivados no se ofrecen (no se compra lo que ya no se usa), pero los recién
+  // creados sí, aunque el prop todavía no los tenga.
+  const listaArticulos = [...new Map(
+    [...articulos.filter(a => a.activo), ...nuevosArt].map(a => [a.id, a])
+  ).values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 
   useEffect(() => {
     if (nueva) { setLineas([{ articulo_id: '', cantidad: '', factor: '1', precio_unitario: '' }]); return }
@@ -59,16 +72,60 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
     if (!nombre) return
     const { data, error } = await supabase.from('stock_proveedores')
       .insert({ establecimiento_id: estId, nombre }).select().single()
-    if (error) return toast('No se pudo crear: ' + error.message, 'error')
+    if (error) return toast('No se ha podido crear el proveedor: ' + error.message, 'error')
     proveedores.push(data)
     setCab({ ...cab, proveedor_id: data.id })
     setNuevoProv('')
     toast('Proveedor creado', 'success')
   }
 
+  // Alta de artículo sin salir del albarán.
+  //
+  // La factura es JUSTO donde el dueño descubre que le falta un artículo: lo está
+  // leyendo del papel. Mandarle a otra pestaña a crearlo le hacía perder la línea a
+  // medias, y encima el artículo nacía sin coste. Creado aquí, la propia línea le pone
+  // el precio real al contabilizar.
+  //
+  // Solo se piden nombre y unidad: lo demás (familia, mínimo, si agota la carta) tiene
+  // valores por defecto sensatos y se retoca en Artículos cuando haga falta.
+  async function crearArticulo() {
+    const nombre = (creando?.nombre || '').trim()
+    if (!nombre || creandoArt) return
+
+    // El índice único es (establecimiento_id, lower(btrim(nombre))). Se comprueba antes
+    // contra la lista que ya tenemos —incluye los archivados— para no dejarle en un
+    // callejón sin salida con un 23505 que no sabe qué significa.
+    const repe = [...articulos, ...nuevosArt].find(
+      a => a.nombre.trim().toLowerCase() === nombre.toLowerCase())
+    if (repe) {
+      setNuevosArt(prev => prev.some(a => a.id === repe.id) ? prev : [...prev, repe])
+      setLinea(creando.linea, 'articulo_id', repe.id)
+      setCreando(null)
+      return toast(`Ya tenías «${repe.nombre}»: lo he puesto en la línea.`, 'success')
+    }
+
+    setCreandoArt(true)
+    const { data, error } = await supabase.from('stock_articulos')
+      .insert({ establecimiento_id: estId, nombre, unidad: creando.unidad })
+      .select().single()
+    setCreandoArt(false)
+    if (error) {
+      return toast(
+        error.code === '23505'
+          ? 'Ya tienes un artículo con ese nombre.'
+          : 'No se ha podido crear: ' + error.message,
+        'error')
+    }
+
+    setNuevosArt(prev => [...prev, data])
+    setLinea(creando.linea, 'articulo_id', data.id)
+    setCreando(null)
+    toast('Artículo creado. Ponle ahora cuántas y a qué precio.', 'success')
+  }
+
   async function guardar() {
     const limpias = lineas.filter(l => l.articulo_id && num(l.cantidad) > 0)
-    if (!limpias.length) return toast('Añade al menos una línea con artículo y cantidad.', 'error')
+    if (!limpias.length) return toast('Añade al menos una línea: elige el artículo y pon la cantidad.', 'error')
     if (cab.fecha > new Date().toISOString().slice(0, 10)) {
       return toast('La fecha de la factura no puede estar en el futuro.', 'error')
     }
@@ -106,7 +163,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
       const ins = await supabase.from('stock_factura_lineas').insert(filas)
       if (ins.error) throw new Error(ins.error.message)
 
-      toast('Factura guardada', 'success')
+      toast('Borrador guardado. Para que entre en el almacén, pulsa Contabilizar.', 'success')
       onGuardado()
     } catch (e) {
       toast('No se ha podido guardar: ' + e.message, 'error')
@@ -116,13 +173,13 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
 
   async function contabilizar() {
     if (!(await confirmar(
-      'Al contabilizar, esta mercancía entra en tu almacén y se recalcula lo que te ' +
-      'cuesta cada artículo.\n\nDespués no podrás editar la factura sin descontabilizarla antes.'
+      'Al contabilizar, esta mercancía entra en tu almacén y cada artículo se queda con ' +
+      'el precio que has pagado en esta factura.\n\nDespués no podrás editar la factura sin descontabilizarla antes.'
     ))) return
     setGuardando(true)
     try {
       await contabilizarFactura(factura.id)
-      toast('Factura contabilizada. La mercancía ya está en el almacén.', 'success')
+      toast('Factura contabilizada. La mercancía está en el almacén y los costes ya están al día.', 'success')
       onGuardado()
     } catch (e) { toast(e.message, 'error'); setGuardando(false) }
   }
@@ -130,13 +187,13 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
   async function descontabilizar() {
     if (!(await confirmar(
       'Se van a apuntar los movimientos contrarios y la mercancía saldrá del almacén.\n\n' +
-      'Ojo: se deshace la cantidad, pero el coste medio ya calculado no vuelve atrás — ' +
-      'se corregirá solo con la siguiente compra real.'
+      'Ojo: se deshace la cantidad, pero lo que ya has calculado que te cuesta el ' +
+      'artículo no vuelve atrás — se corregirá solo con la siguiente compra.'
     ))) return
     setGuardando(true)
     try {
       await descontabilizarFactura(factura.id)
-      toast('Factura descontabilizada', 'success')
+      toast('Factura descontabilizada. La mercancía ha salido del almacén.', 'success')
       onGuardado()
     } catch (e) { toast(e.message, 'error'); setGuardando(false) }
   }
@@ -150,7 +207,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
         <div style={{ ...ds.muted, marginBottom: 18 }}>
           {bloqueada
             ? 'Esta mercancía ya está en tu almacén. Para cambiarla, descontabilízala primero.'
-            : 'Todavía no ha entrado nada en el almacén. Eso pasa al contabilizarla.'}
+            : 'Todavía no ha entrado nada en el almacén ni ha cambiado ningún coste. Eso pasa al contabilizarla.'}
         </div>
 
         {cargando ? (
@@ -210,7 +267,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
             <div style={{ ...ds.label, marginTop: 20 }}>Qué te han traído</div>
             <div style={{ ...ds.muted, marginBottom: 8, lineHeight: 1.5 }}>
               «Cuántas» es en la unidad en la que compras (cajas, packs…). «Contiene» es
-              cuántas unidades de almacén trae cada una: una caja de 6 botellas es 6.
+              cuántas unidades sueltas trae cada una: una caja de 6 botellas es 6.
             </div>
 
             {/* OJO: `ds.label` lleva `display: block`. Si va DESPUES de `display: flex`
@@ -225,14 +282,28 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
             </div>
 
             {lineas.map((l, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <div key={i}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                {/* La última opción no elige nada: abre el alta ahí mismo. El `value`
+                    sigue atado a `articulo_id`, así que al volver de crear el
+                    desplegable ya enseña el artículo nuevo. */}
                 <select value={l.articulo_id} disabled={bloqueada}
-                  onChange={e => setLinea(i, 'articulo_id', e.target.value)}
+                  onChange={e => {
+                    if (e.target.value === '__nuevo__') {
+                      setCreando({ linea: i, nombre: '', unidad: 'ud' })
+                      return
+                    }
+                    // Si estaba creando uno para esta línea y al final elige otro de la
+                    // lista, el panel abierto sobra.
+                    if (creando && creando.linea === i) setCreando(null)
+                    setLinea(i, 'articulo_id', e.target.value)
+                  }}
                   style={{ ...ds.select, flex: 1, minWidth: 0, height: 34 }}>
-                  <option value="">— Elige —</option>
-                  {articulos.filter(a => a.activo).map(a => (
+                  <option value="">— Elige artículo —</option>
+                  {listaArticulos.map(a => (
                     <option key={a.id} value={a.id}>{a.nombre}</option>
                   ))}
+                  {!bloqueada && <option value="__nuevo__">+ Crear un artículo nuevo…</option>}
                 </select>
                 <input inputMode="decimal" value={l.cantidad} disabled={bloqueada} placeholder="0"
                   onChange={e => setLinea(i, 'cantidad', e.target.value.replace(/[^\d.,]/g, ''))}
@@ -246,12 +317,71 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
                 <div style={{ ...col(88), ...ds.muted, alignSelf: 'center' }}>
                   {eur(num(l.cantidad) * num(l.precio_unitario))}
                 </div>
-                <button onClick={() => setLineas(lineas.filter((_, j) => j !== i))}
+                {/* `creando.linea` es un ÍNDICE: si se borra una línea de encima, el
+                    panel abierto pasaría a colgar de otra y el artículo nuevo caería en
+                    la línea equivocada. Se cierra o se recoloca al borrar. */}
+                <button onClick={() => {
+                    setLineas(lineas.filter((_, j) => j !== i))
+                    setCreando(c => !c ? c
+                      : c.linea === i ? null
+                      : c.linea > i ? { ...c, linea: c.linea - 1 } : c)
+                  }}
                   disabled={bloqueada}
                   style={{ ...ds.miniBtn, ...col(30), padding: 0, height: 34, opacity: bloqueada ? 0.4 : 1 }}
                   aria-label="Quitar línea">
                   <X size={12} />
                 </button>
+              </div>
+
+              {creando && creando.linea === i && (
+                <div style={{
+                  display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap',
+                  margin: '0 0 10px', padding: '12px 14px', borderRadius: radius.sm,
+                  border: `1px solid ${colors.primary}`, background: colors.surface2,
+                }}>
+                  <div style={{ flex: '2 1 240px', minWidth: 0 }}>
+                    <label style={ds.label}>Cómo se llama</label>
+                    <input autoFocus value={creando.nombre}
+                      onChange={e => setCreando({ ...creando, nombre: e.target.value })}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearArticulo() } }}
+                      placeholder="Carne picada, Pan de hamburguesa, Coca-Cola lata…"
+                      style={{ ...ds.input, height: 34 }} />
+                  </div>
+                  <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                    <label style={ds.label}>Cómo lo mides</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {UNIDADES.map(u => (
+                        <button key={u.id} onClick={() => setCreando({ ...creando, unidad: u.id })}
+                          style={{
+                            ...ds.filterBtn, height: 34, flex: 1, justifyContent: 'center',
+                            background: creando.unidad === u.id ? colors.primary : colors.paper,
+                            color: creando.unidad === u.id ? colors.cream : colors.textDim,
+                            borderColor: creando.unidad === u.id ? colors.primary : colors.border,
+                            fontWeight: creando.unidad === u.id ? 700 : 600,
+                          }}>{u.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => setCreando(null)} style={{ ...ds.miniBtn, height: 34 }}>
+                      Cancelar
+                    </button>
+                    <button onClick={crearArticulo}
+                      disabled={!creando.nombre.trim() || creandoArt}
+                      style={{
+                        ...ds.miniBtn, height: 34,
+                        background: colors.primary, borderColor: colors.primary, color: colors.cream,
+                        opacity: (!creando.nombre.trim() || creandoArt) ? 0.5 : 1,
+                      }}>
+                      {creandoArt ? 'Creando…' : 'Crear y usarlo'}
+                    </button>
+                  </div>
+                  <div style={{ ...ds.muted, flexBasis: '100%', lineHeight: 1.5 }}>
+                    Con el nombre y la unidad basta. Se queda creado en tu almacén y el
+                    precio se lo pone esta misma línea al contabilizar la factura.
+                  </div>
+                </div>
+              )}
               </div>
             ))}
 

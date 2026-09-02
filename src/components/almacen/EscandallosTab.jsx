@@ -78,7 +78,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           <Search size={15} color={colors.textMute}
             style={{ position: 'absolute', left: 11, top: 11, pointerEvents: 'none' }} />
           <input value={busca} onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar plato…" style={{ ...ds.input, paddingLeft: 34 }} />
+            placeholder="Buscar un plato de tu carta…" style={{ ...ds.input, paddingLeft: 34 }} />
         </div>
         <button onClick={() => setSoloSin(v => !v)} style={{
           ...ds.filterBtn, height: 36,
@@ -86,7 +86,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           color: soloSin ? colors.cream : colors.textDim,
           borderColor: soloSin ? colors.primary : colors.border,
         }}>
-          Solo los que faltan ({nSin})
+          Solo sin receta ({nSin})
         </button>
       </div>
 
@@ -96,15 +96,16 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           border: `1px solid ${colors.warning}`, background: colors.warningSoft,
           fontSize: type.sm, lineHeight: 1.6, color: colors.text,
         }}>
-          Todavía no tienes artículos en el almacén. Una receta se escribe con artículos,
-          así que créalos primero en la pestaña <strong>Artículos</strong>.
+          Todavía no tienes artículos en el almacén. Un artículo es lo que le compras al
+          proveedor: la carne, el pan, el queso, el aceite. Las recetas se escriben con eso,
+          así que créalos primero en la pestaña <strong>Artículos de compra</strong>.
         </div>
       )}
 
       <div style={{ ...ds.table, ...tablaScroll }}>
         <div style={{ ...ds.tableHeader, ...filaMin(950) }}>
           <div style={col(22, 'left')}></div>
-          <div style={{ flex: 1, minWidth: 0 }}>Plato</div>
+          <div style={{ flex: 1, minWidth: 0 }}>Plato de tu carta</div>
           <div style={col(88)}>Te cuesta</div>
           <div style={col(124)}>En barra</div>
           <div style={col(148)}>Por Pidoo</div>
@@ -160,17 +161,19 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
 
         {!visibles.length && (
           <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>
-            {soloSin ? 'No falta ninguno con esa búsqueda.' : 'Ningún plato con esa búsqueda.'}
+            {soloSin ? 'Todos los de esa búsqueda ya tienen receta.' : 'Ningún plato de tu carta con esa búsqueda.'}
           </div>
         )}
       </div>
 
       <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.5 }}>
-        Los platos sin receta no descuentan nada del almacén. Es lo normal al principio:
-        empieza por los que más vendes, que son los que mueven el género.
+        Aquí está tu carta entera, plato por plato. La receta dice qué le echas y cuánto,
+        con los artículos de la pestaña <strong>Artículos de compra</strong>. Los platos sin
+        receta no descuentan nada del almacén: es lo normal al principio, empieza por los que
+        más vendes, que son los que mueven el género.
         <br />
-        Si el plato entra y sale igual —una lata, un agua, una tarrina— no hace falta que
-        escribas nada: abre su receta y pulsa <strong>«Se vende tal cual»</strong>.
+        Si el plato lo compras y lo vendes igual —una lata, un agua, una tarrina— no hace
+        falta que escribas nada: abre su receta y pulsa <strong>«Se vende tal cual»</strong>.
       </div>
 
       {abierto && (

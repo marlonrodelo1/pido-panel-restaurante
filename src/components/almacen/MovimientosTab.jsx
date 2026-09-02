@@ -50,9 +50,9 @@ export default function MovimientosTab({ estId, articulos }) {
         <div style={{ ...ds.tableHeader, ...filaMin(820) }}>
           <div style={col(104, 'left')}>Cuándo</div>
           <div style={{ flex: 1.4, minWidth: 0 }}>Artículo</div>
-          <div style={col(96, 'left')}>Tipo</div>
+          <div style={col(96, 'left')}>Qué pasó</div>
           <div style={col(104)}>Cantidad</div>
-          <div style={col(88)}>Coste ud.</div>
+          <div style={col(88)}>Te cuesta</div>
           <div style={{ flex: 1, minWidth: 0 }}>Motivo</div>
         </div>
 
@@ -60,7 +60,7 @@ export default function MovimientosTab({ estId, articulos }) {
 
         {!cargando && !movs.length && (
           <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>
-            Todavía no hay movimientos con estos filtros.
+            No hay movimientos que enseñar con lo que has elegido arriba.
           </div>
         )}
 

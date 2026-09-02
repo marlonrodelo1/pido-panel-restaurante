@@ -27,7 +27,7 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
     <div>
       <div className="ds-cards" style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <Tarjeta label="Valor del inventario" valor={eur(v.valor)} />
-        <Tarjeta label="Artículos controlados" valor={v.articulos || 0} />
+        <Tarjeta label="Artículos de compra" valor={v.articulos || 0} />
         <Tarjeta label="Bajo mínimo" valor={v.bajo_minimo || 0} tono={v.bajo_minimo > 0 ? 'warning' : null} />
         <Tarjeta label="En negativo" valor={v.en_negativo || 0} tono={v.en_negativo > 0 ? 'danger' : null} />
         {mermas && mermas.total > 0 && (
@@ -86,8 +86,9 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
             {c.lineas_sin_escandallo > 0 && (
               <li>
                 <strong>{c.lineas_sin_escandallo}</strong> línea{c.lineas_sin_escandallo === 1 ? '' : 's'} de
-                productos que todavía no tienen receta. Es lo normal al principio: solo
-                descuentan los que hayas escandallado.
+                platos que todavía no tienen receta. Es lo normal al principio: solo
+                descuentan del almacén los platos a los que ya les hayas escrito el
+                escandallo.
               </li>
             )}
             {c.lineas_sin_producto > 0 && (
@@ -129,7 +130,7 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
           tono="info"
           icono={<CircleHelp size={16} color={colors.info} />}
           titulo={`${v.sin_coste} artículo${v.sin_coste === 1 ? '' : 's'} sin precio de coste`}
-          texto="Hasta que metas una factura de compra o le pongas el coste en un recuento, tus platos saldrán con un margen del 100 %, que no es real."
+          texto="Hasta que no metas una factura de compra o les pongas el coste al hacer un recuento, los platos que lleven esos artículos te saldrán con un margen del 100 %, que no es real."
         />
       )}
       </div>

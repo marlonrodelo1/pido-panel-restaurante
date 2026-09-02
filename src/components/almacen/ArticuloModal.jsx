@@ -90,9 +90,9 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
   return (
     <div style={ds.modal} onClick={onCerrar}>
       <div style={{ ...ds.modalContent, maxWidth: 580 }} onClick={e => e.stopPropagation()}>
-        <h2 style={ds.h2}>{nuevo ? 'Nuevo artículo' : 'Editar artículo'}</h2>
+        <h2 style={ds.h2}>{nuevo ? 'Nuevo artículo de compra' : 'Editar artículo'}</h2>
 
-        <label style={ds.label}>Nombre</label>
+        <label style={ds.label}>¿Qué compras?</label>
         <input autoFocus value={v.nombre} onChange={e => cambiar('nombre', e.target.value)}
           placeholder="Carne picada, Pan de hamburguesa, Coca-Cola lata…"
           style={ds.formInput} />
@@ -139,9 +139,9 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
         </div>
 
         <Interruptor
-          titulo="Puede agotar productos en la web"
+          titulo="Puede agotar lo que vendes"
           texto={v.controla_agotado
-            ? 'Si se acaba, los platos que lo llevan dejan de poder pedirse en pidoo.es y en el QR.'
+            ? 'Si se acaba, los platos que lo llevan desaparecen de la carta en pidoo.es y en el QR hasta que vuelva a entrar género.'
             : 'Aunque se acabe, no apagará ningún plato. Ponlo así para la sal, el aceite o las especias: no quieres que un bote vacío te tire media carta.'}
           valor={!!v.controla_agotado}
           onChange={x => cambiar('controla_agotado', x)} />

@@ -26,7 +26,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           <Search size={15} color={colors.textMute}
             style={{ position: 'absolute', left: 11, top: 11, pointerEvents: 'none' }} />
           <input value={busca} onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar artículo…" style={{ ...ds.input, paddingLeft: 34 }} />
+            placeholder="Buscar carne, pan, queso…" style={{ ...ds.input, paddingLeft: 34 }} />
         </div>
         {familiasUsadas.length > 0 && (
           <select value={familia} onChange={e => setFamilia(e.target.value)}
@@ -36,15 +36,15 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           </select>
         )}
         <button onClick={() => setEditando({})} style={ds.primaryBtn}>
-          <Plus size={15} /> Artículo
+          <Plus size={15} /> Añadir artículo
         </button>
       </div>
 
       <div style={{ ...ds.table, ...tablaScroll }}>
         <div style={{ ...ds.tableHeader, ...filaMin(880) }}>
-          <div style={{ flex: 1, minWidth: 0 }}>Artículo</div>
+          <div style={{ flex: 1, minWidth: 0 }}>Lo que compras</div>
           <div style={col(96)}>Quedan</div>
-          <div style={col(96)}>Coste ud.</div>
+          <div style={col(96)}>Te cuesta</div>
           <div style={col(96)}>Valor</div>
           <div style={col(316, 'right')}></div>
         </div>
@@ -53,7 +53,18 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>
             {articulos.length
               ? 'Ningún artículo con esos filtros.'
-              : 'Todavía no tienes artículos. Créalos con el botón de arriba.'}
+              : (
+                <div style={{ maxWidth: 620, margin: '0 auto', textAlign: 'left', lineHeight: 1.7 }}>
+                  Aquí va <strong>lo que le compras al proveedor</strong>: carne, pan, queso,
+                  aceite… cada uno con su unidad y su precio.
+                  <br />
+                  Los platos de tu carta no se apuntan aquí: se montan en{' '}
+                  <strong>Escandallos</strong>, con estos artículos dentro.
+                  <br />
+                  Lo que compras y vendes igual —una lata, una cerveza, un agua— sí va en los
+                  dos sitios. Créalos con el botón de arriba.
+                </div>
+              )}
           </div>
         )}
 

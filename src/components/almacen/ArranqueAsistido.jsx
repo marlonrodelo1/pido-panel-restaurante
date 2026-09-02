@@ -70,7 +70,7 @@ export default function ArranqueAsistido({ estId, onListo }) {
   // Al entrar en el paso 2, todo marcado: lo normal es que una categoría entera se
   // venda tal cual. Desmarcar 3 es menos trabajo que marcar 21.
   function irAPaso2() {
-    if (!catsElegidas.length) return toast('Elige al menos una categoría', 'error')
+    if (!catsElegidas.length) return toast('Elige la categoría de lo que compras hecho', 'error')
     const m = {}
     candidatos.forEach(p => { m[p.id] = true })
     setMarcados(m)
@@ -79,7 +79,7 @@ export default function ArranqueAsistido({ estId, onListo }) {
 
   async function crearArticulos() {
     const ids = candidatos.filter(p => marcados[p.id]).map(p => p.id)
-    if (!ids.length) return toast('Marca al menos un producto', 'error')
+    if (!ids.length) return toast('Marca al menos uno, o vuelve atrás y empieza por tus ingredientes', 'error')
     setGuardando(true)
     try {
       await arranqueDesdeCarta(estId, ids)
@@ -144,7 +144,8 @@ export default function ArranqueAsistido({ estId, onListo }) {
         <h1 style={ds.h1}>Poner el almacén en marcha</h1>
       </div>
       <div style={{ ...ds.muted, marginBottom: 18 }}>
-        Son tres pasos y se hace una sola vez. Puedes ampliarlo cuando quieras.
+        En el almacén va lo que le compras al proveedor: el pan, la carne, las latas.
+        Son tres pasos y se hace una sola vez.
       </div>
 
       <Pasos actual={paso} />
@@ -152,12 +153,12 @@ export default function ArranqueAsistido({ estId, onListo }) {
       {paso === 1 && (
         <div style={{ ...ds.card, marginTop: 16 }}>
           <h2 style={ds.h2}>
-            {sinBebidas ? '¿Vendes algo tal cual?' : 'Empieza por las bebidas'}
+            {sinBebidas ? '¿Compras algo hecho y lo vendes sin tocarlo?' : 'Empieza por las bebidas'}
           </h2>
           <p style={{ ...ds.dim, lineHeight: 1.6, marginTop: 0, marginBottom: 16 }}>
             {sinBebidas
-              ? 'Hay cosas que entran y salen enteras: una lata, un agua, una tarrina de helado. Si tienes algo así, elige su categoría y te la damos de alta sola. Si toda tu carta es cocina, salta este paso.'
-              : 'No intentes meter la carta entera hoy. Con las bebidas ya vas a ver si te cuadra la caja, y son las que se cuentan solas: están en cajas y no hay que abrir nada para saber cuántas quedan.'}
+              ? 'Una lata, un agua, una tarrina de helado: las compras hechas y las vendes sin tocarlas. Si tienes algo así, elige su categoría y te la damos de alta sola. Las categorías de cocina NO van aquí: una hamburguesa no se compra, se prepara. Si todo lo que vendes lo preparas tú, no elijas nada: baja del todo y empieza por tus ingredientes.'
+              : 'Aquí solo van las categorías de lo que compras hecho y vendes sin tocar. Las bebidas son el caso claro: se cuentan solas, están en cajas y no hay que abrir nada para saber cuántas quedan. Lo que preparas tú no lo elijas: eso lleva ingredientes y receta, y va después.'}
           </p>
 
           {/* Lista, no chips. Con 16 categorías las pildoras se descuadran en cinco
@@ -210,7 +211,7 @@ export default function ArranqueAsistido({ estId, onListo }) {
             <div style={{ ...ds.muted, flex: 1, minWidth: 150 }}>
               {nElegidos
                 ? `${catsElegidas.length} categoría${catsElegidas.length === 1 ? '' : 's'} · ${nElegidos} producto${nElegidos === 1 ? '' : 's'}`
-                : 'Elige al menos una categoría'}
+                : 'Elige la categoría de lo que compras hecho'}
             </div>
             <button onClick={irAPaso2} disabled={guardando || !catsElegidas.length} style={{
               ...ds.primaryBtn,
@@ -227,11 +228,12 @@ export default function ArranqueAsistido({ estId, onListo }) {
             marginTop: 16, paddingTop: 14, borderTop: `1px solid ${colors.border}`,
           }}>
             <div style={{ ...ds.muted, lineHeight: 1.6, marginBottom: 10 }}>
-              ¿Toda tu carta se elabora? Entonces lo tuyo es dar de alta los ingredientes
-              (pan, carne, queso) y escribir la receta de cada plato.
+              ¿Lo que vendes lo preparas tú? Entonces lo que compras son ingredientes: el
+              pan, la carne, el queso. Dalos de alta uno a uno y escribe después la receta
+              de cada plato.
             </div>
             <button onClick={montarloAMano} disabled={guardando} style={ds.secondaryBtn}>
-              Montar el almacén a mi manera
+              Empezar por mis ingredientes
             </button>
           </div>
         </div>
@@ -239,10 +241,12 @@ export default function ArranqueAsistido({ estId, onListo }) {
 
       {paso === 2 && (
         <div style={{ ...ds.card, marginTop: 16 }}>
-          <h2 style={ds.h2}>Marca lo que se vende tal cual</h2>
+          <h2 style={ds.h2}>Marca solo lo que se vende tal cual</h2>
           <p style={{ ...ds.dim, lineHeight: 1.6, marginTop: 0, marginBottom: 14 }}>
-            Una lata de refresco se vende tal cual: entra una, sale una. Desmarca lo que
-            sea un plato elaborado — esos llevan receta y los harás después, con calma.
+            Están todos marcados. Deja marcado solo lo que te llega hecho del proveedor y
+            vendes sin tocar: una lata entra y sale igual. Desmarca todo lo que prepares tú,
+            aunque sea un sándwich: eso no es un artículo, lleva ingredientes y receta, y su
+            sitio es Escandallos.
           </p>
 
           <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -298,7 +302,7 @@ export default function ArranqueAsistido({ estId, onListo }) {
               ...ds.primaryBtn, opacity: (guardando || !nMarcados) ? 0.5 : 1,
               cursor: (guardando || !nMarcados) ? 'not-allowed' : 'pointer',
             }}>
-              {guardando ? 'Creando…' : `Crear ${nMarcados} artículo${nMarcados === 1 ? '' : 's'}`}
+              {guardando ? 'Creando…' : `Dar de alta ${nMarcados} artículo${nMarcados === 1 ? '' : 's'}`}
               <ArrowRight size={15} />
             </button>
           </div>
@@ -368,7 +372,8 @@ export default function ArranqueAsistido({ estId, onListo }) {
           </div>
           <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.5 }}>
             Vas a controlar {creados.length} artículo{creados.length === 1 ? '' : 's'}.
-            El resto de tu carta sigue funcionando igual: puedes añadirlos cuando quieras.
+            El resto de tu carta sigue funcionando igual: cuando quieras das de alta sus
+            ingredientes y le escribes la receta a cada plato.
           </div>
         </div>
       )}

@@ -22,7 +22,7 @@ import MovimientosTab from '../components/almacen/MovimientosTab'
 
 const PESTANAS = [
   { id: 'resumen', label: 'Resumen' },
-  { id: 'articulos', label: 'Artículos' },
+  { id: 'articulos', label: 'Artículos de compra' },
   { id: 'escandallos', label: 'Escandallos' },
   { id: 'compras', label: 'Compras' },
   { id: 'movimientos', label: 'Movimientos' },
@@ -67,7 +67,7 @@ export default function Almacen() {
     return (
       <Aviso icono={<Boxes size={26} color={colors.textMute} />}
         titulo="No tienes el almacén activado"
-        texto="Lo activa Pidoo para tu restaurante. Sirve para llevar las existencias, saber lo que te cuesta cada plato y meter las facturas de tus proveedores." />
+        texto="Lo activa Pidoo para tu restaurante. Sirve para llevar las existencias de lo que le compras al proveedor, saber lo que te cuesta cada plato de tu carta y meter las facturas." />
     )
   }
 
@@ -101,6 +101,8 @@ export default function Almacen() {
       </div>
       <div style={{ ...ds.muted, marginBottom: 16 }}>
         Lo que tienes, lo que te cuesta y lo que entra por tus proveedores.
+        En <strong>Artículos de compra</strong> van la carne, el pan, el aceite. En{' '}
+        <strong>Escandallos</strong>, la receta de cada plato de tu carta.
       </div>
 
       {stockConfig.pausado_por_restaurante && (
