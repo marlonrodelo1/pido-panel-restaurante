@@ -4,6 +4,8 @@ import { App as CapApp } from '@capacitor/app'
 import { supabase } from '../lib/supabase'
 import { useRest } from './RestContext'
 import { startAlarm, stopAlarm, unlockAudio, requestNotificationPermission, notificarNuevoPedido } from '../lib/alarm'
+import { imprimirPedido, hayImpresoraNativa } from '../lib/printService'
+import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 
 const PedidoAlertContext = createContext({
   pedidosNuevos: [],
@@ -13,6 +15,23 @@ const PedidoAlertContext = createContext({
 })
 
 const isNative = Capacitor.isNativePlatform()
+
+// Saca la comanda de un pedido que ha aceptado el servidor.
+//
+// Las lineas se piden aqui porque el payload del realtime trae la fila de
+// `pedidos` y nada mas: sin `pedido_items` el ticket saldria con el total y sin
+// decir que hay que cocinar.
+async function imprimirPedidoAceptadoSolo(p, restaurante) {
+  if (!reservarImpresion(p.id)) return   // ya lo imprimio otro camino
+  try {
+    const { data: items } = await supabase
+      .from('pedido_items').select('*').eq('pedido_id', p.id)
+    const r = await imprimirPedido(p, items || [], restaurante)
+    if (!r?.ok) soltarImpresion(p.id)
+  } catch {
+    soltarImpresion(p.id)
+  }
+}
 
 export function PedidoAlertProvider({ children, onNuevoPedido }) {
   const { restaurante } = useRest()
@@ -102,6 +121,20 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
           }
           if (onNuevoPedidoRef.current) onNuevoPedidoRef.current(p)
         } else {
+          // 🔴 ACEPTADO POR EL SERVIDOR: hay que sacar la comanda AQUI.
+          //
+          // Con la aceptacion automatica no hay nadie pulsando "Aceptar", asi que
+          // no pasa por `PedidosEnVivo`. Y esa pantalla solo imprime si esta
+          // montada: en el TPV vive detras de una capa que casi siempre esta
+          // cerrada, con el mostrador delante. Este provider vive por encima del
+          // router, asi que se entera pase lo que pase.
+          //
+          // `hayImpresoraNativa` y no Capacitor: la app de WINDOWS tambien tiene
+          // socket a la impresora, y preguntando por Capacitor el ordenador del
+          // mostrador se quedaria sin papel.
+          if (p.estado === 'preparando' && restaurante?.auto_aceptar && hayImpresoraNativa) {
+            imprimirPedidoAceptadoSolo(p, restaurante)
+          }
           setPedidosNuevos(prev => {
             const remaining = prev.filter(x => x.id !== p.id)
             if (remaining.length === 0) stopAlarm()

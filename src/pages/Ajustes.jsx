@@ -10,6 +10,7 @@ import AddressInput from '../components/AddressInput'
 import ZonasReparto from '../components/ZonasReparto'
 import SuscripcionCard from '../components/SuscripcionCard'
 import TpvConfigCard from '../components/TpvConfigCard'
+import AutoAceptarCard from '../components/AutoAceptarCard'
 import StockConfigCard from '../components/StockConfigCard'
 
 export default function Ajustes() {
@@ -645,6 +646,12 @@ export default function Ajustes() {
 
       {/* El TPV se maneja en la tablet, pero se configura aqui. Se pinta solo si
           Pidoo le ha dado de alta el modulo al restaurante. */}
+      {/* Aceptar los pedidos solos. NO depende del modulo TPV: le sirve a
+          cualquiera, tenga tablet, ordenador del mostrador o nada. */}
+      <div className="pidoo-col-full">
+        <AutoAceptarCard />
+      </div>
+
       <div className="pidoo-col-full">
         <TpvConfigCard />
 

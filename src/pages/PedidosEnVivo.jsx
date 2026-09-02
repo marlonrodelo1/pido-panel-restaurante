@@ -5,6 +5,7 @@ import { usePedidoAlert } from '../context/PedidoAlertContext'
 import { stopAlarm, unlockAudio, startAlarm, notificarNuevoPedido } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb, hayImpresoraNativa } from '../lib/printService'
+import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { toast } from '../App'
@@ -354,7 +355,14 @@ export default function PedidosEnVivo() {
           // tablet. En web no se imprime nada a propósito — `imprimirPedidoWeb`
           // abre el diálogo de impresión del navegador y saltaría solo en la
           // cara de quien tenga el panel abierto en un portátil.
-          imprimirPedido(p, lineas, restaurante).catch(() => {})
+          // Se reserva antes de imprimir: con la aceptacion automatica, el
+          // `PedidoAlertContext` puede ir a por el mismo pedido y saldrian dos
+          // comandas iguales, que en cocina son dos pedidos.
+          if (reservarImpresion(p.id)) {
+            imprimirPedido(p, lineas, restaurante)
+              .then((r) => { if (!r?.ok) soltarImpresion(p.id) })
+              .catch(() => soltarImpresion(p.id))
+          }
         }
       })
       .subscribe()
@@ -532,7 +540,11 @@ export default function PedidosEnVivo() {
     // impresora igual que en la tablet, y preguntando por Capacitor se aceptaba el
     // pedido sin que cocina viera la comanda.
     if (hayImpresoraNativa) {
-      imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante).catch(() => {})
+      if (reservarImpresion(pedido.id)) {
+        imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante)
+          .then((r) => { if (!r?.ok) soltarImpresion(pedido.id) })
+          .catch(() => soltarImpresion(pedido.id))
+      }
     }
     if (pedido.modo_entrega === 'delivery') {
       ;(async () => {
