@@ -49,6 +49,7 @@ import HistorialMovil from './HistorialMovil'
 import DisponibilidadProductos from './DisponibilidadProductos'
 import ConfigImpresora from './ConfigImpresora'
 import CrearEnvio from './CrearEnvio'
+import SociosYRepartidores from './SociosYRepartidores'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
@@ -84,13 +85,14 @@ const iconoDe = (nombre) => (ICONOS.find(([re]) => re.test(nombre || ''))?.[1]) 
 
 const PANTALLAS = {
   pedidos: 'Pedidos',
+  'socios-riders': 'Repartidores',
   'crear-envio': 'Pedido telefónico',
   historial: 'Historial',
   disponibilidad: 'Carta',
   impresora: 'Impresora y cuenta',
 }
 
-export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlternarPantalla }) {
+export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAbajo = 0, onAlternarPantalla }) {
   const { restaurante, tpvConfig, stockActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
 
@@ -537,8 +539,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
       </div>
 
       {pestana === 'pedidos' ? (
-        <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil}
+        <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil} huecoAbajo={huecoAbajo}
+          repartoPropio={restaurante?.delivery_sin_socio === true}
           onNuevo={(tipo) => setNuevoPedido(tipo)}
+          onAbrirRepartidores={() => setPantalla('socios-riders')}
           onAbrirPedidos={() => setPantalla('pedidos')} />
       ) : (
       // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
@@ -554,15 +558,24 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
       // seccion de una pagina que scrollea: forzar ahi el alto completo saca el
       // contenido por abajo.
       // (Comentario JS y no {/* */}: en la rama de un ternario solo cabe UNA expresion.)
+      //
+      // 🔴 `nowrap` SIEMPRE. Con `wrap`, el ticket se caia DEBAJO de toda la rejilla
+      // de productos —o sea, fuera de la pantalla— en cuanto la suma de las dos bases
+      // (420 + 14 + 360 = 794) no cabia en el contenedor. Medido el 1 sep 2026: pasaba
+      // en iPad vertical (contenedor 708) Y en una ventana de 1024 con la barra lateral
+      // del panel (contenedor 683), que no es ningun caso raro. Las bases de abajo
+      // estan puestas para que quepan hasta en el contenedor mas estrecho que existe
+      // sin ser telefono (~689 px); ahi encoge, que es recuperable, y envolver no lo
+      // era. En telefono el ticket es una hoja `fixed`: no esta en esta fila.
       <div style={{
-        display: 'flex', gap: esMonitor ? 16 : 14, alignItems: 'flex-start', flexWrap: 'wrap',
-        ...(altoCompleto ? { flex: 1, minHeight: 0, flexWrap: 'nowrap' } : null),
+        display: 'flex', gap: esMonitor ? 16 : 14, alignItems: 'flex-start', flexWrap: 'nowrap',
+        ...(altoCompleto ? { flex: 1, minHeight: 0 } : null),
       }}>
       {/* ── Izquierda: la carta ─────────────────────────────────────────── */}
       {/* En telefono la carta es TODA la pantalla, y se le deja hueco abajo para que
           la barra de la venta no tape la ultima fila de productos. */}
       <div style={{
-        flex: '1 1 420px', minWidth: 0, paddingBottom: esMovil ? 84 : 0,
+        flex: '1 1 420px', minWidth: 0, paddingBottom: esMovil ? 84 + huecoAbajo : 0,
         ...(altoCompleto ? { height: '100%', overflowY: 'auto', paddingRight: 4 } : null),
       }}>
         {impresora.configurada && impresora.viva === false && (
@@ -609,6 +622,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                 bajos, no tarjetas altas — así caben más y sobra sitio para los
                 productos, que es lo que de verdad se toca. Se centra cuando cabe y
                 se desliza cuando no. */}
+            <div style={{ ...etiquetaBloque, marginBottom: 7 }}>Categorías</div>
             <div style={{
               position: 'relative', marginBottom: esMonitor ? 12 : 14,
               display: 'flex', justifyContent: esMonitor ? 'flex-start' : 'center',
@@ -673,11 +687,26 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
               )}
             </div>
 
-            {busqueda && (
-              <div style={{ fontSize: 13, color: T.muted, marginBottom: 10, fontWeight: 500 }}>
-                Resultados de &quot;{busqueda}&quot;
-              </div>
-            )}
+            {/* Una etiqueta por bloque y una raya entre los dos. Sin esto, la tira de
+                categorias y la rejilla de productos son dos filas de botones oscuros
+                pegadas y no se ve que una filtra a la otra. Lo pidio Marlon el 1 sep
+                mirando la pantalla: "esta todo pegado". */}
+            <div style={{
+              display: 'flex', alignItems: 'baseline', gap: 8,
+              borderTop: `1px solid ${T.border}`,
+              paddingTop: esMovil ? 9 : 11, marginBottom: esMovil ? 8 : 10,
+            }}>
+              <span style={etiquetaBloque}>{busqueda ? 'Resultados' : 'Productos'}</span>
+              <span style={{
+                fontSize: 12, color: T.muted, minWidth: 0,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {busqueda ? `"${busqueda}"` : (categorias.find((c) => c.id === catSel)?.nombre || '')}
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted, flexShrink: 0 }}>
+                {visibles.length}
+              </span>
+            </div>
             <div style={{
               display: 'grid', gap: esMovil ? 8 : 10,
               // 3 columnas en telefono. Con 150 px salen 2 y se ve media carta por
@@ -696,7 +725,6 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
                     tieneExtras={tieneExtras}
                     yaLleva={yaLleva}
                     esMovil={esMovil}
-                    esMonitor={esMonitor}
                     tam={tam}
                     precioBarra={precioBarra}
                     onClick={() => tocarProducto(p)}
@@ -727,7 +755,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
         // muchos productos, y a mas de 400 px se queda vacia mirando al techo.
         flex: '0 0 380px', width: 380, height: '100%',
         display: 'flex', flexDirection: 'column', minHeight: 0,
-      } : { flex: '0 1 360px', minWidth: 300, position: 'sticky', top: 12 }}>
+      } : {
+        // Encoge hasta 300 y no mas. Con `nowrap`, cuando las dos columnas no caben
+        // encogen a la vez en vez de envolver: en el contenedor mas estrecho medido
+        // (683 px) quedan carta 360 / ticket 309, o sea 2 columnas de producto y el
+        // ticket entero a la vista.
+        flex: '0 1 360px', minWidth: 300, position: 'sticky', top: 12,
+      }}>
         {esMovil && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
@@ -918,12 +952,20 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           de la venta mientras se marca: cuanto llevas y como llegar al cobro. */}
       {esMovil && pestana === 'mostrador' && !hojaVenta && !pantalla && (
         <div style={{
-          position: 'fixed', left: 10, right: 10, bottom: 10, zIndex: 950,
+          // 🔴 `huecoAbajo` es el alto de la nav inferior del panel, que tambien va
+          // `fixed` en `bottom: 0`. Sin esto la barra se pintaba JUSTO ENCIMA de
+          // TPV / Historial / Carta / Promos / Ajustes. En la app (`modoApp`) no hay
+          // nav: llega 0 y la barra se queda abajo del todo, como siempre.
+          position: 'fixed', left: 10, right: 10, bottom: 10 + huecoAbajo, zIndex: 950,
         }}>
           <button onClick={() => setHojaVenta(true)} disabled={!carrito.length} style={{
             ...btnAccion, width: '100%', height: 54, borderRadius: 14,
             justifyContent: 'space-between', padding: '0 14px', fontSize: 15,
-            opacity: carrito.length ? 1 : 0.45,
+            // Apagada NO con `opacity`: translucida se leia a traves lo que hubiera
+            // debajo. Se apaga con colores propios, opacos.
+            ...(carrito.length ? null : {
+              background: T.surface2, color: T.muted, border: `1px solid ${T.border}`,
+            }),
             cursor: carrito.length ? 'pointer' : 'not-allowed',
             boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
           }}>
@@ -977,6 +1019,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
             {pantalla === 'pedidos' && <PedidosEnVivo />}
+            {pantalla === 'socios-riders' && <SociosYRepartidores />}
             {pantalla === 'crear-envio' && <CrearEnvio />}
             {pantalla === 'historial' && <HistorialMovil />}
             {pantalla === 'disponibilidad' && <DisponibilidadProductos />}
@@ -999,6 +1042,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, onAlter
               <OpcionMenu icono={<ClipboardList size={19} color={T.accent} />} texto="Pedidos"
                 nota="Aceptar, marcar listos y entregados"
                 onClick={() => { setMenu(false); setPantalla('pedidos') }} />
+              <OpcionMenu icono={<Bike size={19} color={T.accent} />} texto="Repartidores"
+                nota="Quién reparte contigo y quién está en línea"
+                onClick={() => { setMenu(false); setPantalla('socios-riders') }} />
               <OpcionMenu icono={<PhoneCall size={19} color={T.accent} />} texto="Pedido telefónico"
                 nota="Crear un reparto o una recogida por teléfono"
                 onClick={() => { setMenu(false); setPantalla('crear-envio') }} />
@@ -1426,6 +1472,13 @@ function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
   )
 }
 
+// Etiqueta de bloque del mostrador ("Categorías", "Productos"). Pequeña y apagada:
+// tiene que separar sin robarle sitio a la carta, que es lo que se toca.
+const etiquetaBloque = {
+  fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase',
+  color: T.muted, flexShrink: 0,
+}
+
 // La tarjeta de un producto en el mostrador.
 //
 // CON FOTO: la foto ocupa la tarjeta entera y el nombre va ENCIMA, abajo, sobre un
@@ -1436,11 +1489,14 @@ function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
 // SIN FOTO: hoy 122 de 160 productos no tienen. Una tarjeta alta y negra con el nombre
 // perdido en medio se lee peor que una fila compacta, asi que esas mantienen el
 // formato de texto de siempre. Dos formas para dos casos, a proposito.
-function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, esMonitor, tam, precioBarra, onClick }) {
-  // 🔴 SOLO en monitor. En telefono y tablet se queda la tarjeta de siempre: ahi la
-  // pantalla es pequena y una tarjeta de 126 px de alto en una rejilla de 3 columnas
-  // deja ver media carta. El formato con foto se penso para un monitor.
-  const conFoto = !!p.imagen_url && esMonitor
+function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, tam, precioBarra, onClick }) {
+  // 🔴 En TELEFONO no: ahi la rejilla es de 2-3 columnas y una tarjeta de 126 px de
+  // alto deja ver media carta, asi que se queda la fila compacta de texto.
+  // En TABLET SI. Es el aparato con el que se cobra en la barra, y era justo donde
+  // no se veia ni una foto: esto pedia `esMonitor` (>=1280 px) y una tablet de 800
+  // o de 1024 se quedaba fuera. Hay fotos de sobra para ello — en BD (1 sep 2026):
+  // Duende Burger 77 de 77 productos, Burger House 38 de 38 a la venta.
+  const conFoto = !!p.imagen_url && !esMovil
   const precio = (
     <>
       {tams.length ? 'desde ' : ''}

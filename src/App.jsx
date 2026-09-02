@@ -55,6 +55,12 @@ const TPV_EN_ESTA_PLATAFORMA = isNative || esEscritorio || import.meta.env.DEV
 const FORZAR_TPV_APP = import.meta.env.DEV &&
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('tpvapp')
 
+// Alto de la barra de navegacion inferior de la shell movil. MEDIDO en el navegador
+// (8 + 44 + 12 = 64 px), no inventado. Se declara aqui y se le pone al <div> de la
+// nav como `height`, asi que las dos no pueden desviarse. El TPV lo recibe por prop
+// para levantar su barra de venta y no taparla.
+const ALTO_NAV_MOVIL = 64
+
 const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes, impresora: Printer }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer, tpv: Calculator }
 
@@ -634,7 +640,8 @@ function AppInner({ seccion, setSeccion, nav }) {
       {seccion === 'finanzas-riders' && <FinanzasRiders />}
       {seccion === 'liquidacion-pido' && <LiquidacionPido />}
       {seccion === 'creadores' && !isNative && <Creadores />}
-      {seccion === 'tpv' && <Tpv pantallaCompleta={tpvExpandido} onAlternarPantalla={alternarTpv} />}
+      {seccion === 'tpv' && <Tpv pantallaCompleta={tpvExpandido} onAlternarPantalla={alternarTpv}
+        huecoAbajo={isDesktop ? 0 : ALTO_NAV_MOVIL} />}
       {/* El almacen es de ESCRITORIO: dar de alta articulos y escribir escandallos
           con el dedo en una tablet es inviable, y meterlo en la APK obligaria a un
           AAB por cada retoque. En la tablet solo va lo del servicio, dentro del TPV. */}
@@ -846,7 +853,7 @@ function AppInner({ seccion, setSeccion, nav }) {
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid var(--c-border)', display: 'flex', justifyContent: 'space-around', padding: '8px 0 12px', zIndex: 50 }}>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', height: ALTO_NAV_MOVIL, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid var(--c-border)', display: 'flex', justifyContent: 'space-around', padding: '8px 0 12px', zIndex: 50 }}>
         {nav.map(n => (
           <button key={n.id} onClick={() => setSeccion(n.id)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
