@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { Plus, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
-import { UNIDADES, FAMILIAS, cantidad, fijarCoste } from '../../lib/stock'
+import {
+  UNIDADES, FAMILIAS, cantidad, eurCoste, fijarCoste,
+  cargarElaboracion, guardarElaboracion,
+} from '../../lib/stock'
 
 // Alta y edición de un artículo de almacén.
 //
@@ -10,7 +14,7 @@ import { UNIDADES, FAMILIAS, cantidad, fijarCoste } from '../../lib/stock'
 // de datos (PD233) y se mueven apuntando una compra, una merma o un recuento — si se
 // pudieran teclear, el libro de movimientos dejaría de cuadrar con la realidad y todo
 // el módulo perdería el sentido. Por eso ni siquiera se ofrecen: se enseñan y punto.
-export default function ArticuloModal({ estId, articulo, familiasUsadas = [], onCerrar, onGuardado }) {
+export default function ArticuloModal({ estId, articulo, familiasUsadas = [], articulos = [], onCerrar, onGuardado }) {
   const nuevo = !articulo
   const [v, setV] = useState({
     nombre: articulo?.nombre || '',
@@ -19,7 +23,23 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
     minimo: articulo?.minimo ?? 0,
     controla_agotado: articulo?.controla_agotado ?? true,
     activo: articulo?.activo ?? true,
+    es_elaborado: articulo?.es_elaborado ?? false,
   })
+  // La receta de una preparación: qué lleva CADA unidad de almacén. Vive aquí y no
+  // en un modal aparte porque ser preparación ES parte de qué es el artículo.
+  const [receta, setReceta] = useState([])
+  useEffect(() => {
+    if (nuevo || !articulo?.es_elaborado) return
+    let vivo = true
+    cargarElaboracion(articulo.id)
+      .then(ls => { if (vivo) setReceta(ls.map(l => ({ articulo_id: l.articulo_id, cantidad: String(l.cantidad).replace('.', ',') }))) })
+      .catch(e => toast('No se ha podido cargar la receta: ' + e.message, 'error'))
+    return () => { vivo = false }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ingredientes posibles: artículos de compra activos. Nunca otra preparación
+  // (PD255, sin ciclos) ni el propio artículo.
+  const ingredientes = articulos.filter(x => x.activo && !x.es_elaborado && x.id !== articulo?.id)
   // El coste va aparte del resto del formulario: no se guarda con un UPDATE (la
   // columna está congelada por PD233), se apunta en el libro con su propia RPC.
   const [coste, setCoste] = useState(
@@ -43,10 +63,19 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
       minimo: Number(String(v.minimo).replace(',', '.')) || 0,
       controla_agotado: !!v.controla_agotado,
       activo: !!v.activo,
+      es_elaborado: !!v.es_elaborado,
     }
-    const { error } = nuevo
-      ? await supabase.from('stock_articulos').insert({ ...payload, establecimiento_id: estId })
-      : await supabase.from('stock_articulos').update(payload).eq('id', articulo.id)
+    // En el alta se pide el id de vuelta: la receta se guarda contra él justo después.
+    let id = articulo?.id
+    let error
+    if (nuevo) {
+      const res = await supabase.from('stock_articulos')
+        .insert({ ...payload, establecimiento_id: estId }).select('id').single()
+      error = res.error
+      id = res.data?.id
+    } else {
+      ({ error } = await supabase.from('stock_articulos').update(payload).eq('id', articulo.id))
+    }
     setGuardando(false)
     // supabase-js NO lanza: devuelve `{ error }`.
     if (error) {
@@ -55,6 +84,15 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
           ? 'Ya tienes un artículo con ese nombre.'
           : 'No se ha podido guardar: ' + error.message,
         'error')
+    }
+    // La receta va DESPUÉS del artículo, como el coste: un fallo aquí no tira el resto.
+    // Las líneas a medias (sin ingrediente o sin cantidad) se ignoran sin ruido.
+    if (v.es_elaborado) {
+      const lineas = receta
+        .map(l => ({ articulo_id: l.articulo_id, cantidad: Number(String(l.cantidad).replace(',', '.')) }))
+        .filter(l => l.articulo_id && l.cantidad > 0)
+      try { await guardarElaboracion(id, lineas) }
+      catch (e) { toast('El artículo se guardó, pero la receta no: ' + e.message, 'error') }
     }
     // Si además tocó el coste, se apunta aparte. Va DESPUÉS de guardar el resto para
     // que un fallo aquí no tire por tierra el cambio de nombre o de unidad.
@@ -71,15 +109,18 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
 
   async function borrar() {
     if (!(await confirmar(
-      `¿Borrar "${articulo.nombre}"?\n\nSe borrará también su histórico de movimientos y ` +
-      `dejará de descontarse en las recetas que lo usen.\n\n` +
-      `Si solo quieres dejar de usarlo, es mejor desmarcarlo como activo: así conservas el histórico.`
+      `¿Borrar "${articulo.nombre}"?\n\nSolo se puede borrar si no tiene historial: un ` +
+      `artículo con movimientos, facturas o recetas no se borra, se archiva (así el libro ` +
+      `sigue cuadrando).\n\nPara dejar de usarlo, desmárcalo como activo.`
     ))) return
     const { error } = await supabase.from('stock_articulos').delete().eq('id', articulo.id)
     if (error) {
+      // 23503 = está en una factura o receta (FK). PD248 = tiene movimientos y el libro
+      // es append-only: el CASCADE del borrado los arrastraría y el guard lo corta.
+      // En ambos casos la salida es la misma: archivar.
       return toast(
-        error.code === '23503'
-          ? 'No se puede borrar: está en una factura de compra. Desmárcalo como activo.'
+        error.code === '23503' || error.code === 'PD248'
+          ? 'No se puede borrar: tiene historial (movimientos, facturas o recetas). Desmárcalo como activo y conservas el libro.'
           : 'No se ha podido borrar: ' + error.message,
         'error')
     }
@@ -145,6 +186,74 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], on
             : 'Aunque se acabe, no apagará ningún plato. Ponlo así para la sal, el aceite o las especias: no quieres que un bote vacío te tire media carta.'}
           valor={!!v.controla_agotado}
           onChange={x => cambiar('controla_agotado', x)} />
+
+        <Interruptor
+          titulo="Es una preparación"
+          texto={v.es_elaborado
+            ? 'La haces tú, no la compras: una mezcla, una salsa, una masa. Abajo va su receta, y cada tanda se apunta con el botón Preparar de la lista.'
+            : 'Enciéndelo si esto no se compra, se hace: una mezcla de pollo, una salsa de la casa, una masa.'}
+          valor={!!v.es_elaborado}
+          onChange={x => cambiar('es_elaborado', x)} />
+
+        {v.es_elaborado && (
+          <div style={{
+            marginTop: 16, padding: '12px 14px', borderRadius: radius.sm,
+            background: colors.surface2, border: `1px solid ${colors.border}`,
+          }}>
+            <div style={{ fontSize: type.sm, fontWeight: 600, color: colors.text }}>
+              Receta: qué lleva {v.unidad === 'ud' ? 'cada unidad' : `1 ${v.unidad}`} de esta preparación
+            </div>
+            <div style={{ ...ds.muted, marginTop: 2, marginBottom: 10, lineHeight: 1.5 }}>
+              Truco: haz una tanda apuntando lo que le echas y pesa lo que sale, y divide.
+              Si con 2 kg de pollo y 0,5 l de mayonesa te salen 2,4 kg de mezcla, cada kg
+              lleva 0,83 de pollo y 0,21 de mayonesa.
+            </div>
+
+            {receta.map((l, i) => {
+              const ing = ingredientes.find(x => x.id === l.articulo_id)
+              return (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                  {/* flex:1 SIEMPRE con minWidth:0: un select toma como mínimo el ancho
+                      de su opción más larga y revienta el modal (lección del EscandalloEditor). */}
+                  <select value={l.articulo_id} style={{ ...ds.select, flex: 1, minWidth: 0 }}
+                    onChange={e => setReceta(rs => rs.map((x, j) => j === i ? { ...x, articulo_id: e.target.value } : x))}>
+                    <option value="">— Elige de tus artículos —</option>
+                    {ingredientes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+                  </select>
+                  <input inputMode="decimal" value={l.cantidad} placeholder="0,00"
+                    onChange={e => setReceta(rs => rs.map((x, j) => j === i ? { ...x, cantidad: e.target.value.replace(/[^\d.,]/g, '') } : x))}
+                    style={{ ...ds.formInput, width: 78, textAlign: 'right', flexShrink: 0 }} />
+                  <span style={{ ...ds.muted, width: 22, flexShrink: 0 }}>{ing?.unidad || ''}</span>
+                  <button onClick={() => setReceta(rs => rs.filter((_, j) => j !== i))}
+                    title="Quitar ingrediente"
+                    style={{ ...ds.miniBtn, flexShrink: 0, padding: '4px 7px' }}>
+                    <X size={12} />
+                  </button>
+                </div>
+              )
+            })}
+
+            <button onClick={() => setReceta(rs => [...rs, { articulo_id: '', cantidad: '' }])}
+              style={{ ...ds.miniBtn, marginTop: 4 }}>
+              <Plus size={12} /> Añadir ingrediente
+            </button>
+
+            {(() => {
+              const coste = receta.reduce((s, l) => {
+                const ing = ingredientes.find(x => x.id === l.articulo_id)
+                const c = Number(String(l.cantidad).replace(',', '.'))
+                return s + (ing && c > 0 ? c * Number(ing.coste_medio) : 0)
+              }, 0)
+              return coste > 0 ? (
+                <div style={{ ...ds.muted, marginTop: 10 }}>
+                  Hacer {v.unidad === 'ud' ? '1 unidad' : `1 ${v.unidad}`} te cuesta hoy{' '}
+                  <strong style={{ color: colors.text }}>{eurCoste(coste)}</strong>, a los
+                  precios actuales de tus artículos.
+                </div>
+              ) : null
+            })()}
+          </div>
+        )}
 
         {!nuevo && (
           <Interruptor

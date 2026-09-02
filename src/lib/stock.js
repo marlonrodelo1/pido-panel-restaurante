@@ -52,6 +52,7 @@ export const TIPOS_MOV = {
   merma:      { label: 'Merma',      tono: 'danger' },
   recuento:   { label: 'Recuento',   tono: 'info' },
   traspaso:   { label: 'Traspaso',   tono: 'info' },
+  elaboracion: { label: 'Preparación', tono: 'info' },
   devolucion: { label: 'Devolución', tono: 'warning' },
   ajuste_coste: { label: 'Coste', tono: 'info' },
 }
@@ -191,6 +192,30 @@ export const recuento = (articuloId, contado, coste) =>
 export const recuentoLote = (lineas) =>
   rpc('stock_recuento_lote', { p_lineas: lineas })
 
+/* ── Preparaciones ────────────────────────────────────────────────────────── */
+// Un artículo elaborado (la mezcla de pollo) se HACE, no se compra. Su receta dice
+// qué lleva CADA unidad de almacén (1 kg de mezcla = 0,8 kg de pollo + 0,2 l de
+// mayonesa) y se guarda ENTERA por RPC — misma lección que la escalera de Creadores:
+// nunca fila a fila desde el frontend. Apuntar una tanda (`preparar`) descuenta los
+// ingredientes y mete el elaborado con su coste real. Si un día se hace la tanda y
+// no se apunta, el elaborado queda en negativo: la venta nunca se frena, el
+// inventario avisa.
+
+export async function cargarElaboracion(elaboradoId) {
+  const { data, error } = await supabase
+    .from('stock_elaboracion_lineas')
+    .select('articulo_id, cantidad')
+    .eq('elaborado_id', elaboradoId)
+  if (error) throw new Error(traducir(error))
+  return data || []
+}
+
+export const guardarElaboracion = (elaboradoId, lineas) =>
+  rpc('stock_guardar_elaboracion', { p_elaborado_id: elaboradoId, p_lineas: lineas })
+
+export const preparar = (articuloId, cant, motivo) =>
+  rpc('stock_preparar', { p_articulo_id: articuloId, p_cantidad: cant, p_motivo: motivo || null })
+
 // Corregir a mano lo que cuesta un artículo. Normalmente el coste sale de las facturas
 // de compra; esto es para el género que ya estaba en la cámara antes de arrancar, un
 // proveedor sin factura, o un precio mal tecleado. Queda apuntado en el libro como
@@ -236,6 +261,9 @@ const MENSAJES = {
   PD249: 'La fecha de arranque la fija el recuento inicial.',
   PD250: 'La fecha del gasto no puede estar en el futuro.',
   PD251: 'Revisa el periodo: "desde" no puede ir después de "hasta".',
+  PD252: 'Ese artículo no es una preparación.',
+  PD253: 'Esta preparación no tiene receta: añádesela antes de apuntar una tanda.',
+  PD255: 'Una preparación no puede ser ingrediente de otra preparación.',
 }
 
 function traducir(error) {

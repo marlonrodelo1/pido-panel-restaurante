@@ -1,8 +1,11 @@
-import { useState } from 'react'
-import { Search, Plus, Trash2, ClipboardCheck, Pencil } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, Plus, Trash2, ClipboardCheck, Pencil, ChefHat } from 'lucide-react'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { cantidad, eur, eurCoste, apuntarMerma, recuento, MOTIVOS_MERMA } from '../../lib/stock'
+import {
+  cantidad, eur, eurCoste, apuntarMerma, recuento, MOTIVOS_MERMA,
+  cargarElaboracion, preparar,
+} from '../../lib/stock'
 import ArticuloModal from './ArticuloModal'
 
 export default function ArticulosTab({ estId, articulos, onCambio }) {
@@ -10,6 +13,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
   const [familia, setFamilia] = useState('')
   const [editando, setEditando] = useState(null)   // artículo o {} para nuevo
   const [accion, setAccion] = useState(null)       // { articulo, tipo: 'merma' | 'recuento' }
+  const [preparando, setPreparando] = useState(null) // artículo elaborado
 
   const visibles = articulos.filter(a => {
     if (familia && (a.familia || 'Otros') !== familia) return false
@@ -41,12 +45,12 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
       </div>
 
       <div style={{ ...ds.table, ...tablaScroll }}>
-        <div style={{ ...ds.tableHeader, ...filaMin(880) }}>
+        <div style={{ ...ds.tableHeader, ...filaMin(990) }}>
           <div style={{ flex: 1, minWidth: 0 }}>Lo que compras</div>
           <div style={col(96)}>Quedan</div>
           <div style={col(96)}>Te cuesta</div>
           <div style={col(96)}>Valor</div>
-          <div style={col(316, 'right')}></div>
+          <div style={col(426, 'right')}></div>
         </div>
 
         {!visibles.length && (
@@ -74,7 +78,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           const bajo = !negativo && Number(a.minimo) > 0 && ex <= Number(a.minimo)
           return (
             <div key={a.id} style={{
-              ...ds.tableRow, ...filaMin(880),
+              ...ds.tableRow, ...filaMin(990),
               background: negativo ? colors.dangerSoft : bajo ? colors.warningSoft : undefined,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -89,9 +93,9 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
                 </button>
                 {/* Solo se dice lo que se sale de lo normal. Repetir "Sin familia" en
                     cada fila era ruido y ademas hacia la fila el doble de alta. */}
-                {(a.familia || !a.activo || !a.controla_agotado) && (
+                {(a.familia || a.es_elaborado || !a.activo || !a.controla_agotado) && (
                   <div style={{ ...ds.muted, marginTop: 1 }}>
-                    {[a.familia, !a.activo && 'archivado',
+                    {[a.familia, a.es_elaborado && 'preparación', !a.activo && 'archivado',
                       !a.controla_agotado && 'no agota la carta']
                       .filter(Boolean).join(' · ')}
                   </div>
@@ -109,7 +113,14 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
               <div style={{ ...col(96), fontWeight: 600 }}>
                 {eur(ex * Number(a.coste_medio))}
               </div>
-              <div style={{ ...col(316), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <div style={{ ...col(426), display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                {a.es_elaborado && (
+                  <button onClick={() => setPreparando(a)}
+                    style={{ ...ds.miniBtn, flexShrink: 0, borderColor: colors.primaryBorder, color: colors.primary }}
+                    title="Apuntar una tanda: descuenta los ingredientes y suma la preparación">
+                    <ChefHat size={12} /> Preparar
+                  </button>
+                )}
                 <button onClick={() => setAccion({ articulo: a, tipo: 'merma' })}
                   style={{ ...ds.miniBtn, flexShrink: 0 }} title="Apuntar una merma">
                   <Trash2 size={12} /> Merma
@@ -133,6 +144,7 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
         <ArticuloModal
           estId={estId}
           familiasUsadas={familiasUsadas}
+          articulos={articulos}
           articulo={editando.id ? editando : null}
           onCerrar={() => setEditando(null)}
           onGuardado={() => { setEditando(null); onCambio() }}
@@ -144,6 +156,15 @@ export default function ArticulosTab({ estId, articulos, onCambio }) {
           {...accion}
           onCerrar={() => setAccion(null)}
           onHecho={() => { setAccion(null); onCambio() }}
+        />
+      )}
+
+      {preparando && (
+        <PrepararModal
+          articulo={preparando}
+          articulos={articulos}
+          onCerrar={() => setPreparando(null)}
+          onHecho={() => { setPreparando(null); onCambio() }}
         />
       )}
     </div>
@@ -238,6 +259,117 @@ function AccionModal({ articulo, tipo, onCerrar, onHecho }) {
           }}>
             {guardando ? 'Guardando…' : 'Guardar'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Apuntar una tanda de una preparación: "he hecho 2,4 kg de mezcla" → el almacén
+// descuenta los ingredientes según la receta y suma la preparación con su coste real.
+// Es LA acción diaria de las preparaciones; si un día se cocina y no se apunta, la
+// preparación queda en negativo — la venta nunca se frena, el inventario avisa.
+function PrepararModal({ articulo, articulos, onCerrar, onHecho }) {
+  const [valor, setValor] = useState('')
+  const [receta, setReceta] = useState(null)   // null = cargando
+  const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => {
+    let vivo = true
+    cargarElaboracion(articulo.id)
+      .then(ls => { if (vivo) setReceta(ls) })
+      .catch(e => { if (vivo) { toast(e.message, 'error'); setReceta([]) } })
+    return () => { vivo = false }
+  }, [articulo.id])
+
+  const num = Number(String(valor).replace(',', '.'))
+  const valido = valor !== '' && !Number.isNaN(num) && num > 0 && receta?.length > 0
+
+  // La vista previa usa los mismos números que usará la RPC: receta × cantidad,
+  // al coste medio actual de cada ingrediente.
+  const lineas = (receta || []).map(l => {
+    const ing = articulos.find(x => x.id === l.articulo_id)
+    const consumo = valido ? Number(l.cantidad) * num : null
+    return { ing, consumo, coste: consumo != null && ing ? consumo * Number(ing.coste_medio) : null }
+  })
+  const costeTotal = lineas.reduce((s, l) => s + (l.coste || 0), 0)
+
+  async function guardar() {
+    setGuardando(true)
+    try {
+      const m = await preparar(articulo.id, num)
+      toast(`Tanda apuntada: +${cantidad(num, articulo.unidad)} a ${eurCoste(m.coste_unitario)}/${articulo.unidad}`, 'success')
+      onHecho()
+    } catch (e) {
+      toast(e.message, 'error')
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div style={ds.modal} onClick={onCerrar}>
+      <div style={ds.modalContent} onClick={e => e.stopPropagation()}>
+        <h2 style={ds.h2}>Apuntar una tanda</h2>
+        <div style={{ ...ds.dim, marginBottom: 16 }}>{articulo.nombre}</div>
+
+        {receta === null ? (
+          <div style={{ ...ds.muted, padding: 20, textAlign: 'center' }}>Cargando la receta…</div>
+        ) : receta.length === 0 ? (
+          <div style={{
+            padding: '12px 14px', borderRadius: radius.sm, fontSize: type.sm,
+            border: `1px solid ${colors.warning}`, background: colors.warningSoft,
+            color: colors.text, lineHeight: 1.5,
+          }}>
+            Esta preparación todavía no tiene receta. Dale a <strong>Editar</strong> en la
+            lista y añádele los ingredientes; sin receta no hay nada que descontar.
+          </div>
+        ) : (
+          <>
+            <label style={ds.label}>¿Cuánta ha salido? (en {articulo.unidad})</label>
+            <input autoFocus inputMode="decimal" value={valor}
+              onChange={e => setValor(e.target.value.replace(/[^\d.,]/g, ''))}
+              placeholder="0"
+              style={{ ...ds.formInput, height: 46, fontSize: 20, fontWeight: 700, textAlign: 'right' }} />
+            <div style={{ ...ds.muted, marginTop: 6 }}>
+              Pésala hecha: lo que importa es lo que entra al táper, no lo que echaste cruda.
+            </div>
+
+            <div style={{
+              marginTop: 14, padding: '12px 14px', borderRadius: radius.sm,
+              background: colors.surface2, border: `1px solid ${colors.border}`,
+            }}>
+              <div style={{ ...ds.label, marginBottom: 6 }}>Va a descontar</div>
+              {lineas.map((l, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '3px 0', fontSize: type.sm }}>
+                  <span style={{ color: colors.textDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {l.ing?.nombre || '(artículo borrado)'}
+                  </span>
+                  <span style={{ fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    {l.consumo != null ? cantidad(l.consumo, l.ing?.unidad) : '—'}
+                  </span>
+                </div>
+              ))}
+              {valido && costeTotal > 0 && (
+                <div style={{ ...ds.muted, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${colors.border}` }}>
+                  La tanda cuesta <strong style={{ color: colors.text }}>{eur(costeTotal)}</strong>
+                  {' '}→ <strong style={{ color: colors.text }}>{eurCoste(costeTotal / num)}</strong>/{articulo.unidad}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+          <button onClick={onCerrar} style={ds.secondaryBtn}>Cancelar</button>
+          {receta?.length > 0 && (
+            <button onClick={guardar} disabled={!valido || guardando} style={{
+              ...ds.primaryBtn,
+              opacity: (!valido || guardando) ? 0.5 : 1,
+              cursor: (!valido || guardando) ? 'not-allowed' : 'pointer',
+            }}>
+              {guardando ? 'Apuntando…' : 'Preparar'}
+            </button>
+          )}
         </div>
       </div>
     </div>
