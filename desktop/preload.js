@@ -1,5 +1,5 @@
-// El puente entre la pagina y el sistema. Expone EXACTAMENTE tres cosas, las tres de
-// impresion, y ninguna mas: la pagina no puede leer ficheros, ni lanzar procesos, ni
+// El puente entre la pagina y el sistema. Expone SEIS cosas, las seis de impresion,
+// y ninguna mas: la pagina no puede leer ficheros, ni lanzar procesos, ni
 // tocar nada de Node. Si algun dia hace falta algo mas, se anade aqui a mano y se
 // piensa dos veces.
 //
@@ -16,4 +16,11 @@ contextBridge.exposeInMainWorld('pidooDesktop', {
   print: ({ ip, port, data }) => ipcRenderer.invoke('pidoo:print', { ip, port, data }),
   checkConnection: ({ ip, port }) => ipcRenderer.invoke('pidoo:check', { ip, port }),
   scanNetwork: ({ port } = {}) => ipcRenderer.invoke('pidoo:scan', { port }),
+
+  // Impresora enchufada por USB a ESTE ordenador. No hay equivalente en Android:
+  // alli la impresora va por red. `printService.js` pregunta por `printUsb` antes
+  // de usarlo, asi que en la tablet simplemente no existe.
+  printUsb: ({ printerName, data }) => ipcRenderer.invoke('pidoo:print-usb', { printerName, data }),
+  listPrinters: () => ipcRenderer.invoke('pidoo:list-printers'),
+  checkUsb: ({ printerName }) => ipcRenderer.invoke('pidoo:check-usb', { printerName }),
 })

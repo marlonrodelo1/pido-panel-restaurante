@@ -36,12 +36,54 @@ const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 // localStorage keys
 const PRINTER_CONFIG_KEY = 'pido_printer_config'
 
+// `modo`: 'red' (socket TCP al 9100) o 'usb' (impresora enchufada a este ordenador).
+//
+// Las configuraciones VIEJAS no tienen `modo`, y hay que seguir tratándolas como de
+// red: si esto devolviera 'usb' por defecto, todos los restaurantes que hoy imprimen
+// por IP dejarían de imprimir de golpe al actualizar.
 export function getPrinterConfig() {
   try {
     const saved = localStorage.getItem(PRINTER_CONFIG_KEY)
-    if (saved) return JSON.parse(saved)
+    if (saved) {
+      const cfg = JSON.parse(saved)
+      return { modo: 'red', impresoraUsb: '', ...cfg }
+    }
   } catch {}
-  return { ip: '', port: 9100, enabled: false, tickets: 2 }
+  return { ip: '', port: 9100, enabled: false, tickets: 2, modo: 'red', impresoraUsb: '' }
+}
+
+// ¿Hay algo configurado por donde pueda salir un ticket? Cada modo mira lo suyo:
+// preguntar por la IP en modo USB diría "sin configurar" con la impresora enchufada.
+export function impresoraConfigurada(config = getPrinterConfig()) {
+  if (!config.enabled) return false
+  return config.modo === 'usb' ? !!config.impresoraUsb : !!config.ip
+}
+
+// Las impresoras que Windows tiene instaladas en ESTE ordenador.
+export async function listarImpresorasUsb() {
+  if (!escritorio?.listPrinters) {
+    return { impresoras: [], error: 'Solo en la app de Windows' }
+  }
+  try {
+    return await escritorio.listPrinters()
+  } catch (err) {
+    return { impresoras: [], error: err.message || 'No se pudieron leer las impresoras' }
+  }
+}
+
+// El equivalente al "¿responde la IP?" pero para USB: que Windows siga viendo esa
+// impresora y no la dé por desconectada. Sirve para avisar ANTES de cobrar.
+export async function comprobarImpresora(config = getPrinterConfig()) {
+  if (!puente) return { ok: false, error: 'Solo disponible en la app (Android o Windows)' }
+  if (config.modo === 'usb') {
+    if (!escritorio?.checkUsb) return { ok: false, error: 'Solo en la app de Windows' }
+    try {
+      return await escritorio.checkUsb({ printerName: config.impresoraUsb })
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  }
+  return checkPrinterConnection(config.ip, config.port)
 }
 
 export function savePrinterConfig(config) {
@@ -76,9 +118,25 @@ export async function sendRawToIp(ip, port, data) {
  */
 async function sendToThermalPrinter(data) {
   const config = getPrinterConfig()
-  if (!config.ip || !config.enabled) {
-    return false
+  if (!impresoraConfigurada(config)) return false
+
+  // USB: la impresora está enchufada a este mismo ordenador. Es el caso del
+  // mostrador de Duende Burger, donde el 9100 está cerrado porque la térmica no
+  // cuelga del router, cuelga del PC.
+  if (config.modo === 'usb') {
+    if (!escritorio?.printUsb) return false
+    try {
+      await escritorio.printUsb({
+        printerName: config.impresoraUsb,
+        data: uint8ToBase64(data),
+      })
+      return true
+    } catch (err) {
+      console.error('[Print USB]', err)
+      return false
+    }
   }
+
   return sendRawToIp(config.ip, config.port, data)
 }
 
@@ -201,7 +259,7 @@ export function disconnectPrinter() {
  */
 export async function imprimirPedido(pedido, items, restaurante) {
   const config = getPrinterConfig()
-  if (!config.enabled || !config.ip) return { ok: false, reason: 'not_configured' }
+  if (!impresoraConfigurada(config)) return { ok: false, reason: 'not_configured' }
 
   // La COMANDA DE COCINA va SIN logo, a proposito. Ese papel lo lee el de la plancha y
   // lo tira: un logo son ~30 mm de papel y unos segundos de impresion en CADA pedido,
@@ -228,8 +286,53 @@ export async function imprimirPedido(pedido, items, restaurante) {
  */
 export async function testPrint() {
   const config = getPrinterConfig()
-  if (!config.ip) return { ok: false, reason: 'no_ip' }
+  if (!impresoraConfigurada(config)) return { ok: false, reason: 'no_ip' }
+  if (config.modo === 'usb') return probarImpresoraUsb(config.impresoraUsb)
   return connectAndTestPrinter(config.ip, config.port)
+}
+
+/**
+ * Guarda la impresora USB elegida y le manda un ticket de prueba.
+ *
+ * Es el equivalente de `connectAndTestPrinter` para el USB: elegir una impresora en
+ * una lista no demuestra nada — lo que hay que ver es el papel saliendo. Si no sale,
+ * se deja la configuración como estaba en vez de dar por buena una impresora muda.
+ */
+export async function probarImpresoraUsb(nombreImpresora, logoBytes = null) {
+  if (!nombreImpresora) return { ok: false, error: 'No has elegido ninguna impresora' }
+  const anterior = getPrinterConfig()
+  savePrinterConfig({ ...anterior, modo: 'usb', impresoraUsb: nombreImpresora, enabled: true })
+
+  const ESC = 0x1B, GS = 0x1D, LF = 0x0A
+  const t = (str) => escTextToBytes(str)
+
+  const cabecera = [ESC, 0x40, ESC, 0x74, 0x02, ESC, 0x61, 0x01]
+  const conLogo = logoBytes && logoBytes.length ? [...cabecera, ...logoBytes, LF] : [...cabecera]
+
+  const resto = new Uint8Array([
+    GS, 0x21, 0x11, ESC, 0x45, 0x01,
+    ...t('PRUEBA'), LF,
+    GS, 0x21, 0x00, ESC, 0x45, 0x00, LF,
+    ...t('================================'), LF,
+    ESC, 0x45, 0x01,
+    ...t('¡Impresora conectada por USB!'), LF,
+    ESC, 0x45, 0x00,
+    ...t('================================'), LF, LF,
+    ...t(nombreImpresora), LF,
+    ...t(new Date().toLocaleString('es-ES')), LF, LF,
+    ...t('Esta impresora está lista'), LF,
+    ...t('para recibir pedidos.'), LF,
+    LF, LF, LF,
+    GS, 0x56, 0x01,
+  ])
+
+  const todo = new Uint8Array(conLogo.length + resto.length)
+  todo.set(conLogo, 0)
+  todo.set(resto, conLogo.length)
+
+  const ok = await sendToThermalPrinter(todo)
+  if (!ok) savePrinterConfig(anterior)
+  return { ok }
 }
 
 /**
@@ -327,7 +430,7 @@ export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opci
   const { pieTicket = null, abrirCajonTambien = false } = opciones
   const resultado = { ticket: false, cajon: false }
   const config = getPrinterConfig()
-  if (!config.ip || !config.enabled) return resultado
+  if (!impresoraConfigurada(config)) return resultado
 
   try {
     // El pulso del cajon viaja dentro del propio ticket: mas fiable que abrir una
@@ -336,7 +439,7 @@ export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opci
     // siguientes es instantaneo. Si falla devuelve null y el ticket sale sin el.
     const logo = await bytesDelLogo(restaurante?.logo_url).catch(() => null)
     const data = generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirCajonTambien, logo)
-    resultado.ticket = await sendRawToIp(config.ip, config.port, data)
+    resultado.ticket = await sendToThermalPrinter(data)
     resultado.cajon = resultado.ticket && abrirCajonTambien
   } catch (err) {
     console.error('[TPV] Error imprimiendo el ticket:', err)
@@ -357,9 +460,9 @@ export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opci
  */
 export async function pulsoCajon() {
   const config = getPrinterConfig()
-  if (!config.ip || !config.enabled) return false
+  if (!impresoraConfigurada(config)) return false
   try {
-    return await sendRawToIp(config.ip, config.port, abrirCajon())
+    return await sendToThermalPrinter(abrirCajon())
   } catch (err) {
     console.error('[TPV] Error abriendo el cajon:', err)
     return false
@@ -371,9 +474,9 @@ export async function pulsoCajon() {
  */
 export async function imprimirComandaTpv(lineas, restaurante, opciones = {}) {
   const config = getPrinterConfig()
-  if (!config.ip || !config.enabled) return false
+  if (!impresoraConfigurada(config)) return false
   try {
-    return await sendRawToIp(config.ip, config.port, generarComandaTpv(lineas, restaurante, opciones))
+    return await sendToThermalPrinter(generarComandaTpv(lineas, restaurante, opciones))
   } catch (err) {
     console.error('[TPV] Error imprimiendo la comanda:', err)
     return false
@@ -385,9 +488,9 @@ export async function imprimirComandaTpv(lineas, restaurante, opciones = {}) {
  */
 export async function imprimirInformeDiaTpv(resumen, restaurante) {
   const config = getPrinterConfig()
-  if (!config.ip || !config.enabled) return false
+  if (!impresoraConfigurada(config)) return false
   try {
-    return await sendRawToIp(config.ip, config.port, generarInformeDiaTpv(resumen, restaurante))
+    return await sendToThermalPrinter(generarInformeDiaTpv(resumen, restaurante))
   } catch (err) {
     console.error('[TPV] Error imprimiendo el informe:', err)
     return false
@@ -399,9 +502,9 @@ export async function imprimirInformeDiaTpv(resumen, restaurante) {
  */
 export async function imprimirReporteCaja(datos, restaurante, tipo = 'X') {
   const config = getPrinterConfig()
-  if (!config.ip || !config.enabled) return false
+  if (!impresoraConfigurada(config)) return false
   try {
-    return await sendRawToIp(config.ip, config.port, generarReporteCaja(datos, restaurante, tipo))
+    return await sendToThermalPrinter(generarReporteCaja(datos, restaurante, tipo))
   } catch (err) {
     console.error('[TPV] Error imprimiendo el informe de caja:', err)
     return false

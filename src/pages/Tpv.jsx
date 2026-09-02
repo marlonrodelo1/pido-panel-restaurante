@@ -25,7 +25,7 @@ import { usePedidoAlert } from '../context/PedidoAlertContext'
 import { toast } from '../App'
 import {
   imprimirTicketTpv, imprimirComandaTpv, imprimirInformeDiaTpv,
-  pulsoCajon, getPrinterConfig, checkPrinterConnection,
+  pulsoCajon, getPrinterConfig, comprobarImpresora, impresoraConfigurada,
 } from '../lib/printService'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
@@ -218,10 +218,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // con el cliente delante y el cajón cerrado es demasiado tarde.
   useEffect(() => {
     const cfg = getPrinterConfig()
-    if (!cfg.ip || !cfg.enabled) { setImpresora({ configurada: false, viva: null }); return }
+    // Se pregunta por el MODO, no por la IP: en USB no hay IP y esto daba
+    // "sin configurar" con la impresora enchufada delante.
+    if (!impresoraConfigurada(cfg)) { setImpresora({ configurada: false, viva: null }); return }
     setImpresora({ configurada: true, viva: null })
-    checkPrinterConnection(cfg.ip, cfg.port)
-      .then((ok) => setImpresora({ configurada: true, viva: !!ok }))
+    comprobarImpresora(cfg)
+      // 🔴 `r.ok`, no `r`: esto devuelve un OBJETO {ok, error} y un objeto siempre es
+      // verdadero, asi que el aviso de "impresora no conectada" NUNCA podia saltar.
+      // Venia asi de antes, con checkPrinterConnection.
+      .then((r) => setImpresora({ configurada: true, viva: !!r?.ok }))
       .catch(() => setImpresora({ configurada: true, viva: false }))
   }, [])
 

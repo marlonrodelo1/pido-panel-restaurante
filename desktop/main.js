@@ -14,11 +14,14 @@ const path = require('node:path')
 // La parte que habla con la impresora vive aparte para poder PROBARLA sin Electron:
 // `node prueba-impresion.js`. Ver ahi lo que cubre.
 const { registrarCanales } = require('./impresion')
+// El segundo camino de impresion: la termica enchufada por USB a este ordenador.
+const { registrarCanalesUsb } = require('./impresionUsb')
 
 const URL_PANEL = process.env.PIDOO_URL || 'https://panel.pidoo.es'
 const ORIGEN = new URL(URL_PANEL).origin
 
 registrarCanales(ipcMain)
+registrarCanalesUsb(ipcMain)
 
 // Fuera el menu de fabrica de Electron (File / Edit / View / Window / Help). En el
 // ordenador de un restaurante no pinta nada, y dentro de "View" hay "Recargar" y

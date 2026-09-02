@@ -6,8 +6,9 @@ import { useRest } from '../context/RestContext'
 import { colors, type, ds, radius } from '../lib/uiStyles'
 import {
   getPrinterConfig, savePrinterConfig,
-  scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa,
+  scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa, esEscritorio,
 } from '../lib/printService'
+import ImpresoraUsb from '../components/ImpresoraUsb'
 import { bytesDelLogo, previsualizar, olvidarLogo } from '../lib/logoTicket'
 
 export default function ConfigImpresora() {
@@ -24,6 +25,8 @@ export default function ConfigImpresora() {
   const [connectResult, setConnectResult] = useState(null)
   const [manualIp, setManualIp] = useState('')
   const [ticketCount, setTicketCount] = useState(2)
+  // 'red' = socket TCP al 9100 · 'usb' = impresora enchufada a este ordenador.
+  const [modo, setModo] = useState('red')
 
   // Vista previa del logo del ticket.
   const [logoPrevia, setLogoPrevia] = useState(null)
@@ -39,7 +42,15 @@ export default function ConfigImpresora() {
     setPrinterPort(cfg.port || 9100)
     setPrinterEnabled(cfg.enabled || false)
     setTicketCount(cfg.tickets ?? 2)
+    setModo(cfg.modo || 'red')
   }, [])
+
+  // Cambiar de camino NO borra lo del otro: si alguien prueba el USB y no le va, al
+  // volver a Red se encuentra su IP donde la dejó.
+  function cambiarModo(nuevo) {
+    setModo(nuevo)
+    savePrinterConfig({ ...getPrinterConfig(), modo: nuevo })
+  }
 
   async function toggleActivo() {
     const nuevo = !activo
@@ -213,7 +224,35 @@ export default function ConfigImpresora() {
           </div>
         </div>
 
-        {printerEnabled && printerIp ? (
+        {/* POR DONDE SALE EL TICKET. Solo en la app de Windows: en la tablet la
+            impresora va por red, y en un navegador no hay ninguna de las dos. */}
+        {esEscritorio && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            {[
+              { id: 'red', txt: 'Por red (IP)', nota: 'La impresora cuelga del router' },
+              { id: 'usb', txt: 'Por USB', nota: 'Enchufada a este ordenador' },
+            ].map((o) => {
+              const activa = modo === o.id
+              return (
+                <button key={o.id} onClick={() => cambiarModo(o.id)} style={{
+                  flex: 1, padding: '10px 12px', borderRadius: radius.sm, cursor: 'pointer',
+                  textAlign: 'left', fontFamily: 'inherit',
+                  border: `1px solid ${activa ? colors.ink : colors.border}`,
+                  background: activa ? colors.cream2 : 'transparent',
+                }}>
+                  <div style={{ fontSize: type.sm, fontWeight: activa ? 700 : 500, color: colors.ink }}>
+                    {o.txt}
+                  </div>
+                  <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 2 }}>{o.nota}</div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {modo === 'usb' ? (
+          <ImpresoraUsb logoBytes={logoBytes} />
+        ) : printerEnabled && printerIp ? (
           /* CONECTADA — card sageSoft con punto verde glow */
           <div>
             <div style={{
