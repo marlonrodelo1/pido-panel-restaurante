@@ -16,6 +16,13 @@ export const UNIDADES = [
 
 export const FAMILIAS = ['Bebidas', 'Carne', 'Pescado', 'Pan', 'Lácteos', 'Congelados', 'Verdura', 'Otros']
 
+// Sugerencias para la caja de gastos de la pestaña Negocio. La columna es texto
+// libre (igual que `familia`): el dueño puede escribir la suya.
+export const CATEGORIAS_GASTO = [
+  'Alquiler', 'Luz', 'Agua', 'Internet', 'Gestoría', 'Sueldos',
+  'Autónomo', 'Seguros', 'Reparaciones', 'Limpieza', 'Marketing', 'Otros',
+]
+
 // Las unidades se enseñan sin ceros de relleno: "2 ud", "1,5 kg", "0,25 l".
 export function cantidad(n, unidad = 'ud') {
   const v = Number(n || 0)
@@ -114,6 +121,43 @@ export async function cargarMermas(estId, desde) {
   }
 }
 
+// El "entró − salió = te quedó" de la pestaña Negocio, en una sola llamada.
+// Los criterios (qué pedido cuenta, cómo se calcula la comisión, por qué la merma
+// no se suma al "salió") viven COMENTADOS en la función de base de datos, que es
+// la única fuente; aquí solo se pide y se pinta.
+export const resumenNegocio = (estId, desde, hasta) =>
+  rpc('stock_resumen_negocio', { p_establecimiento_id: estId, p_desde: desde, p_hasta: hasta })
+
+export async function cargarGastos(estId, desde, hasta) {
+  const { data, error } = await supabase
+    .from('stock_gastos')
+    .select('*')
+    .eq('establecimiento_id', estId)
+    .gte('fecha', desde)
+    .lte('fecha', hasta)
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(500)
+  if (error) throw new Error(traducir(error))
+  return data || []
+}
+
+export async function crearGasto(estId, { fecha, categoria, concepto, importe }) {
+  const { error } = await supabase.from('stock_gastos').insert({
+    establecimiento_id: estId,
+    fecha,
+    categoria: categoria.trim(),
+    concepto: concepto?.trim() || null,
+    importe,
+  })
+  if (error) throw new Error(traducir(error))
+}
+
+export async function borrarGasto(id) {
+  const { error } = await supabase.from('stock_gastos').delete().eq('id', id)
+  if (error) throw new Error(traducir(error))
+}
+
 export async function cargarMovimientos(estId, { articuloId, tipo, limite = 100 } = {}) {
   let q = supabase
     .from('stock_movimientos')
@@ -190,6 +234,8 @@ const MENSAJES = {
   PD247: 'Esa factura no está contabilizada: no hay nada que deshacer.',
   PD248: 'Los movimientos no se editan ni se borran. Apunta uno que lo corrija.',
   PD249: 'La fecha de arranque la fija el recuento inicial.',
+  PD250: 'La fecha del gasto no puede estar en el futuro.',
+  PD251: 'Revisa el periodo: "desde" no puede ir después de "hasta".',
 }
 
 function traducir(error) {

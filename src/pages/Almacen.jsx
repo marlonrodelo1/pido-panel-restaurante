@@ -15,6 +15,7 @@ import { colors, ds, radius, type } from '../lib/uiStyles'
 import { cargarArticulos, cargarResumen } from '../lib/stock'
 import ArranqueAsistido from '../components/almacen/ArranqueAsistido'
 import ResumenTab from '../components/almacen/ResumenTab'
+import NegocioTab from '../components/almacen/NegocioTab'
 import ArticulosTab from '../components/almacen/ArticulosTab'
 import EscandallosTab from '../components/almacen/EscandallosTab'
 import ComprasTab from '../components/almacen/ComprasTab'
@@ -22,6 +23,7 @@ import MovimientosTab from '../components/almacen/MovimientosTab'
 
 const PESTANAS = [
   { id: 'resumen', label: 'Resumen' },
+  { id: 'negocio', label: 'Negocio' },
   { id: 'articulos', label: 'Artículos de compra' },
   { id: 'escandallos', label: 'Escandallos' },
   { id: 'compras', label: 'Compras' },
@@ -135,6 +137,9 @@ export default function Almacen() {
 
       {pestana === 'resumen' && (
         <ResumenTab resumen={resumen} articulos={articulos} onIrA={setPestana} />
+      )}
+      {pestana === 'negocio' && (
+        <NegocioTab estId={estId} onIrA={setPestana} />
       )}
       {pestana === 'articulos' && (
         <ArticulosTab estId={estId} articulos={articulos} onCambio={recargar} />
