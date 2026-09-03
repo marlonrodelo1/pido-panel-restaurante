@@ -26,6 +26,8 @@ import { toast } from '../App'
 import AddressInput from './AddressInput'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { useEsMonitor } from '../lib/tamanoPantalla'
+import { imprimirPedido, impresoraConfigurada } from '../lib/printService'
+import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import {
   Search, Plus, Minus, Phone, MapPin, User, Bike, ShoppingBag, Check,
   UserPlus, Trash2, StickyNote,
@@ -60,6 +62,16 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
   const [notas, setNotas] = useState('')
   const [creando, setCreando] = useState(false)
   const enVuelo = useRef(false)
+  // Una clave de idempotencia POR PEDIDO, no por pulsación: el reintento tras un
+  // corte de red lleva la misma y el servidor devuelve el pedido ya creado en vez
+  // de crear dos (dos repartos = dos socios asignados y dos tarifas en el corte).
+  // Se limpia solo tras un éxito. El mostrador hace lo mismo desde hoy.
+  const idemRef = useRef(null)
+  const uuidv4 = () => crypto?.randomUUID?.() ||
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+    })
 
   // ── La carta ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -203,11 +215,18 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
     if (!listo || enVuelo.current) return
     enVuelo.current = true
     setCreando(true)
+    // Sin límite de tiempo, una red a medias dejaba el botón "creando…" sin
+    // salida. La edge encadena envío + código + insert + dispatcher, así que se
+    // le dan 45 s antes de cortar; reintentar es seguro por la clave de arriba.
+    const corte = new AbortController()
+    const reloj = setTimeout(() => corte.abort(), 45000)
     try {
+      if (!idemRef.current) idemRef.current = uuidv4()
       const { data: sess } = await supabase.auth.getSession()
       const token = sess?.session?.access_token
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/tpv-pedido`, {
         method: 'POST',
+        signal: corte.signal,
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           establecimiento_id: restaurante.id,
@@ -215,6 +234,7 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
           metodo_pago: metodo,
           minutos_preparacion: minutos,
           notas: notas.trim() || null,
+          idempotency_key: idemRef.current,
           cliente: {
             telefono: telefono || null, nombre: nombre.trim() || null,
             direccion: esReparto ? direccion : null,
@@ -229,17 +249,60 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
           sin_riders_online: 'No tienes repartidores en línea. Ofrécele recogida al cliente.',
           fuera_de_radio: 'Esa dirección está fuera de tu zona de reparto.',
           socio_offline: 'Ese repartidor ya no está en línea.',
+          calcular_envio_failed: 'No se pudo calcular el envío. Vuelve a intentarlo.',
+          calcular_envio_timeout: 'No se pudo calcular el envío. Vuelve a intentarlo.',
+          generar_codigo_failed: 'El servidor no respondió. Vuelve a intentarlo.',
+          producto_no_encontrado: 'Un producto de la comanda ya no existe en la carta. Quítalo y vuelve a añadirlo.',
+          forbidden: 'Esta cuenta no puede crear pedidos en este restaurante.',
         })[body?.error] || body?.detalle || body?.error || 'No se pudo crear el pedido')
       }
       const conRepartidor = body.asignacion?.ok
       toast(esReparto
-        ? `${body.pedido.codigo} creado · ${conRepartidor ? 'repartidor asignado' : 'sin repartidor todavía'}`
-        : `${body.pedido.codigo} creado para recoger`,
+        ? `${body.pedido.codigo} ${body.repetido ? 'ya estaba creado' : 'creado'} · ${conRepartidor ? 'repartidor asignado' : 'sin repartidor todavía'}`
+        : `${body.pedido.codigo} ${body.repetido ? 'ya estaba creado' : 'creado para recoger'}`,
         (esReparto && !conRepartidor) ? 'error' : 'success')
+      idemRef.current = null   // pedido cerrado: el siguiente es otra venta
+
+      // La comanda sale SOLA al crear. Este pedido nace en 'preparando', así que
+      // no pasa por "aceptar" (el único sitio que imprimía) y el enganche
+      // automático de realtime solo cubre mesa y la aceptación del motor: sin
+      // esto, cocina no veía papel salvo que alguien fuera a Pedidos a imprimir.
+      // Se RESERVA en el registro anti-duplicados por si algún otro camino
+      // llegara a imprimirlo también, y se suelta si la impresora falla.
+      if (impresoraConfigurada() && body.pedido?.id && reservarImpresion(body.pedido.id)) {
+        const pedidoTicket = {
+          ...body.pedido,
+          origen_pedido: 'telefonico',
+          modo_entrega: esReparto ? 'delivery' : 'recogida',
+          guest_nombre: body.cliente?.nombre || nombre.trim() || null,
+          guest_telefono: body.cliente?.telefono || null,
+          cliente_telefono: body.cliente?.telefono || null,
+          direccion_entrega: esReparto ? (body.cliente?.direccion || direccion || null) : null,
+          lat_entrega: esReparto ? (coords?.lat ?? null) : null,
+          lng_entrega: esReparto ? (coords?.lng ?? null) : null,
+          notas: notas.trim() || null,
+        }
+        imprimirPedido(pedidoTicket, body.items || [], restaurante)
+          .then((r) => {
+            if (!r?.ok) {
+              soltarImpresion(body.pedido.id)
+              toast('El pedido está creado, pero la comanda no ha salido: imprímela desde Pedidos', 'error')
+            }
+          })
+          .catch(() => soltarImpresion(body.pedido.id))
+      }
+
       onHecho?.(body)
     } catch (err) {
-      toast(err.message || 'Error al crear el pedido', 'error')
+      // Un corte o un fallo de red dejan el pedido EN DUDA (puede haber entrado).
+      // Reintentar tal cual es seguro: la misma clave hace que el servidor
+      // devuelva el pedido ya creado en vez de crear otro.
+      const enDuda = err?.name === 'AbortError' || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
+      toast(enDuda
+        ? 'Sin respuesta del servidor. Vuelve a pulsar crear TAL CUAL: si ya había entrado, no se duplica.'
+        : (err.message || 'Error al crear el pedido'), 'error')
     } finally {
+      clearTimeout(reloj)
       enVuelo.current = false
       setCreando(false)
     }

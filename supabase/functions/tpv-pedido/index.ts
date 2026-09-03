@@ -1,5 +1,11 @@
-// tpv-pedido v1 (27-ago-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
+// tpv-pedido v3 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
 // con los productos de la carta.
+//
+// v3: idempotencia. El TPV manda `idempotency_key` (uuid) y el pedido se inserta
+// con ella (unique parcial en `pedidos`): un reintento tras un corte de red
+// devuelve el pedido YA CREADO en vez de crear dos — que aqui son dos repartos,
+// dos socios asignados y dos tarifas fijas en el corte del lunes. La clave es
+// OPCIONAL para no romper a otros llamantes.
 //
 // Es el relevo de `crear-pedido-telefonico`, que sigue viva y sin tocar porque la
 // usan restaurantes reales: aquella pide un importe a mano, esta pica productos.
@@ -19,7 +25,8 @@
 // Body: { establecimiento_id, modo: 'reparto'|'recogida', lineas: [...],
 //         cliente: { telefono, nombre?, direccion?, lat?, lng? },
 //         metodo_pago: 'efectivo'|'datafono'|'pagado_local',
-//         minutos_preparacion?, notas?, asignacion?: {modo:'auto'} | {modo:'socio', socio_id} }
+//         minutos_preparacion?, notas?, idempotency_key?,
+//         asignacion?: {modo:'auto'} | {modo:'socio', socio_id} }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -77,6 +84,13 @@ Deno.serve(async (req) => {
     return json({ error: 'validacion', campo: 'metodo_pago' }, 400)
   }
 
+  // v3: clave de idempotencia OPCIONAL (el TPV la manda siempre; otros llamantes
+  // pueden no mandarla y siguen funcionando como hasta hoy).
+  const idempotency_key = body?.idempotency_key ? String(body.idempotency_key).trim() : null
+  if (idempotency_key && !/^[0-9a-f-]{36}$/i.test(idempotency_key)) {
+    return json({ error: 'validacion', campo: 'idempotency_key' }, 400)
+  }
+
   const lineasRaw = Array.isArray(body?.lineas) ? body.lineas : []
   if (!lineasRaw.length) return json({ error: 'validacion', campo: 'lineas', detalle: 'El pedido esta vacio' }, 400)
   if (lineasRaw.length > 100) return json({ error: 'validacion', campo: 'lineas' }, 400)
@@ -112,13 +126,13 @@ Deno.serve(async (req) => {
     .select('id, nombre, user_id, razon_social, nif, direccion, direccion_fiscal, ciudad_fiscal, telefono')
     .eq('id', establecimiento_id).maybeSingle()
   if (!est) return json({ error: 'establecimiento_no_encontrado' }, 404)
-  // Quien puede cobrar aqui: el DUENO, alguien de su EQUIPO, o Pidoo.
+  // Quien puede crear un pedido aqui: el DUENO, alguien de su EQUIPO, o Pidoo.
   //
   // El equipo (`establecimiento_usuarios`) se anadio el 31 ago 2026. Esta edge corre
-  // con service_role, asi que la RLS no la mira: la comprobacion hay que hacerla a
-  // mano, y por eso este bloque existe. Sin la parte del equipo, un companero entra
-  // al panel, ve la carta... y al cobrar le sale "esta cuenta no puede cobrar en este
-  // restaurante" con el cliente delante.
+  // con service_role, asi que la RLS NO la mira: la comprobacion hay que hacerla a
+  // mano, y por eso existe este bloque. Sin la parte del equipo, un companero entra
+  // al panel, marca el pedido... y al mandarlo le sale "esta cuenta no puede cobrar
+  // en este restaurante" con el cliente al telefono.
   if (usuarioAutenticado && est.user_id !== usuarioAutenticado) {
     const [{ data: enEquipo }, { data: rolRow }] = await Promise.all([
       sb.from('establecimiento_usuarios').select('user_id')
@@ -127,6 +141,37 @@ Deno.serve(async (req) => {
     ])
     const esDePidoo = rolRow?.rol === 'admin' || rolRow?.rol === 'superadmin'
     if (!enEquipo && !esDePidoo) return json({ error: 'forbidden' }, 403)
+  }
+
+  // ── El pedido ya creado con esta clave, con la MISMA forma que uno nuevo ──
+  const pedidoYaCreado = async () => {
+    if (!idempotency_key) return null
+    const { data: p } = await sb.from('pedidos')
+      .select('id, codigo, subtotal, coste_envio, total, metodo_pago, created_at, minutos_preparacion, socio_id, guest_nombre, guest_telefono, direccion_entrega')
+      .eq('idempotency_key', idempotency_key).maybeSingle()
+    if (!p) return null
+    const { data: itemsRep } = await sb.from('pedido_items')
+      .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+      .eq('pedido_id', p.id)
+    const { socio_id, guest_nombre, guest_telefono, direccion_entrega, ...pedidoRep } = p as any
+    return json({
+      ok: true,
+      repetido: true,
+      pedido: pedidoRep,
+      items: itemsRep || [],
+      establecimiento: est,
+      cliente: { nombre: guest_nombre, telefono: guest_telefono, direccion: direccion_entrega },
+      // Si ya tiene socio, la asignacion del primer intento llego a buen puerto.
+      asignacion: { ok: !!socio_id, repetido: true },
+      online_count: null,
+    })
+  }
+  {
+    // ANTES de tocar nada mas: un reintento no debe volver a pasar por el
+    // calculo de envio ni por el dispatcher, y menos morir en `sin_riders_online`
+    // por un pedido que YA existe.
+    const repetido = await pedidoYaCreado()
+    if (repetido) return repetido
   }
 
   // ── Productos de ESTA carta ──
@@ -259,8 +304,17 @@ Deno.serve(async (req) => {
     minutos_preparacion: minutos,
     aceptado_at: now,
     comision_pidoo_pct_override: 0,   // Pidoo cobra tarifa fija por pedido, no %
+    // v3: con clave, el doble envio choca en el unique en vez de duplicarse.
+    ...(idempotency_key ? { idempotency_key } : {}),
   }).select('id, codigo').single()
-  if (insErr || !pedido) return json({ error: 'pedido_insert_failed', detalle: insErr?.message }, 500)
+  if (insErr || !pedido) {
+    if (insErr?.code === '23505' && /idempotency/i.test(insErr?.message || '')) {
+      // Otro envio con la misma clave gano la carrera: se devuelve SU pedido.
+      const repetido = await pedidoYaCreado()
+      if (repetido) return repetido
+    }
+    return json({ error: 'pedido_insert_failed', detalle: insErr?.message }, 500)
+  }
 
   const { error: itemsErr } = await sb.from('pedido_items')
     .insert(lineas.map((l: any) => ({ ...l, pedido_id: pedido.id })))
