@@ -276,8 +276,9 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
         })[body?.error] || body?.detalle || body?.error || 'No se pudo crear el pedido')
       }
       const conRepartidor = body.asignacion?.ok
+      const propio = body.asignacion?.reparto_propio
       toast(esReparto
-        ? `${body.pedido.codigo} ${body.repetido ? 'ya estaba creado' : 'creado'} · ${conRepartidor ? 'repartidor asignado' : 'sin repartidor todavía'}`
+        ? `${body.pedido.codigo} ${body.repetido ? 'ya estaba creado' : 'creado'} · ${propio ? 'reparto propio: lo llevas tú' : conRepartidor ? 'repartidor asignado' : 'sin repartidor todavía'}`
         : `${body.pedido.codigo} ${body.repetido ? 'ya estaba creado' : 'creado para recoger'}`,
         (esReparto && !conRepartidor) ? 'error' : 'success')
       idemRef.current = null   // pedido cerrado: el siguiente es otra venta

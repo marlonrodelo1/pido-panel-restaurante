@@ -8,7 +8,7 @@ import { imprimirPedido, imprimirPedidoWeb, hayImpresoraNativa } from '../lib/pr
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
-import { toast } from '../App'
+import { toast, confirmar } from '../App'
 import { Truck, Bell, BellOff, Bike, ShoppingBag, Banknote } from 'lucide-react'
 import { colors, type, ds, stateBadge } from '../lib/uiStyles'
 import { etiquetaPago, hayQueCobrar } from '../lib/metodoPago'
@@ -1932,6 +1932,20 @@ function DetallePedido({ pedido, items, timer, isNuevo, restaurante, embedded, o
           <div style={{ flex: 1, padding: '13px 0', borderRadius: 8, background: 'var(--c-success-soft)', textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--c-success, #8B9D7A)', border: '1px solid rgba(74,222,128,0.2)' }}>Esperando repartidor</div>
           {!pedido.socio_id && restaurante?.delivery_sin_socio && (
             <button onClick={() => { onMarcarRecogido(pedido.id); afterAction() }} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Ya lo recogió</button>
+          )}
+          {/* La SALIDA del pedido que se quedó sin socio en un restaurante NORMAL:
+              el dispatcher agotó los intentos, no hay repartidor, y el dueño lo
+              lleva él o el cliente viene a por ello. Antes no había ningún botón
+              y el pedido se quedaba en 'listo' para siempre (la única salida era
+              cancelarlo, perdiendo la venta). Confirmación explícita porque toca
+              dinero: 'entregado' entra en la liquidación como una venta normal
+              (comisión al restaurante) y no paga a ningún socio, que no lo hay. */}
+          {!pedido.socio_id && !restaurante?.delivery_sin_socio && (
+            <button onClick={async () => {
+              const seguro = await confirmar('¿Este pedido llegó al cliente SIN repartidor de Pidoo (lo llevaste tú o vino a recogerlo)? Se marcará entregado y contará en la liquidación como una venta normal.')
+              if (!seguro) return
+              onMarcarEntregado(pedido.id); afterAction()
+            }} style={{ padding: '13px 16px', borderRadius: 8, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Entregado sin repartidor</button>
           )}
         </div>
       )}

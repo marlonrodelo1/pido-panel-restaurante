@@ -447,7 +447,7 @@ export function abrirCajon() {
  * recalcula nada: se imprimen los importes que congelo el servidor al emitir el
  * ticket, que son los que constan en `tpv_tickets`.
  */
-export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null) {
+export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null, anula = null) {
   const bytes = []
   const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
 
@@ -473,8 +473,14 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
 
   bytes.push(...feed(1), ...separator('-'), ...left())
   bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
+  // Un ticket con `rectifica_ticket_id` es una ANULACION: importes en negativo
+  // y serie propia (la original + R). Tiene que decirlo bien grande, y decir a
+  // cual anula — `anula` llega como "A-000012" desde quien imprime.
+  if (ticket.rectifica_ticket_id) {
+    bytes.push(...boldOn(), ...line('RECTIFICATIVA' + (anula ? ' — anula ' + anula : '')), ...boldOff())
+  }
   bytes.push(...twoColumns(
-    'Serie ' + ticket.serie + '  Num. ' + String(ticket.numero).padStart(6, '0'),
+    'Serie ' + ticket.serie + '  Num. ' + String(ticket.numero ?? '').padStart(6, '0'),
     formatDate(ticket.emitido_at)
   ))
   bytes.push(...separator('-'))

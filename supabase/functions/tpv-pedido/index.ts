@@ -1,5 +1,11 @@
-// tpv-pedido v3 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
+// tpv-pedido v4 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
 // con los productos de la carta.
+//
+// v4: REPARTO PROPIO (`establecimientos.delivery_sin_socio`): no se exigen
+// socios en linea ni se llama al dispatcher — reparte el restaurante. El pedido
+// nace con `shipday_status='reparto_propio'`, la marca que ya entienden el
+// Tracking del cliente, el cron y el boton "recogido" del panel. Antes, para
+// esos restaurantes, esta pantalla moria SIEMPRE con sin_riders_online.
 //
 // v3: idempotencia. El TPV manda `idempotency_key` (uuid) y el pedido se inserta
 // con ella (unique parcial en `pedidos`): un reintento tras un corte de red
@@ -123,9 +129,13 @@ Deno.serve(async (req) => {
 
   // ── Establecimiento + ownership ──
   const { data: est } = await sb.from('establecimientos')
-    .select('id, nombre, user_id, razon_social, nif, direccion, direccion_fiscal, ciudad_fiscal, telefono')
+    .select('id, nombre, user_id, razon_social, nif, direccion, direccion_fiscal, ciudad_fiscal, telefono, delivery_sin_socio')
     .eq('id', establecimiento_id).maybeSingle()
   if (!est) return json({ error: 'establecimiento_no_encontrado' }, 404)
+  // v4: el REPARTO PROPIO (Max's Pizza, Drink2Home) reparte el propio
+  // restaurante: no se le exigen socios en linea ni se llama al dispatcher.
+  // Antes el boton "Nuevo reparto" les moria SIEMPRE con sin_riders_online.
+  const repartoPropio = est.delivery_sin_socio === true
   // Quien puede crear un pedido aqui: el DUENO, alguien de su EQUIPO, o Pidoo.
   //
   // El equipo (`establecimiento_usuarios`) se anadio el 31 ago 2026. Esta edge corre
@@ -206,7 +216,23 @@ Deno.serve(async (req) => {
   // ── Reparto: repartidores en linea y coste del envio ──
   let envio = 0
   let online = 0
-  if (modo === 'reparto') {
+  if (modo === 'reparto' && repartoPropio) {
+    // Solo el envio: quien reparte es el restaurante. La tarifa la sigue
+    // poniendo la edge de envios, que es la fuente unica.
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/calcular_envio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ canal: 'pido', establecimiento_id, lat_cliente: lat, lng_cliente: lng }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (d?.fuera_de_radio) return json({ error: 'fuera_de_radio', distancia_km: d.distancia_km, radio_km: d.radio_km }, 400)
+      if (!res.ok || typeof d?.envio !== 'number') return json({ error: 'calcular_envio_failed' }, 502)
+      envio = d.envio
+    } catch (_) {
+      return json({ error: 'calcular_envio_timeout' }, 502)
+    }
+  } else if (modo === 'reparto') {
     // Mismo criterio que el dispatcher: activo + en servicio + GPS fresco (12 min)
     // + vinculo con reparto activo + que acepte esta fuente.
     const MAX_LOC_AGE_MS = 12 * 60 * 1000
@@ -306,6 +332,10 @@ Deno.serve(async (req) => {
     comision_pidoo_pct_override: 0,   // Pidoo cobra tarifa fija por pedido, no %
     // v3: con clave, el doble envio choca en el unique en vez de duplicarse.
     ...(idempotency_key ? { idempotency_key } : {}),
+    // v4: con reparto propio, la marca que ya usa todo el sistema (Tracking, el
+    // cron y el boton "recogido" del panel) va puesta desde el nacimiento — sin
+    // pasar por el dispatcher ni por el reetiquetado de no_rider.
+    ...(modo === 'reparto' && repartoPropio ? { shipday_status: 'reparto_propio' } : {}),
   }).select('id, codigo').single()
   if (insErr || !pedido) {
     if (insErr?.code === '23505' && /idempotency/i.test(insErr?.message || '')) {
@@ -329,7 +359,9 @@ Deno.serve(async (req) => {
 
   // ── Reparto: buscar quien lo lleva ──
   let resultadoAsignacion: any = { ok: false, reason: 'no_aplica' }
-  if (modo === 'reparto') {
+  if (modo === 'reparto' && repartoPropio) {
+    resultadoAsignacion = { ok: true, reparto_propio: true }
+  } else if (modo === 'reparto') {
     try {
       if (asignacion.modo === 'socio') {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/assign-pedido-restaurante`, {

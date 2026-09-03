@@ -31,15 +31,16 @@ import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
   Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, StickyNote, Bookmark,
   ShoppingBag,
   Sandwich, Croissant, Beef, Beer, CupSoda, Coffee, Pizza, Salad, CakeSlice, IceCream,
   Fish, Drumstick, Soup, Cookie, Utensils, Wine, Ham, Popcorn, Carrot, EggFried,
 } from 'lucide-react'
 
-import { T, FONT, cents, eur, caja, btnIcono, btnAccion, btnSecundario } from '../lib/tpvTheme'
+import { T, FONT, cents, eur, caja, btnIcono, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import TpvPedidos from '../components/TpvPedidos'
 import TpvCaja from '../components/TpvCaja'
+import TpvTickets from '../components/TpvTickets'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
 import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
 import { prepararLogo } from '../lib/logoTicket'
@@ -126,6 +127,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const [nuevoPedido, setNuevoPedido] = useState(null)   // 'reparto' | 'recogida'
   const [ultimaVenta, setUltimaVenta] = useState(null)
   const [impresora, setImpresora] = useState({ configurada: false, viva: null })
+  const [modalTickets, setModalTickets] = useState(false)
+  // Nota de una línea del carrito: { clave, texto } mientras se edita.
+  const [editandoNota, setEditandoNota] = useState(null)
+  const [modalLibre, setModalLibre] = useState(false)
+  // Ventas APARCADAS: varias cuentas a medias a la vez ("el rubio de la barra",
+  // "mesa 3"). Cada una conserva su clave de idempotencia y su nº de ronda.
+  const [aparcadas, setAparcadas] = useState([])
+  const [modalAparcadas, setModalAparcadas] = useState(false)
+  const [aparcandoNombre, setAparcandoNombre] = useState(null)   // null | texto del input
 
   // Un pedido nuevo NO se lleva la pantalla por delante: si estas cobrando a alguien
   // en la barra, saltar a Pedidos solo es quitarle el mostrador de las manos al
@@ -232,7 +242,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       }
       return
     }
-    const firma = JSON.stringify(carrito.map((l) => [l.clave, l.cantidad]))
+    // La nota entra en la firma: cambiarla convierte la venta en OTRA venta a
+    // efectos de idempotencia (las líneas libres llevan su importe en la clave).
+    const firma = JSON.stringify(carrito.map((l) => [l.clave, l.cantidad, l.notas || '']))
     if (!idemRef.current || firmaRef.current !== firma) {
       idemRef.current = uuidv4()
       firmaRef.current = firma
@@ -282,6 +294,68 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (avisar) toast('Carta recargada', 'success')
   }
   useEffect(() => { if (restaurante?.id) cargarCarta() }, [restaurante?.id])
+
+  // ── Ventas aparcadas: persistidas por restaurante, como el carrito ─────────
+  const claveAparcadas = restaurante?.id ? `pidoo_tpv_aparcadas_${restaurante.id}` : null
+  useEffect(() => {
+    if (!claveAparcadas) return
+    try {
+      const v = JSON.parse(localStorage.getItem(claveAparcadas) || '[]')
+      if (Array.isArray(v)) setAparcadas(v)
+    } catch { /* respaldo roto: se empieza sin aparcadas */ }
+  }, [claveAparcadas])
+  const guardarAparcadas = (lista) => {
+    setAparcadas(lista)
+    try { if (claveAparcadas) localStorage.setItem(claveAparcadas, JSON.stringify(lista)) } catch { /* nada */ }
+  }
+
+  function aparcarVenta(nombre) {
+    if (!carrito.length) return
+    if (aparcadas.length >= 12) { toast('Ya hay 12 ventas aparcadas: recupera o borra alguna', 'error'); return }
+    const etiqueta = (nombre || '').trim()
+      || `Sin nombre ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+    guardarAparcadas([...aparcadas, {
+      id: uuidv4(), nombre: etiqueta, lineas: carrito,
+      clave: idemRef.current, firma: firmaRef.current, ronda: rondaRef.current,
+      creada: Date.now(),
+    }])
+    setCarrito([])   // el efecto del carrito limpia refs y el respaldo activo
+    setAparcandoNombre(null)
+    toast(`Venta aparcada: ${etiqueta}`, 'success')
+  }
+
+  function recuperarVenta(id) {
+    const ficha = aparcadas.find((a) => a.id === id)
+    if (!ficha) return
+    let lista = aparcadas.filter((a) => a.id !== id)
+    if (carrito.length) {
+      // La venta que había en el mostrador se aparca sola: nada se pierde.
+      if (lista.length >= 12) { toast('No cabe: cobra o borra alguna aparcada primero', 'error'); return }
+      lista = [...lista, {
+        id: uuidv4(),
+        nombre: `Sin nombre ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`,
+        lineas: carrito, clave: idemRef.current, firma: firmaRef.current, ronda: rondaRef.current,
+        creada: Date.now(),
+      }]
+    }
+    guardarAparcadas(lista)
+    // Las refs ANTES que el carrito: el efecto de guardado las lee en el mismo
+    // ciclo y así conserva la clave de idempotencia y la ronda de la ficha.
+    idemRef.current = ficha.clave || null
+    firmaRef.current = ficha.firma || null
+    rondaRef.current = ficha.ronda || 0
+    setCarrito(Array.isArray(ficha.lineas) ? ficha.lineas : [])
+    setModalAparcadas(false)
+    toast(`Recuperada: ${ficha.nombre}`, 'success')
+  }
+
+  async function borrarAparcada(id) {
+    const ficha = aparcadas.find((a) => a.id === id)
+    if (!ficha) return
+    const seguro = await confirmar(`¿Borrar la venta aparcada "${ficha.nombre}"? No se puede recuperar.`)
+    if (!seguro) return
+    guardarAparcadas(aparcadas.filter((a) => a.id !== id))
+  }
 
   // La impresora se sondea AL ENTRAR, no al cobrar: enterarse de que está apagada
   // con el cliente delante y el cajón cerrado es demasiado tarde.
@@ -398,8 +472,48 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         extrasTexto: extrasElegidos.map((o) => o.nombre).join(', '),
         precio_c: precioBarra(producto, tam) + extrasC,
         cantidad: 1,
+        notas: null,
       }]
     })
+  }
+
+  // Nota de UNA línea ("sin hielo", "muy hecha"): el servidor la guarda y la
+  // comanda la imprime desde el primer día — lo que no existía era el sitio
+  // donde escribirla. Cambiar la nota devuelve la línea a "sin comandar":
+  // cocina tiene que enterarse.
+  function guardarNotaLinea(clave, texto) {
+    const t = (texto || '').trim().slice(0, 200) || null
+    setCarrito((prev) => prev.map((l) => (l.clave === clave
+      ? { ...l, notas: t, comandada: t === l.notas ? l.comandada : false }
+      : l)))
+    setEditandoNota(null)
+  }
+
+  // Línea LIBRE: lo que un cliente pide y no está en la carta ("un mechero",
+  // "suplemento terraza"). El servidor la aceptaba desde la v1 de tpv-venta y
+  // el mostrador nunca la ofreció. Aquí SÍ manda el importe tecleado (0-500 €),
+  // que es exactamente lo que la edge valida.
+  function anadirLibre(nombre, importeTexto) {
+    const limpio = String(importeTexto || '').replace(/[^\d.,]/g, '')
+    const num = parseFloat(limpio.includes(',') ? limpio.replace(/\./g, '').replace(',', '.') : limpio)
+    if (!Number.isFinite(num) || num <= 0 || num > 500) {
+      toast('El importe tiene que estar entre 0 y 500 €', 'error')
+      return
+    }
+    const etiqueta = (nombre || '').trim().slice(0, 80) || 'Varios'
+    setCarrito((prev) => [...prev, {
+      clave: `libre|${uuidv4()}`,   // cada línea libre es única: el uuid fija su importe en la firma
+      producto_id: null,
+      nombre: etiqueta,
+      tamano: null,
+      extras: [],
+      extrasTexto: '',
+      precio_c: Math.round(num * 100),
+      cantidad: 1,
+      notas: null,
+      libre: true,
+    }])
+    setModalLibre(false)
   }
 
   function tocarProducto(p) {
@@ -528,9 +642,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           metodo_pago,
           entregado_efectivo: entregado_c != null ? entregado_c / 100 : null,
           idempotency_key: idemRef.current,
-          lineas: carrito.map((l) => ({
-            producto_id: l.producto_id, tamano: l.tamano, cantidad: l.cantidad, extras: l.extras,
-          })),
+          // Dos formas de línea, las dos del contrato de tpv-venta: producto de
+          // la carta (ids, el precio lo pone el servidor) o línea LIBRE (aquí
+          // sí viaja el importe, validado 0-500 en los dos lados).
+          lineas: carrito.map((l) => (l.producto_id
+            ? { producto_id: l.producto_id, tamano: l.tamano, cantidad: l.cantidad, extras: l.extras, notas: l.notas || null }
+            : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
         }),
       })
       const body = await resp.json().catch(() => ({}))
@@ -934,16 +1051,40 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           // lineas o veinte: el camarero no tiene que buscarlos.
           ...(altoCompleto ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : null),
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
             <strong style={{ fontSize: 15, color: T.text }}>Venta en curso</strong>
-            {carrito.length > 0 && (
-              <button onClick={vaciar} style={{
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {aparcadas.length > 0 && (
+                <button onClick={() => setModalAparcadas(true)} style={{
+                  border: 'none', background: 'none', cursor: 'pointer', color: T.accent,
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit', fontWeight: 700,
+                }}>
+                  <Bookmark size={14} /> Aparcadas ({aparcadas.length})
+                </button>
+              )}
+              {carrito.length > 0 && (
+                <button onClick={() => setAparcandoNombre('')} style={{
+                  border: 'none', background: 'none', cursor: 'pointer', color: T.muted,
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit',
+                }}>
+                  <Bookmark size={14} /> Aparcar
+                </button>
+              )}
+              <button onClick={() => setModalLibre(true)} style={{
                 border: 'none', background: 'none', cursor: 'pointer', color: T.muted,
                 display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit',
               }}>
-                <Trash2 size={14} /> Vaciar
+                <Plus size={14} /> Libre
               </button>
-            )}
+              {carrito.length > 0 && (
+                <button onClick={vaciar} style={{
+                  border: 'none', background: 'none', cursor: 'pointer', color: T.muted,
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit',
+                }}>
+                  <Trash2 size={14} /> Vaciar
+                </button>
+              )}
+            </div>
           </div>
 
           {carrito.length === 0 ? (
@@ -969,8 +1110,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
                     {l.extrasTexto && (
                       <div style={{ fontSize: 12, color: T.accent }}>{l.extrasTexto}</div>
                     )}
+                    {l.notas && (
+                      <div style={{ fontSize: 12, color: T.accent, fontWeight: 600 }}>! {l.notas}</div>
+                    )}
                     <div style={{ fontSize: 12, color: T.muted }}>{eur(l.precio_c)} / ud.</div>
                   </div>
+                  <button onClick={() => setEditandoNota({ clave: l.clave, texto: l.notas || '' })}
+                    title="Nota para cocina"
+                    style={{ ...btnIcono, ...(l.notas ? { color: T.accent, borderColor: T.accent } : null) }}>
+                    <StickyNote size={14} />
+                  </button>
                   <button onClick={() => cambiarCantidad(l.clave, -1)} style={btnIcono}><Minus size={14} /></button>
                   <span style={{ minWidth: 22, textAlign: 'center', fontWeight: 700, fontSize: 15, color: T.text }}>{l.cantidad}</span>
                   <button onClick={() => cambiarCantidad(l.clave, +1)} style={btnIcono}><Plus size={14} /></button>
@@ -1099,6 +1248,60 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         <Modal titulo="Caja del mostrador" onCerrar={() => setModalCaja(false)}>
           <TpvCaja establecimientoId={restaurante.id} restaurante={restaurante}
             vistaInicial={cajaVista} onCerrarModal={() => setModalCaja(false)} />
+        </Modal>
+      )}
+
+      {modalTickets && (
+        <Modal titulo="Tickets del día" onCerrar={() => setModalTickets(false)} ancho={560}>
+          <TpvTickets establecimientoId={restaurante.id} restaurante={restaurante}
+            tpvConfig={tpvConfig} onCerrarModal={() => setModalTickets(false)} />
+        </Modal>
+      )}
+
+      {editandoNota && (
+        <ModalTexto titulo="Nota para cocina" etiqueta="Se imprime en la comanda y en el ticket"
+          placeholder="Sin cebolla, muy hecha, para llevar…" inicial={editandoNota.texto}
+          boton="Guardar la nota" onCerrar={() => setEditandoNota(null)}
+          onAceptar={(v) => guardarNotaLinea(editandoNota.clave, v)} />
+      )}
+
+      {modalLibre && <ModalLibre onCerrar={() => setModalLibre(false)} onAceptar={anadirLibre} />}
+
+      {aparcandoNombre != null && (
+        <ModalTexto titulo="Aparcar esta venta" etiqueta="Ponle un nombre para reconocerla"
+          placeholder="Mesa 3, el rubio de la barra…" inicial="" maxLength={40}
+          boton="Aparcar" onCerrar={() => setAparcandoNombre(null)}
+          onAceptar={(v) => aparcarVenta(v)} />
+      )}
+
+      {modalAparcadas && (
+        <Modal titulo="Ventas aparcadas" onCerrar={() => setModalAparcadas(false)}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {aparcadas.map((a) => {
+              const unidades = (a.lineas || []).reduce((s, l) => s + (l.cantidad || 0), 0)
+              const total = (a.lineas || []).reduce((s, l) => s + (l.precio_c || 0) * (l.cantidad || 0), 0)
+              return (
+                <div key={a.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                  borderRadius: 12, background: T.surface2,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{a.nombre}</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>
+                      {unidades} art. · {eur(total)} · {new Date(a.creada).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                  <button onClick={() => recuperarVenta(a.id)} style={{ ...btnSecundario, height: 40, flexShrink: 0 }}>
+                    Recuperar
+                  </button>
+                  <button onClick={() => borrarAparcada(a.id)} title="Borrar"
+                    style={{ ...btnIcono, color: T.danger, flexShrink: 0 }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </Modal>
       )}
 
@@ -1236,6 +1439,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             onClick={() => { setMenu(false); setCajaVista('resumen'); setModalCaja(true) }} />
 
           <GrupoMenu titulo="Informes" />
+          <OpcionMenu icono={<ClipboardList size={19} color={T.accent} />} texto="Tickets del día"
+            nota="Reimprimir o anular cualquier venta"
+            onClick={() => { setMenu(false); setModalTickets(true) }} />
           <OpcionMenu icono={<FileText size={19} color={T.accent} />} texto="Informe X"
             nota="Lo vendido en este turno, sin cerrar nada"
             onClick={() => { setMenu(false); setCajaVista('resumen'); setModalCaja(true) }} />
@@ -1413,6 +1619,56 @@ function ModalEfectivo({ total_c, cobrando, abreCajon = true, onCerrar, onCobrar
           style={{ ...btnAccion, height: 58, fontSize: 17, opacity: (cobrando || noLlega) ? 0.5 : 1 }}>
           <Banknote size={19} style={{ marginRight: 8 }} />
           {cobrando ? 'Cobrando…' : abreCajon ? 'Cobrar y abrir cajón' : 'Cobrar'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// Un modal con UN campo de texto y un botón: sirve para la nota de una línea y
+// para ponerle nombre a una venta aparcada. Enter también acepta.
+function ModalTexto({ titulo, etiqueta, placeholder, inicial = '', boton, maxLength = 200, onCerrar, onAceptar }) {
+  const [v, setV] = useState(inicial)
+  return (
+    <Modal titulo={titulo} onCerrar={onCerrar}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.muted, marginBottom: 6 }}>{etiqueta}</label>
+          <input value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder}
+            maxLength={maxLength} autoFocus style={inputOscuro}
+            onKeyDown={(e) => { if (e.key === 'Enter') onAceptar(v) }} />
+        </div>
+        <button onClick={() => onAceptar(v)} style={{ ...btnAccion, height: 50, fontSize: 15 }}>{boton}</button>
+      </div>
+    </Modal>
+  )
+}
+
+// Línea de importe LIBRE: concepto + importe. El único sitio del mostrador
+// donde el importe lo teclea una persona, y va validado igual que en la edge.
+function ModalLibre({ onCerrar, onAceptar }) {
+  const [nombre, setNombre] = useState('')
+  const [importe, setImporte] = useState('')
+  return (
+    <Modal titulo="Añadir un importe libre" onCerrar={onCerrar}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>
+          Para lo que no está en la carta. Sale en la comanda y en el ticket con
+          el nombre que le pongas.
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.muted, marginBottom: 6 }}>Concepto</label>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Varios"
+            maxLength={80} autoFocus style={inputOscuro} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.muted, marginBottom: 6 }}>Importe</label>
+          <input value={importe} onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
+            placeholder="2,50" inputMode="decimal" style={inputOscuro}
+            onKeyDown={(e) => { if (e.key === 'Enter') onAceptar(nombre, importe) }} />
+        </div>
+        <button onClick={() => onAceptar(nombre, importe)} style={{ ...btnAccion, height: 50, fontSize: 15 }}>
+          Añadir a la venta
         </button>
       </div>
     </Modal>

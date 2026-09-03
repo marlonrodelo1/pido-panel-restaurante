@@ -435,7 +435,7 @@ export function imprimirPedidoWeb(pedido, items, restaurante, tipo = 'ambos') {
  * bloquear al que esta cobrando.
  */
 export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opciones = {}) {
-  const { pieTicket = null, abrirCajonTambien = false } = opciones
+  const { pieTicket = null, abrirCajonTambien = false, anula = null } = opciones
   const resultado = { ticket: false, cajon: false }
   const config = getPrinterConfig()
   if (!impresoraConfigurada(config)) return resultado
@@ -446,7 +446,7 @@ export async function imprimirTicketTpv(ticket, pedido, items, restaurante, opci
     // El logo se prepara aparte y se guarda: la primera vez cuesta una descarga, las
     // siguientes es instantaneo. Si falla devuelve null y el ticket sale sin el.
     const logo = await bytesDelLogo(restaurante?.logo_url).catch(() => null)
-    const data = generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirCajonTambien, logo)
+    const data = generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirCajonTambien, logo, anula)
     resultado.ticket = await sendToThermalPrinter(data)
     resultado.cajon = resultado.ticket && abrirCajonTambien
   } catch (err) {

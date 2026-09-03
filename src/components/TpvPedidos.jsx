@@ -304,7 +304,14 @@ export default function TpvPedidos({
   // parpadear la pantalla.
   const anchoUtil = ancho || (esMovil ? 360 : 900)
   const alLado = !esMovil && anchoUtil >= ANCHO_TRES_PARTES
-  const lista = registro === 'curso' ? enMarcha : cerrados
+  // Búsqueda por código o nombre: con el cliente al teléfono preguntando por
+  // "el PD-4837" había que barrer la lista a ojo.
+  const [busca, setBusca] = useState('')
+  const q = busca.trim().toLowerCase()
+  const coincide = (p) => !q
+    || (p.codigo || '').toLowerCase().includes(q)
+    || (p.guest_nombre || '').toLowerCase().includes(q)
+  const lista = (registro === 'curso' ? enMarcha : cerrados).filter(coincide)
 
   const tiraRepartidores = filtro === 'reparto' ? (
     <TiraRepartidores filas={repartidores} repartoPropio={repartoPropio}
@@ -335,6 +342,13 @@ export default function TpvPedidos({
         title="Actualizar" aria-label="Actualizar">
         <RefreshCw size={14} />
       </button>
+      <input value={busca} onChange={(e) => setBusca(e.target.value)}
+        placeholder="Buscar código o nombre…"
+        style={{
+          flexBasis: '100%', height: 36, borderRadius: RADIO, padding: '0 12px',
+          border: `1px solid ${busca ? T.accent : T.border}`, background: T.surface2,
+          color: T.text, fontSize: 13, fontFamily: 'inherit', outline: 'none',
+        }} />
     </div>
   )
 
