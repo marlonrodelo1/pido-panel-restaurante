@@ -23,7 +23,26 @@ if (Capacitor.isNativePlatform()) {
   ThermalPrinter = registerPlugin('ThermalPrinter')
 }
 
-const escritorio = (typeof window !== 'undefined' && window.pidooDesktop) || null
+// SOLO EN DESARROLLO: `?escritorio=1` simula la app de WINDOWS en la vista
+// previa — login oscuro sin registro, shell solo-TPV, botón de minimizar —
+// sin impresoras reales (todos los métodos fallan de forma controlada). En la
+// web de producción `import.meta.env.DEV` es false y esto no existe.
+const stubEscritorioDev = (import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('escritorio'))
+  ? {
+      esEscritorio: true,
+      minimize: () => {},
+      listPrinters: async () => ({ impresoras: [], error: 'Simulación: en la vista previa no hay impresoras' }),
+      checkUsb: async () => ({ ok: false, error: 'Simulación' }),
+      printUsb: async () => { throw new Error('Simulación: sin impresora') },
+      print: async () => { throw new Error('Simulación: sin impresora') },
+      checkConnection: async () => { throw new Error('Simulación') },
+      scanNetwork: async () => ({ printers: [] }),
+    }
+  : null
+
+const escritorio = (typeof window !== 'undefined' && window.pidooDesktop) || stubEscritorioDev
 const puente = ThermalPrinter || escritorio
 
 // Para que la interfaz pueda decir "esto solo va en la app" con propiedad.

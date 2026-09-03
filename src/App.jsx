@@ -44,7 +44,9 @@ const isNative = Capacitor.isNativePlatform()
 // La app de WINDOWS. Es la web de siempre metida en una carcasa de Electron que
 // aporta UNA cosa: el socket TCP a la impresora del puerto 9100, que un navegador no
 // puede abrir. `window.pidooDesktop` lo pone su preload.
-const esEscritorio = typeof window !== 'undefined' && !!window.pidooDesktop
+// Una sola fuente de verdad: la de printService, que en DESARROLLO también
+// acepta `?escritorio=1` para simular la app de Windows en la vista previa.
+import { esEscritorio } from './lib/printService'
 
 // Donde tiene sentido el TPV: donde se puede imprimir y abrir el cajon. Eso es la
 // tablet (Android) y ahora tambien Windows. En un navegador normal no, porque cobraria
