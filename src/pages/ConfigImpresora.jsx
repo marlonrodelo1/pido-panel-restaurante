@@ -744,9 +744,17 @@ function SeccionCocina() {
                 style={{ ...ds.input, height: 44 }}
               >
                 <option value="">Elige la impresora de cocina…</option>
+                {/* 🔴 El canal devuelve `{ nombre, puerto, desconectada }` — la
+                    propiedad va EN ESPAÑOL. Buscando `.name` las opciones salían
+                    en blanco y el desplegable parecía vacío. */}
                 {usbLista.map((n) => {
-                  const nombre = typeof n === 'string' ? n : (n?.name || '')
-                  return <option key={nombre} value={nombre}>{nombre}</option>
+                  const nombre = typeof n === 'string' ? n : (n?.nombre || n?.name || '')
+                  if (!nombre) return null
+                  return (
+                    <option key={nombre} value={nombre}>
+                      {nombre}{n?.puerto ? ` (${n.puerto})` : ''}{n?.desconectada ? ' — sin conexión' : ''}
+                    </option>
+                  )
                 })}
               </select>
             ) : (
