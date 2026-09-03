@@ -87,7 +87,9 @@ export default function ResumenTab({ estId, onIrA }) {
         <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Echando cuentas…</div>
       ) : (
         <>
-          <div className="ds-cards" style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          <MetaMes estId={estId} />
+
+          <div className="ds-cards" style={{ display: 'grid', gap: 12, marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             <Grande label="Entró" valor={eur(v.neto)}
               pie={`${v.pedidos === 1 ? '1 pedido' : `${v.pedidos || 0} pedidos`}, comisión ya descontada`} />
             <Grande label="Salió" valor={eur(salio)} pie="Compras contabilizadas + gastos" />
@@ -107,11 +109,24 @@ export default function ResumenTab({ estId, onIrA }) {
                 Lo que entró
               </div>
               <Linea label="Vendido (productos)" valor={eur(v.vendido)} />
+              {/* Por dónde entró cada euro: mostrador, web, teléfono, mesa. */}
+              {(v.por_via || []).map(x => (
+                <Sub key={x.via} label={`${x.via} (${x.pedidos})`} valor={eur(x.vendido)} />
+              ))}
               {Number(v.descuentos) > 0 && (
                 <Linea label="Descuentos que regalaste" valor={'− ' + eur(v.descuentos)} />
               )}
               <Linea label="Comisión de Pidoo" valor={'− ' + eur(v.comision_pidoo)} />
               <Linea label="Tuyo" valor={eur(v.neto)} fuerte />
+              {(v.por_pago || []).length > 0 && (
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8 }}>
+                  {v.por_pago.map(x => (
+                    <span key={x.pago} style={{ ...ds.badge, background: colors.surface2, color: colors.textDim, border: `1px solid ${colors.border}` }}>
+                      {x.pago}: {eur(x.vendido)}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 10, lineHeight: 1.5 }}>
                 Cuenta lo que pasa por Pidoo: mostrador (TPV), app, tienda, mesa y teléfono.
                 El envío y la propina no son tuyos (van al reparto) y no se cuentan.
@@ -139,20 +154,24 @@ export default function ResumenTab({ estId, onIrA }) {
                   <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{eur(f.total)}</span>
                 </div>
               ))}
+              {/* Fijos y pagos de una vez, SEPARADOS: el depósito del local parecía
+                  un fijo más y Marlon preguntó (con razón) por qué. */}
               <Linea
-                label="Gastos (fijos y sueltos)"
-                valor={eur(datos?.gastos?.total)}
+                label="Gastos fijos del mes"
+                valor={eur(datos?.gastos?.fijos)}
                 accion={onIrA ? () => onIrA('gastos') : null}
               />
-              {(datos?.gastos?.por_categoria || []).map(g => (
-                <div key={g.categoria} style={{
-                  display: 'flex', justifyContent: 'space-between', gap: 12,
-                  padding: '3px 0 3px 16px', fontSize: type.xs, color: colors.textMute,
-                }}>
-                  <span>{g.categoria}{g.apuntes > 1 ? ` (${g.apuntes})` : ''}</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{eur(g.total)}</span>
-                </div>
+              {(datos?.gastos?.por_categoria || []).filter(g => g.fijo).map(g => (
+                <Sub key={'f' + g.categoria} label={g.categoria + (g.apuntes > 1 ? ` (${g.apuntes})` : '')} valor={eur(g.total)} />
               ))}
+              {Number(datos?.gastos?.sueltos) > 0 && (
+                <>
+                  <Linea label="Pagos de una sola vez" valor={eur(datos?.gastos?.sueltos)} />
+                  {(datos?.gastos?.por_categoria || []).filter(g => !g.fijo).map(g => (
+                    <Sub key={'s' + g.categoria} label={g.categoria + (g.apuntes > 1 ? ` (${g.apuntes})` : '')} valor={eur(g.total)} />
+                  ))}
+                </>
+              )}
               <Linea label="Total" valor={eur(salio)} fuerte />
               {Number(datos?.merma?.total) > 0 && (
                 <div style={{
@@ -168,20 +187,19 @@ export default function ResumenTab({ estId, onIrA }) {
               )}
             </div>
           </div>
-
-          <PuntoEquilibrio estId={estId} />
         </>
       )}
     </div>
   )
 }
 
-// El punto de equilibrio: cuánto hay que vender para cubrir los fijos. La RPC trae
-// los ingredientes y aquí se hace la división, DICIENDO de dónde sale el margen:
-// del mes real si el stock ya valoró ventas, o teórico de la carta si no — y con
-// cuántos platos sin receta está hecho el cálculo. Un número sin su letra pequeña
-// es un número en el que no se puede confiar.
-function PuntoEquilibrio({ estId }) {
+// LA META DEL MES, como la pidió Marlon: los fijos son la meta, y lo que la llena
+// no es lo vendido sino LO QUE LA VENTA DEJA — la ganancia según escandallo (lo
+// vendido neto menos lo que el almacén descontó de género). En rojo mientras falte,
+// en verde cuando los fijos estén cubiertos y empiece el beneficio. Los platos sin
+// receta cuentan como si dejaran todo (no se les conoce coste): se dice en la letra
+// pequeña, no se disimula.
+function MetaMes({ estId }) {
   const [d, setD] = useState(null)
 
   useEffect(() => {
@@ -195,63 +213,89 @@ function PuntoEquilibrio({ estId }) {
 
   if (!d) return null
 
+  const fijos = Number(d.fijos_mes)
+  const vendido = Number(d.vendido_mes)
   const neto = Number(d.neto_mes)
   const costeVendido = Number(d.coste_vendido_mes)
-  const margenReal = neto > 0 && costeVendido > 0 ? (neto - costeVendido) / neto : null
-  const margen = margenReal ?? (d.margen_teorico != null ? Number(d.margen_teorico) : null)
-  const fijos = Number(d.fijos_mes)
+  const margenTeorico = d.margen_teorico != null ? Number(d.margen_teorico) : null
   const sinReceta = d.platos - d.platos_con_receta
 
+  // La ganancia del mes: real si el motor valoró consumo; estimada por el margen
+  // teórico si todavía no; y si no hay ni recetas, el neto tal cual (100%), avisando.
+  const ganancia = costeVendido > 0 ? neto - costeVendido
+    : margenTeorico != null ? neto * margenTeorico
+    : neto
+  const gananciaEtiqueta = costeVendido > 0 ? 'real (según tus recetas)'
+    : margenTeorico != null ? `estimada con el margen teórico del ${Math.round(margenTeorico * 100)}%`
+    : 'sin descontar el género (aún no hay recetas)'
+
+  if (fijos <= 0) {
+    return (
+      <div style={{ ...ds.card, padding: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Target size={16} color={colors.primary} />
+          <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text }}>La meta del mes</div>
+        </div>
+        <div style={{ ...ds.muted, fontSize: type.sm, marginTop: 8, lineHeight: 1.5 }}>
+          Añade tus gastos fijos (pestaña Gastos) y aquí verás cuánto te falta cada día
+          para cubrirlos.
+        </div>
+      </div>
+    )
+  }
+
+  const pct = Math.max(0, Math.min(ganancia / fijos, 1))
+  const cubierta = ganancia >= fijos
+  const color = cubierta ? colors.sage : colors.danger
+
   return (
-    <div style={{ ...ds.card, padding: 18, marginTop: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <Target size={16} color={colors.primary} />
-        <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text }}>
-          Punto de equilibrio
+    <div style={{ ...ds.card, padding: 18 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Target size={16} color={colors.primary} />
+          <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text }}>
+            La meta del mes: {eur(fijos)} de ganancia (tus fijos)
+          </div>
+        </div>
+        <div style={{ fontSize: type.sm, fontWeight: 800, color }}>
+          {cubierta
+            ? `Meta cubierta · +${eur(ganancia - fijos)} de beneficio`
+            : `Te faltan ${eur(fijos - ganancia)}`}
         </div>
       </div>
 
-      {fijos <= 0 ? (
-        <div style={{ ...ds.muted, fontSize: type.sm, lineHeight: 1.5 }}>
-          Añade tus gastos fijos (pestaña Gastos) y aquí te diré cuánto necesitas vender
-          para cubrirlos.
+      <div style={{ marginTop: 12, height: 14, borderRadius: 999, background: colors.surface2, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
+        <div style={{ width: `${pct * 100}%`, height: '100%', background: color, transition: 'width .3s' }} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: type.sm, color: colors.textDim }}>
+        <span>Vendido este mes: <strong style={{ color: colors.text }}>{eur(vendido)}</strong> brutos ({d.pedidos_mes} pedidos)</span>
+        <span>→ ganancia: <strong style={{ color: colors.text }}>{eur(ganancia)}</strong> <span style={{ color: colors.textMute }}>({gananciaEtiqueta})</span></span>
+        {!cubierta && margenTeorico > 0 && (
+          <span style={{ color: colors.textMute }}>
+            ≈ te queda por vender {eur((fijos - ganancia) / (costeVendido > 0 && neto > 0 ? (neto - costeVendido) / neto : margenTeorico))} brutos
+          </span>
+        )}
+      </div>
+
+      {sinReceta > 0 && (
+        <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
+          ⚠️ {sinReceta} de {d.platos} platos siguen sin receta: sus ventas cuentan como
+          si dejaran todo el importe. Cada receta que escribas afina esta barra.
         </div>
-      ) : margen == null || margen <= 0 ? (
-        <div style={{ ...ds.muted, fontSize: type.sm, lineHeight: 1.5 }}>
-          Con tus fijos de <strong style={{ color: colors.text }}>{eur(fijos)}/mes</strong> falta
-          conocer tu margen para calcularlo: ponles receta a tus platos (Almacén →
-          Escandallos). Hoy la tienen {d.platos_con_receta} de {d.platos}.
-        </div>
-      ) : (
-        <>
-          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'baseline' }}>
-            <div>
-              <div style={{ fontSize: 26, fontWeight: 800, color: colors.text, fontVariantNumeric: 'tabular-nums' }}>
-                {eur(fijos / margen / d.dias_mes)} <span style={{ fontSize: type.sm, fontWeight: 600, color: colors.textMute }}>al día</span>
-              </div>
-              <div style={{ ...ds.muted, fontSize: type.xs }}>
-                {eur(fijos / margen)} al mes para cubrir tus {eur(fijos)} de fijos
-              </div>
-            </div>
-            <div style={{ ...ds.muted, fontSize: type.sm }}>
-              Este mes llevas <strong style={{ color: neto >= fijos / margen ? colors.sage : colors.text }}>{eur(neto)}</strong>
-            </div>
-          </div>
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: radius.sm,
-            background: colors.surface2, fontSize: type.xs, color: colors.textMute, lineHeight: 1.5,
-          }}>
-            Calculado con margen del <strong>{Math.round(margen * 100)}%</strong>{' '}
-            {margenReal != null
-              ? 'REAL de tus ventas de este mes (lo vendido menos lo que el almacén descontó).'
-              : `teórico de tu carta (media de los ${d.platos_con_receta} platos con receta).`}
-            {sinReceta > 0 && (
-              <> ⚠️ {sinReceta} de {d.platos} platos siguen sin receta: el número afinará
-              cuando las tengan.</>
-            )}
-          </div>
-        </>
       )}
+    </div>
+  )
+}
+
+function Sub({ label, valor }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', gap: 12,
+      padding: '3px 0 3px 16px', fontSize: type.xs, color: colors.textMute,
+    }}>
+      <span>{label}</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{valor}</span>
     </div>
   )
 }
