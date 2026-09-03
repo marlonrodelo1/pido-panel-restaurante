@@ -1,6 +1,7 @@
-import { TriangleAlert, TrendingDown, CircleHelp, Trash2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { TriangleAlert, TrendingDown, CircleHelp, Trash2, ClipboardCheck } from 'lucide-react'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
-import { eur, cantidad } from '../../lib/stock'
+import { eur, cantidad, cargarMovimientos } from '../../lib/stock'
 
 // El resumen del almacén de un vistazo.
 //
@@ -8,7 +9,7 @@ import { eur, cantidad } from '../../lib/stock'
 // descontar (pedidos telefónicos sin desglose, platos sin receta, líneas de importe
 // libre del TPV). Un inventario que no dice dónde no llega es un inventario en el que
 // nadie confía la segunda semana.
-export default function ResumenTab({ resumen, articulos, onIrA }) {
+export default function ResumenTab({ estId, resumen, articulos, onIrA }) {
   const v = resumen?.valor || {}
   const c = resumen?.ciegos
 
@@ -133,8 +134,60 @@ export default function ResumenTab({ resumen, articulos, onIrA }) {
           texto="Hasta que no metas una factura de compra o les pongas el coste al hacer un recuento, los platos que lleven esos artículos te saldrán con un margen del 100 %, que no es real."
         />
       )}
+
+      <RecuentoBloque estId={estId} />
       </div>
     </div>
+  )
+}
+
+// El RESULTADO del recuento, en euros: cuando se cuenta lo que hay de verdad, la
+// diferencia con lo que el sistema creía queda apuntada (tipo 'recuento'). Aquí se
+// suman los últimos 60 días y se valoran — negativo = faltaba género (se vendió sin
+// descontar, se tiró sin apuntar… o se fue por la puerta). Es donde el inventario
+// cuadra o descubre el agujero. Solo aparece si ha habido recuentos.
+function RecuentoBloque({ estId }) {
+  const [movs, setMovs] = useState(null)
+
+  useEffect(() => {
+    if (!estId) return
+    let vivo = true
+    cargarMovimientos(estId, { tipo: 'recuento', limite: 500 })
+      .then(ms => {
+        if (!vivo) return
+        const corte = Date.now() - 60 * 24 * 3600 * 1000
+        setMovs(ms.filter(m => new Date(m.created_at).getTime() >= corte && Number(m.cantidad) !== 0))
+      })
+      .catch(() => { if (vivo) setMovs([]) })
+    return () => { vivo = false }
+  }, [estId])
+
+  if (!movs || movs.length === 0) return null
+
+  const porArticulo = {}
+  let total = 0
+  for (const m of movs) {
+    const euros = Number(m.cantidad) * Number(m.coste_unitario || 0)
+    total += euros
+    const nombre = m.stock_articulos?.nombre || '—'
+    porArticulo[nombre] = porArticulo[nombre] || { nombre, unidad: m.stock_articulos?.unidad || 'ud', cant: 0, euros: 0 }
+    porArticulo[nombre].cant += Number(m.cantidad)
+    porArticulo[nombre].euros += euros
+  }
+  const top = Object.values(porArticulo).sort((a, b) => Math.abs(b.euros) - Math.abs(a.euros)).slice(0, 6)
+
+  return (
+    <Bloque
+      tono={total < -1 ? 'danger' : 'info'}
+      icono={<ClipboardCheck size={16} color={total < -1 ? colors.danger : colors.info} />}
+      titulo={`Resultado de tus recuentos (últimos 60 días): ${total > 0 ? '+' : ''}${eur(total)}`}
+      texto={total < -1
+        ? 'Al contar había MENOS de lo que el sistema creía. Ahí dentro están las ventas que no descontaron (platos sin receta), lo tirado sin apuntar como merma… o lo que se fue por la puerta. Cuantas más recetas tengas, más pequeño será este número.'
+        : 'La diferencia entre lo que el sistema creía y lo que contaste, ya valorada. Cerca de cero = el almacén dice la verdad.'}
+    >
+      <Lista items={top.map(a =>
+        `${a.nombre} · ${a.cant > 0 ? '+' : ''}${cantidad(a.cant, a.unidad)} · ${a.euros > 0 ? '+' : ''}${eur(a.euros)}`)} />
+    </Bloque>
   )
 }
 

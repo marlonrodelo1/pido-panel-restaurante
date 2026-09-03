@@ -16,13 +16,17 @@ import { useRest } from '../context/RestContext'
 import { colors, ds, type } from '../lib/uiStyles'
 import { cargarArticulos } from '../lib/stock'
 import ResumenTab from '../components/contabilidad/ResumenTab'
+import PlatosTab from '../components/contabilidad/PlatosTab'
 import GastosTab from '../components/contabilidad/GastosTab'
+import InformeTab from '../components/contabilidad/InformeTab'
 import ComprasTab from '../components/almacen/ComprasTab'
 
 const PESTANAS = [
   { id: 'resumen', label: 'Resumen' },
+  { id: 'platos', label: 'Platos' },
   { id: 'facturas', label: 'Facturas de compra' },
   { id: 'gastos', label: 'Gastos' },
+  { id: 'informe', label: 'Informe' },
 ]
 
 export default function Contabilidad() {
@@ -103,11 +107,17 @@ export default function Contabilidad() {
       {pestana === 'resumen' && (
         <ResumenTab estId={estId} onIrA={setPestana} />
       )}
+      {pestana === 'platos' && (
+        <PlatosTab estId={estId} />
+      )}
       {pestana === 'facturas' && (
         <ComprasTab estId={estId} articulos={articulos} onCambio={recargar} />
       )}
       {pestana === 'gastos' && (
         <GastosTab estId={estId} />
+      )}
+      {pestana === 'informe' && (
+        <InformeTab estId={estId} nombreRestaurante={restaurante?.nombre} />
       )}
     </div>
   )

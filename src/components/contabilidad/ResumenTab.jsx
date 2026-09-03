@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { CircleHelp } from 'lucide-react'
-import { colors, ds, type } from '../../lib/uiStyles'
+import { CircleHelp, Target } from 'lucide-react'
+import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { eur, resumenNegocio } from '../../lib/stock'
+import { eur, resumenNegocio, puntoEquilibrio } from '../../lib/stock'
 
 // El resumen de Contabilidad: entró − salió = te quedó.
 //
@@ -167,6 +167,88 @@ export default function ResumenTab({ estId, onIrA }) {
                 </div>
               )}
             </div>
+          </div>
+
+          <PuntoEquilibrio estId={estId} />
+        </>
+      )}
+    </div>
+  )
+}
+
+// El punto de equilibrio: cuánto hay que vender para cubrir los fijos. La RPC trae
+// los ingredientes y aquí se hace la división, DICIENDO de dónde sale el margen:
+// del mes real si el stock ya valoró ventas, o teórico de la carta si no — y con
+// cuántos platos sin receta está hecho el cálculo. Un número sin su letra pequeña
+// es un número en el que no se puede confiar.
+function PuntoEquilibrio({ estId }) {
+  const [d, setD] = useState(null)
+
+  useEffect(() => {
+    if (!estId) return
+    let vivo = true
+    puntoEquilibrio(estId)
+      .then(r => { if (vivo) setD(r) })
+      .catch(() => { if (vivo) setD(false) })
+    return () => { vivo = false }
+  }, [estId])
+
+  if (!d) return null
+
+  const neto = Number(d.neto_mes)
+  const costeVendido = Number(d.coste_vendido_mes)
+  const margenReal = neto > 0 && costeVendido > 0 ? (neto - costeVendido) / neto : null
+  const margen = margenReal ?? (d.margen_teorico != null ? Number(d.margen_teorico) : null)
+  const fijos = Number(d.fijos_mes)
+  const sinReceta = d.platos - d.platos_con_receta
+
+  return (
+    <div style={{ ...ds.card, padding: 18, marginTop: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Target size={16} color={colors.primary} />
+        <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text }}>
+          Punto de equilibrio
+        </div>
+      </div>
+
+      {fijos <= 0 ? (
+        <div style={{ ...ds.muted, fontSize: type.sm, lineHeight: 1.5 }}>
+          Añade tus gastos fijos (pestaña Gastos) y aquí te diré cuánto necesitas vender
+          para cubrirlos.
+        </div>
+      ) : margen == null || margen <= 0 ? (
+        <div style={{ ...ds.muted, fontSize: type.sm, lineHeight: 1.5 }}>
+          Con tus fijos de <strong style={{ color: colors.text }}>{eur(fijos)}/mes</strong> falta
+          conocer tu margen para calcularlo: ponles receta a tus platos (Almacén →
+          Escandallos). Hoy la tienen {d.platos_con_receta} de {d.platos}.
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: colors.text, fontVariantNumeric: 'tabular-nums' }}>
+                {eur(fijos / margen / d.dias_mes)} <span style={{ fontSize: type.sm, fontWeight: 600, color: colors.textMute }}>al día</span>
+              </div>
+              <div style={{ ...ds.muted, fontSize: type.xs }}>
+                {eur(fijos / margen)} al mes para cubrir tus {eur(fijos)} de fijos
+              </div>
+            </div>
+            <div style={{ ...ds.muted, fontSize: type.sm }}>
+              Este mes llevas <strong style={{ color: neto >= fijos / margen ? colors.sage : colors.text }}>{eur(neto)}</strong>
+            </div>
+          </div>
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: radius.sm,
+            background: colors.surface2, fontSize: type.xs, color: colors.textMute, lineHeight: 1.5,
+          }}>
+            Calculado con margen del <strong>{Math.round(margen * 100)}%</strong>{' '}
+            {margenReal != null
+              ? 'REAL de tus ventas de este mes (lo vendido menos lo que el almacén descontó).'
+              : `teórico de tu carta (media de los ${d.platos_con_receta} platos con receta).`}
+            {sinReceta > 0 && (
+              <> ⚠️ {sinReceta} de {d.platos} platos siguen sin receta: el número afinará
+              cuando las tengan.</>
+            )}
           </div>
         </>
       )}

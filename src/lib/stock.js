@@ -200,6 +200,20 @@ export const apuntarFijo = (fijoId) =>
 export const apuntarFijosMes = (estId) =>
   rpc('stock_apuntar_fijos_mes', { p_establecimiento_id: estId })
 
+/* ── El panorama: equilibrio, rentabilidad, informe ───────────────────────── */
+
+// Los INGREDIENTES del punto de equilibrio (fijos, margen real del mes si el stock
+// ya valoró ventas, margen teórico de la carta si no). La división la hace la
+// pantalla, que además dice con cuántos platos sin receta está hecho el cálculo.
+export const puntoEquilibrio = (estId) =>
+  rpc('stock_punto_equilibrio', { p_establecimiento_id: estId })
+
+export const rentabilidadPlatos = (estId, desde, hasta) =>
+  rpc('stock_rentabilidad_platos', { p_establecimiento_id: estId, p_desde: desde, p_hasta: hasta })
+
+export const informeMes = (estId, mes) =>
+  rpc('stock_informe_mes', { p_establecimiento_id: estId, p_mes: mes })
+
 export async function cargarMovimientos(estId, { articuloId, tipo, limite = 100 } = {}) {
   let q = supabase
     .from('stock_movimientos')

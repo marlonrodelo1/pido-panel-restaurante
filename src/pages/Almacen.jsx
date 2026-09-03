@@ -15,6 +15,7 @@ import { colors, ds, radius, type } from '../lib/uiStyles'
 import { cargarArticulos, cargarResumen } from '../lib/stock'
 import ArranqueAsistido from '../components/almacen/ArranqueAsistido'
 import ResumenTab from '../components/almacen/ResumenTab'
+import ListaCompraTab from '../components/almacen/ListaCompraTab'
 import ArticulosTab from '../components/almacen/ArticulosTab'
 import EscandallosTab from '../components/almacen/EscandallosTab'
 import MovimientosTab from '../components/almacen/MovimientosTab'
@@ -24,6 +25,7 @@ import MovimientosTab from '../components/almacen/MovimientosTab'
 // Contabilidad la del DINERO. Mismas tablas, cero duplicados.
 const PESTANAS = [
   { id: 'resumen', label: 'Resumen' },
+  { id: 'compra', label: 'La compra' },
   { id: 'articulos', label: 'Artículos de compra' },
   { id: 'escandallos', label: 'Escandallos' },
   { id: 'movimientos', label: 'Movimientos' },
@@ -136,7 +138,10 @@ export default function Almacen() {
       </div>
 
       {pestana === 'resumen' && (
-        <ResumenTab resumen={resumen} articulos={articulos} onIrA={setPestana} />
+        <ResumenTab estId={estId} resumen={resumen} articulos={articulos} onIrA={setPestana} />
+      )}
+      {pestana === 'compra' && (
+        <ListaCompraTab articulos={articulos} onIrA={setPestana} />
       )}
       {pestana === 'articulos' && (
         <ArticulosTab estId={estId} articulos={articulos} onCambio={recargar} />
