@@ -5,16 +5,24 @@
 // lo que sigue en marcha arriba y lo ya cerrado de hoy debajo, como un registro
 // del día.
 //
-// Lo que esta pantalla NO hace, a propósito: aceptar, rechazar ni cancelar. Esa
-// lógica vive en `PedidosEnVivo.jsx` y no es simple — lleva control de quién acepta
-// primero si hay dos tablets, reintentos del reparto, impresión y avisos.
-// Duplicarla aquí sería duplicar justo la parte que mueve dinero.
+// Desde aquí también se GESTIONA: aceptar, rechazar, cancelar, avanzar de
+// estado, reimprimir el ticket y sacar la factura con los datos del cliente.
+// La lógica que mueve dinero (candados de concurrencia, reintentos del
+// dispatcher, reembolsos, impresión) vive en `lib/accionesPedido.js`,
+// compartiendo los mismos candados que `PedidosEnVivo.jsx` (la pantalla de la
+// tablet de los restaurantes sin TPV).
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { toast } from '../App'
-import { T, cents, eur, btnAccion, btnSecundario } from '../lib/tpvTheme'
+import { toast, confirmar } from '../App'
+import { useRest } from '../context/RestContext'
+import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { hayQueCobrar } from '../lib/metodoPago'
-import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  aceptarPedido, rechazarPedido, cancelarPedido, marcarListo, marcarRecogido,
+  marcarEntregado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
+} from '../lib/accionesPedido'
+import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
+import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
@@ -80,8 +88,10 @@ const FILTROS = [
 
 export default function TpvPedidos({
   establecimientoId, esMovil = false, huecoAbajo = 0, repartoPropio = false,
-  onNuevo, onAbrirPedidos, onAbrirRepartidores,
+  onNuevo, onAbrirRepartidores,
 }) {
+  // El restaurante entero y la config del TPV, para las acciones y los tickets.
+  const { restaurante, tpvConfig } = useRest()
   // 🔴 Se mide EL HUECO QUE TIENE ESTA PANTALLA, no la ventana.
   //
   // Medido el 1 sep 2026: con una ventana de 1024 px, al TPV le quedan 683 px libres
@@ -269,22 +279,16 @@ export default function TpvPedidos({
   const enMarcha = delFiltro.filter((p) => EN_CURSO.includes(p.estado))
   const cerrados = delFiltro.filter((p) => CERRADOS.includes(p.estado))
 
-  // 🔴 Aviso DIRECTO al padre, no un evento global.
-  //
-  // Antes esto disparaba `pidoo:goto 'pedidos'` por `window`, y ese evento lo escuchan
-  // DOS sitios: el TPV (que abre su capa encima, dejando el mostrador detras) y
-  // `App.jsx` (que cambia de seccion). En la app de Windows se ejecutaban los dos: la
-  // capa se abria y acto seguido App.jsx cambiaba `seccion` a 'pedidos', dejaba de
-  // cumplirse `seccion === 'tpv'` y el <Tpv/> se DESMONTABA entero. Resultado: tocabas
-  // un pedido y acababas en una pagina en blanco, con el carrito perdido.
-  //
-  // Un evento global no tiene destinatario: lo coge quien pilla. Con un prop, el que
-  // abre la capa es exactamente quien la tiene.
-  const irAPedidos = () => {
-    if (onAbrirPedidos) { onAbrirPedidos(); return }
-    // Sin padre que escuche (montado desde otro sitio), el evento sigue valiendo.
-    window.dispatchEvent(new CustomEvent('pidoo:goto', { detail: 'pedidos' }))
-  }
+  // Refresco tras una acción (aceptar, cancelar, factura…): recarga el listado
+  // y fuerza el re-fetch del detalle abierto. El realtime también lo haría,
+  // pero esperarlo deja la pantalla mintiendo un segundo.
+  const refrescar = () => { cargar(); setRefrescoDetalle((n) => n + 1) }
+
+  // En el KANBAN no hay columna de detalle: tocar una tarjeta selecciona el
+  // pedido y cambia a la vista de lista, donde el detalle (con sus acciones)
+  // sí tiene sitio. Antes esto abría la capa "Pedidos en vivo", que ya no
+  // existe dentro del TPV: la gestión se hace aquí.
+  const abrirDesdeKanban = (p) => { setSel(p.id); setVista('lista') }
 
   // En Reparto y en Recogida se ofrece crear uno nuevo; en Todos no, porque no
   // sabríamos de qué tipo.
@@ -457,7 +461,7 @@ export default function TpvPedidos({
                   {col.titulo}{suyos.length > 0 && ` · ${suyos.length}`}
                 </div>
                 <div style={{ display: 'grid', gap: 6, maxHeight: '52vh', overflowY: 'auto' }}>
-                  {suyos.map((p) => <Tarjeta key={p.id} p={p} onClick={irAPedidos} />)}
+                  {suyos.map((p) => <Tarjeta key={p.id} p={p} onClick={() => abrirDesdeKanban(p)} />)}
                   {!suyos.length && <div style={{ fontSize: 12, color: T.muted, opacity: 0.5 }}>—</div>}
                 </div>
               </div>
@@ -473,7 +477,7 @@ export default function TpvPedidos({
             }}>
               Cerrados hoy · {cerrados.length}
             </div>
-            <Listado pedidos={cerrados} onClick={irAPedidos} apagado esMonitor />
+            <Listado pedidos={cerrados} onClick={abrirDesdeKanban} apagado esMonitor />
           </>
         )}
       </div>
@@ -522,7 +526,8 @@ export default function TpvPedidos({
               <ArrowLeft size={15} style={{ marginRight: 6 }} /> Volver a la lista
             </button>
             <DetallePedido p={detalleVisible} cargando={cargandoDetalle}
-              repartoPropio={repartoPropio} onGestionar={irAPedidos} />
+              repartoPropio={repartoPropio} restaurante={restaurante}
+              tpvConfig={tpvConfig} onCambiado={refrescar} />
           </div>
         ) : (
           <>
@@ -551,7 +556,8 @@ export default function TpvPedidos({
                 background: T.surface, borderRadius: RADIO, padding: 16,
               }}>
                 <DetallePedido p={detalleVisible} cargando={cargandoDetalle}
-                  repartoPropio={repartoPropio} onGestionar={irAPedidos} />
+                  repartoPropio={repartoPropio} restaurante={restaurante}
+                  tpvConfig={tpvConfig} onCambiado={refrescar} />
               </div>
             )}
           </>
@@ -632,7 +638,7 @@ function Listado({ pedidos, onClick, apagado, esMonitor = false }) {
       {pedidos.map((p, i) => {
         const Icono = ICONO_TIPO[tipoDe(p)]
         return (
-          <button key={p.id} onClick={onClick} style={{
+          <button key={p.id} onClick={() => onClick(p)} style={{
             display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
             padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
             fontFamily: 'inherit', opacity: apagado ? 0.62 : 1,
@@ -879,11 +885,20 @@ function TiraRepartidores({ filas, repartoPropio, abierta, onAlternar, onGestion
   )
 }
 
-// El pedido elegido, a la derecha. SOLO LECTURA a proposito: aceptar, rechazar,
-// cancelar e imprimir siguen viviendo en `PedidosEnVivo.jsx`, que lleva el control de
-// quien acepta primero cuando hay dos tablets, los reintentos del reparto y la
-// impresion. Duplicar eso aqui seria duplicar justo la parte que mueve dinero.
-function DetallePedido({ p, cargando, repartoPropio = false, onGestionar }) {
+// El pedido elegido, a la derecha. Desde aquí SE GESTIONA: aceptar con su
+// tiempo, rechazar y cancelar con motivo, avanzar de estado, reimprimir el
+// ticket y sacar la factura con los datos fiscales del cliente. Los candados
+// de concurrencia y el dinero viven en `lib/accionesPedido.js`.
+function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvConfig, onCambiado }) {
+  // 'aceptar' | 'rechazar' | 'cancelar' | 'factura' — el paso intermedio abierto.
+  const [paso, setPaso] = useState(null)
+  const [minutos, setMinutos] = useState(20)
+  const [ocupado, setOcupado] = useState(false)
+  const [fact, setFact] = useState({ nombre: '', nif: '', direccion: '' })
+
+  // Al cambiar de pedido se cierra cualquier paso a medias del anterior.
+  useEffect(() => { setPaso(null); setOcupado(false) }, [p?.id])
+
   if (cargando) {
     return <div style={{ padding: 30, textAlign: 'center', color: T.muted }}>Cargando el pedido…</div>
   }
@@ -900,15 +915,9 @@ function DetallePedido({ p, cargando, repartoPropio = false, onGestionar }) {
         <Inbox size={30} style={{ opacity: 0.6 }} />
         <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Ningún pedido abierto</div>
         <div style={{ fontSize: 13, maxWidth: 300 }}>
-          Toca uno de la lista y aquí ves quién lo pide, qué lleva y cuánto es.
+          Toca uno de la lista para verlo y gestionarlo: aceptar, marcar listo,
+          entregar, reimprimir o sacar factura.
         </div>
-        {/* Tambien aqui, y no solo con un pedido abierto: aceptar uno nuevo se hace en
-            Pedidos, y sin este boton habria que elegir algo antes para poder llegar. */}
-        <button onClick={onGestionar} style={{
-          ...btnSecundario, height: 42, borderRadius: RADIO, marginTop: 6,
-        }}>
-          Gestionar en Pedidos <ArrowRight size={15} style={{ marginLeft: 6 }} />
-        </button>
       </div>
     )
   }
@@ -1042,11 +1051,302 @@ function DetallePedido({ p, cargando, repartoPropio = false, onGestionar }) {
         ))}
       </div>
 
-      <button onClick={onGestionar} style={{
-        ...btnSecundario, width: '100%', height: 46, borderRadius: RADIO, marginTop: 12,
-      }}>
-        Gestionar en Pedidos <ArrowRight size={15} style={{ marginLeft: 6 }} />
-      </button>
+      <Acciones p={p} repartoPropio={repartoPropio} restaurante={restaurante}
+        tpvConfig={tpvConfig} onCambiado={onCambiado}
+        paso={paso} setPaso={setPaso} minutos={minutos} setMinutos={setMinutos}
+        ocupado={ocupado} setOcupado={setOcupado} fact={fact} setFact={setFact} />
+    </div>
+  )
+}
+
+// ── La botonera de acciones del pedido, según su estado ──────────────────────
+function Acciones({
+  p, repartoPropio, restaurante, tpvConfig, onCambiado,
+  paso, setPaso, minutos, setMinutos, ocupado, setOcupado, fact, setFact,
+}) {
+  const cobraEfectivo = pendienteDeCobro(p)
+
+  // Envuelve una acción: candado de doble toque, aviso y refresco.
+  async function ejecutar(fn, args, okMsg) {
+    if (ocupado) return
+    setOcupado(true)
+    const r = await fn(args)
+    setOcupado(false)
+    if (r.ok) {
+      if (okMsg) toast(okMsg, 'success')
+      setPaso(null)
+      onCambiado?.()
+    } else if (r.motivo === 'gestionado') {
+      toast('Ese pedido ya se gestionó desde otro sitio.', 'error')
+      onCambiado?.()
+    } else {
+      toast('No se pudo. Revisa la conexión e inténtalo de nuevo.', 'error')
+    }
+  }
+
+  // El ticket que toca reimprimir: la venta de mostrador tiene su ticket
+  // FISCAL (serie y número, en `tpv_tickets`); un pedido de app o telefónico
+  // lleva el ticket del cliente. Los dos salen por la impresora de caja, y con
+  // los datos fiscales del cliente si los tiene guardados.
+  async function reimprimirTicket(factura = p.factura_datos || null) {
+    if (!impresoraConfigurada()) { toast('No hay impresora configurada', 'error'); return false }
+    if (p.origen_pedido === 'tpv') {
+      const { data: t } = await supabase.from('tpv_tickets').select('*')
+        .eq('pedido_id', p.id).is('rectifica_ticket_id', null)
+        .order('emitido_at', { ascending: false }).limit(1).maybeSingle()
+      if (!t) { toast('Esta venta no tiene ticket emitido', 'error'); return false }
+      const r = await imprimirTicketTpv(t, p, p.items || [], restaurante, {
+        pieTicket: tpvConfig?.pie_ticket, factura,
+      })
+      return !!r.ticket
+    }
+    return await imprimirTicketClienteSolo(p, p.items || [], restaurante, factura)
+  }
+
+  async function pulsarReimprimir() {
+    if (ocupado) return
+    setOcupado(true)
+    const ok = await reimprimirTicket()
+    setOcupado(false)
+    toast(ok ? 'Ticket impreso' : 'La impresora no responde', ok ? 'success' : 'error')
+  }
+
+  // Guarda los datos fiscales del cliente en el pedido y saca la factura.
+  async function guardarFactura() {
+    const datos = {
+      nombre: fact.nombre.trim(),
+      nif: fact.nif.trim().toUpperCase(),
+      direccion: fact.direccion.trim(),
+      creada_at: new Date().toISOString(),
+    }
+    if (!datos.nombre || !datos.nif) { toast('El nombre y el NIF son obligatorios', 'error'); return }
+    if (ocupado) return
+    setOcupado(true)
+    // `.select('id')`: si la RLS no cubre a esta cuenta, el update afecta 0
+    // filas SIN error — y esto no puede fingir que guardó.
+    const { data, error } = await supabase.from('pedidos')
+      .update({ factura_datos: datos }).eq('id', p.id).select('id')
+    if (error || !data?.length) {
+      setOcupado(false)
+      toast('No se pudieron guardar los datos' + (error ? ': ' + error.message : ''), 'error')
+      return
+    }
+    const ok = await reimprimirTicket(datos)
+    setOcupado(false)
+    setPaso(null)
+    onCambiado?.()
+    toast(ok ? 'Factura impresa con los datos del cliente' : 'Datos guardados, pero la impresora no responde', ok ? 'success' : 'error')
+  }
+
+  const btnGrande = { ...btnAccion, width: '100%', height: 48, borderRadius: RADIO, fontSize: 15 }
+  const btnMedio = { ...btnSecundario, flex: 1, minWidth: 130, height: 44, borderRadius: RADIO }
+  const btnPeligro = {
+    ...btnMedio, background: 'transparent',
+    border: `1px solid ${T.danger || '#B5564A'}`, color: T.danger || '#B5564A',
+  }
+  const caja = { background: T.surface2, borderRadius: RADIO, padding: 12, marginTop: 12 }
+
+  // ── Pasos intermedios ──────────────────────────────────────────────────────
+  if (paso === 'aceptar') {
+    return (
+      <div style={caja}>
+        <Titulo>¿En cuántos minutos estará?</Titulo>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[15, 20, 30, 45].map((m) => (
+            <button key={m} onClick={() => setMinutos(m)} style={{
+              flex: 1, minWidth: 64, height: 48, borderRadius: RADIO, cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 16, fontWeight: 800,
+              border: `1px solid ${minutos === m ? T.accent : T.border}`,
+              background: minutos === m ? T.accentFill : T.surface,
+              color: minutos === m ? T.onAccent : T.text,
+            }}>{m}′</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button disabled={ocupado} style={{ ...btnGrande, flex: 1, opacity: ocupado ? 0.6 : 1 }}
+            onClick={() => ejecutar(aceptarPedido,
+              { pedido: p, minutos, restaurante, items: p.items || [] },
+              'Pedido aceptado')}>
+            <Check size={17} style={{ marginRight: 6 }} />
+            {ocupado ? 'Aceptando…' : `Aceptar · ${minutos} min`}
+          </button>
+          <button onClick={() => setPaso(null)} style={{ ...btnSecundario, height: 48, borderRadius: RADIO, padding: '0 16px' }}>
+            Atrás
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (paso === 'rechazar' || paso === 'cancelar') {
+    const rechazo = paso === 'rechazar'
+    const motivos = rechazo ? MOTIVOS_RECHAZO
+      : MOTIVOS_CANCELACION.filter((m) => !m.soloDelivery || p.modo_entrega === 'delivery')
+    return (
+      <div style={caja}>
+        <Titulo>{rechazo ? '¿Por qué se rechaza?' : '¿Por qué se cancela?'}</Titulo>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {motivos.map((m) => (
+            <button key={m.id} disabled={ocupado} style={{ ...btnPeligro, width: '100%', minWidth: 0, opacity: ocupado ? 0.6 : 1 }}
+              onClick={() => ejecutar(rechazo ? rechazarPedido : cancelarPedido,
+                { pedido: p, motivoId: m.id },
+                rechazo ? 'Pedido rechazado' : 'Pedido cancelado')}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {p.metodo_pago === 'tarjeta' && (
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 8 }}>
+            Se pagó con tarjeta: el reembolso al cliente se dispara solo.
+          </div>
+        )}
+        <button onClick={() => setPaso(null)} style={{ ...btnSecundario, width: '100%', height: 42, borderRadius: RADIO, marginTop: 8 }}>
+          Atrás
+        </button>
+      </div>
+    )
+  }
+
+  if (paso === 'factura') {
+    return (
+      <div style={caja}>
+        <Titulo>Datos fiscales del cliente</Titulo>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <input value={fact.nombre} onChange={(e) => setFact((f) => ({ ...f, nombre: e.target.value }))}
+            placeholder="Nombre o razón social" maxLength={60}
+            style={{ ...inputOscuro, height: 46 }} />
+          <input value={fact.nif} onChange={(e) => setFact((f) => ({ ...f, nif: e.target.value }))}
+            placeholder="NIF / CIF" maxLength={14}
+            style={{ ...inputOscuro, height: 46, textTransform: 'uppercase' }} />
+          <input value={fact.direccion} onChange={(e) => setFact((f) => ({ ...f, direccion: e.target.value }))}
+            placeholder="Dirección" maxLength={90}
+            style={{ ...inputOscuro, height: 46 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button disabled={ocupado} onClick={guardarFactura}
+            style={{ ...btnGrande, flex: 1, opacity: ocupado ? 0.6 : 1 }}>
+            <FileText size={16} style={{ marginRight: 6 }} />
+            {ocupado ? 'Imprimiendo…' : 'Guardar e imprimir factura'}
+          </button>
+          <button onClick={() => setPaso(null)} style={{ ...btnSecundario, height: 48, borderRadius: RADIO, padding: '0 16px' }}>
+            Atrás
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Botonera por estado ────────────────────────────────────────────────────
+  const botones = []
+
+  if (p.estado === 'nuevo') {
+    botones.push(
+      <button key="aceptar" onClick={() => setPaso('aceptar')} style={btnGrande}>
+        <Check size={17} style={{ marginRight: 6 }} /> Aceptar pedido
+      </button>,
+      <button key="rechazar" onClick={() => setPaso('rechazar')} style={{ ...btnPeligro, width: '100%', minWidth: 0 }}>
+        <Ban size={15} style={{ marginRight: 6 }} /> Rechazar
+      </button>,
+    )
+  }
+
+  if (['aceptado', 'preparando'].includes(p.estado)) {
+    botones.push(
+      <button key="listo" disabled={ocupado} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}
+        onClick={() => ejecutar(marcarListo, { pedido: p }, 'Marcado como listo')}>
+        <Check size={17} style={{ marginRight: 6 }} /> Marcar listo
+      </button>,
+    )
+  }
+
+  if (p.estado === 'listo') {
+    if (p.modo_entrega === 'delivery' && p.socio_id) {
+      botones.push(
+        <button key="recogido" disabled={ocupado} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}
+          onClick={async () => {
+            if (await confirmar('¿El repartidor ya tiene el pedido? Normalmente lo marca él desde su app.')) {
+              ejecutar(marcarRecogido, { pedido: p }, 'Marcado como recogido')
+            }
+          }}>
+          <Bike size={16} style={{ marginRight: 6 }} /> Recogido por el repartidor
+        </button>,
+      )
+    } else {
+      // Recogida del cliente, reparto propio o delivery que se quedó sin socio:
+      // lo entrega el restaurante en mano.
+      botones.push(
+        <button key="entregado" disabled={ocupado} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}
+          onClick={async () => {
+            const aviso = cobraEfectivo
+              ? `¿Entregado y COBRADO? Son ${eur(cents(p.total))} en efectivo.`
+              : '¿Marcar el pedido como entregado?'
+            if (await confirmar(aviso)) ejecutar(marcarEntregado, { pedido: p }, 'Pedido entregado')
+          }}>
+          <Check size={17} style={{ marginRight: 6 }} /> Entregado{cobraEfectivo ? ' y cobrado' : ''}
+        </button>,
+      )
+    }
+  }
+
+  if (['recogido', 'en_camino'].includes(p.estado)) {
+    botones.push(
+      <button key="entregado2" disabled={ocupado} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}
+        onClick={async () => {
+          const aviso = cobraEfectivo
+            ? `¿Entregado y COBRADO? Son ${eur(cents(p.total))} en efectivo.`
+            : '¿Marcar el pedido como entregado?'
+          if (await confirmar(aviso)) ejecutar(marcarEntregado, { pedido: p }, 'Pedido entregado')
+        }}>
+        <Check size={17} style={{ marginRight: 6 }} /> Entregado{cobraEfectivo ? ' y cobrado' : ''}
+      </button>,
+    )
+  }
+
+  // La fila de secundarios: reimprimir (todo lo aceptado en adelante), factura
+  // (solo lo entregado) y cancelar (solo lo vivo, nunca un cerrado).
+  const secundarios = []
+  if (p.estado !== 'nuevo' && !['cancelado', 'rechazado', 'fallido'].includes(p.estado)) {
+    secundarios.push(
+      <button key="reimprimir" disabled={ocupado} onClick={pulsarReimprimir} style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>
+        <Printer size={15} style={{ marginRight: 6 }} /> Reimprimir ticket
+      </button>,
+    )
+  }
+  if (p.estado === 'entregado') {
+    secundarios.push(
+      <button key="factura" disabled={ocupado} style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}
+        onClick={() => {
+          const d = p.factura_datos || {}
+          setFact({ nombre: d.nombre || '', nif: d.nif || '', direccion: d.direccion || '' })
+          setPaso('factura')
+        }}>
+        <FileText size={15} style={{ marginRight: 6 }} />
+        {p.factura_datos ? 'Factura de nuevo' : 'Crear factura'}
+      </button>,
+    )
+  }
+  if (EN_CURSO.includes(p.estado) && p.estado !== 'nuevo') {
+    secundarios.push(
+      <button key="cancelar" onClick={() => setPaso('cancelar')} style={btnPeligro}>
+        <Ban size={15} style={{ marginRight: 6 }} /> Cancelar
+      </button>,
+    )
+  }
+
+  if (!botones.length && !secundarios.length) return null
+  return (
+    <div style={{ marginTop: 12 }}>
+      {p.factura_datos && p.estado === 'entregado' && (
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>
+          Factura a nombre de <strong style={{ color: T.text }}>{p.factura_datos.nombre}</strong> · {p.factura_datos.nif}
+        </div>
+      )}
+      <div style={{ display: 'grid', gap: 8 }}>{botones}</div>
+      {secundarios.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginTop: botones.length ? 8 : 0, flexWrap: 'wrap' }}>
+          {secundarios}
+        </div>
+      )}
     </div>
   )
 }

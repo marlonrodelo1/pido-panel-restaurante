@@ -239,7 +239,7 @@ export function generarComandaCocina(pedido, items, restaurante, titulo = '** CO
 // Pidoo no le trajo a nadie y no pinta nada en ese papel.
 const ORIGENES_DE_PIDOO = ['pido', 'tienda_publica', 'marketplace_socio']
 
-export function generarTicketCliente(pedido, items, restaurante, logoBytes = null) {
+export function generarTicketCliente(pedido, items, restaurante, logoBytes = null, factura = null) {
   const bytes = [
     ...init(),
     ...codepage850(),
@@ -282,7 +282,7 @@ export function generarTicketCliente(pedido, items, restaurante, logoBytes = nul
   bytes.push(
     ...separator('='),
     ...boldOn(),
-    ...line('TICKET DE PEDIDO'),
+    ...line(factura ? 'FACTURA SIMPLIFICADA' : 'TICKET DE PEDIDO'),
     ...boldOff(),
     ...separator('-'),
     ...left(),
@@ -296,6 +296,16 @@ export function generarTicketCliente(pedido, items, restaurante, logoBytes = nul
     ...twoColumns('Pago:', textoTicket(pedido.metodo_pago)),
     ...separator('-'),
   )
+
+  // Datos fiscales del CLIENTE, cuando pide factura: con nombre, NIF y
+  // domicilio del destinatario este papel le vale para deducir.
+  if (factura && (factura.nombre || factura.nif)) {
+    bytes.push(...boldOn(), ...line('DATOS DEL CLIENTE'), ...boldOff())
+    if (factura.nombre) bytes.push(...line(factura.nombre))
+    if (factura.nif) bytes.push(...line('NIF: ' + factura.nif))
+    if (factura.direccion) bytes.push(...line(factura.direccion))
+    bytes.push(...separator('-'))
+  }
 
   // Cliente info (con fallback guest para pedidos telefónicos)
   const cliente = pedido.usuarios
@@ -447,7 +457,7 @@ export function abrirCajon() {
  * recalcula nada: se imprimen los importes que congelo el servidor al emitir el
  * ticket, que son los que constan en `tpv_tickets`.
  */
-export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null, anula = null) {
+export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null, anula = null, factura = null) {
   const bytes = []
   const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
 
@@ -484,6 +494,16 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
     formatDate(ticket.emitido_at)
   ))
   bytes.push(...separator('-'))
+
+  // Datos fiscales del CLIENTE, cuando pide factura: con nombre, NIF y
+  // domicilio del destinatario, la factura simplificada le vale para deducir.
+  if (factura && (factura.nombre || factura.nif)) {
+    bytes.push(...boldOn(), ...line('CLIENTE'), ...boldOff())
+    if (factura.nombre) bytes.push(...line(factura.nombre))
+    if (factura.nif) bytes.push(...line('NIF: ' + factura.nif))
+    if (factura.direccion) bytes.push(...line(factura.direccion))
+    bytes.push(...separator('-'))
+  }
 
   // Lineas
   for (const it of items || []) {

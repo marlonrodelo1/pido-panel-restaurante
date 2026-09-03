@@ -46,7 +46,6 @@ import TpvNuevoPedido from '../components/TpvNuevoPedido'
 import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
 import { prepararLogo } from '../lib/logoTicket'
 import TpvStock from '../components/TpvStock'
-import PedidosEnVivo from './PedidosEnVivo'
 import HistorialMovil from './HistorialMovil'
 import DisponibilidadProductos from './DisponibilidadProductos'
 import ConfigImpresora from './ConfigImpresora'
@@ -86,7 +85,6 @@ const ICONOS = [
 const iconoDe = (nombre) => (ICONOS.find(([re]) => re.test(nombre || ''))?.[1]) || Utensils
 
 const PANTALLAS = {
-  pedidos: 'Pedidos',
   'socios-riders': 'Repartidores',
   'crear-envio': 'Pedido telefónico',
   historial: 'Historial',
@@ -160,23 +158,19 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const pedidoAvisado = pedidosNuevos?.[0] || null
   // 🔴 Sin `modoApp`. Ese candado dejaba a la app de WINDOWS sin aviso de pedido nuevo:
   // el TPV ocupa la pantalla entera, el pedido entraba y no se enteraba nadie.
-  const hayAviso = pedidoAvisado && avisoFuera !== pedidoAvisado.id && pantalla !== 'pedidos'
+  // El aviso solo sobra si YA se está mirando la pestaña Pedidos sin capas encima.
+  const hayAviso = pedidoAvisado && avisoFuera !== pedidoAvisado.id
+    && !(pestana === 'pedidos' && !pantalla)
 
-  // Volver a Pedidos desde donde sea. `TpvPedidos` y `CrearEnvio` piden ir alli con
-  // este evento.
-  //
-  // 🔴 Antes empezaba con `if (!modoApp) return`, y eso dejaba la app de WINDOWS sin
-  // salida: `PedidosEnVivo` —el UNICO sitio del sistema que escribe el estado de un
-  // pedido— solo se monta aqui (esta capa) o en `App.jsx:605`, y las dos puertas
-  // exigian Capacitor. Electron no es Capacitor, asi que desde Windows NO se podia
-  // aceptar ni un solo pedido: el evento se lo quedaba `App.jsx`, ponia
-  // `seccion='pedidos'`, se dejaba de cumplir `seccion === 'tpv'` y el usuario salia
-  // del TPV a una pagina en blanco.
-  //
-  // Como capa, ademas, el mostrador se queda DETRAS: el carrito a medias no se pierde.
+  // Ir a una pantalla desde donde sea; `CrearEnvio` pide 'pedidos' con este
+  // evento al terminar. Los pedidos YA NO son una capa: la capa "Pedidos en
+  // vivo" duplicaba la pestaña Pedidos del propio TPV (que ahora también
+  // acepta, avanza estados, reimprime y factura), así que 'pedidos' lleva a la
+  // pestaña. El mostrador se queda detrás: el carrito a medias no se pierde.
   useEffect(() => {
     const ir = (e) => {
       const d = e?.detail
+      if (d === 'pedidos') { setPantalla(null); setPestana('pedidos'); return }
       if (PANTALLAS[d]) setPantalla(d)
     }
     window.addEventListener('pidoo:goto', ir)
@@ -846,8 +840,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil} huecoAbajo={huecoAbajo}
           repartoPropio={restaurante?.delivery_sin_socio === true}
           onNuevo={(tipo) => setNuevoPedido(tipo)}
-          onAbrirRepartidores={() => setPantalla('socios-riders')}
-          onAbrirPedidos={() => setPantalla('pedidos')} />
+          onAbrirRepartidores={() => setPantalla('socios-riders')} />
       ) : (
       // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
       // desplaza por su cuenta: la carta puede tener 160 productos y la venta cuatro
@@ -1379,7 +1372,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         <AvisoPedido
           pedido={pedidoAvisado}
           cuantos={pedidosNuevos.length}
-          onVer={() => { setAvisoFuera(pedidoAvisado.id); setPantalla('pedidos') }}
+          onVer={() => { setAvisoFuera(pedidoAvisado.id); setPantalla(null); setPestana('pedidos') }}
           onLuego={() => setAvisoFuera(pedidoAvisado.id)}
         />
       )}
@@ -1409,7 +1402,6 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-            {pantalla === 'pedidos' && <PedidosEnVivo />}
             {pantalla === 'socios-riders' && <SociosYRepartidores />}
             {pantalla === 'crear-envio' && <CrearEnvio />}
             {pantalla === 'historial' && <HistorialMovil />}
@@ -1430,9 +1422,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           {modoApp && (
             <>
               <GrupoMenu titulo="El negocio" />
-              <OpcionMenu icono={<ClipboardList size={19} color={T.accent} />} texto="Pedidos"
-                nota="Aceptar, marcar listos y entregados"
-                onClick={() => { setMenu(false); setPantalla('pedidos') }} />
+              {/* "Pedidos" ya no está aquí: es la pestaña de arriba, donde ahora
+                  también se acepta, se avanza, se reimprime y se factura. */}
               <OpcionMenu icono={<Bike size={19} color={T.accent} />} texto="Repartidores"
                 nota="Quién reparte contigo y quién está en línea"
                 onClick={() => { setMenu(false); setPantalla('socios-riders') }} />
@@ -1904,8 +1895,8 @@ function CabeceraApp({ restaurante, esMovil, onAbrir }) {
 // El aviso de pedido nuevo. Va encima de TODO (tambien de la capa de pantallas) y no
 // se quita solo: un pedido sin aceptar es dinero esperando, y la alarma se puede
 // silenciar. Ensena lo justo para decidir -de donde viene, de quien es y cuanto- y el
-// boton lleva a `PedidosEnVivo`, que es donde se acepta con su tiempo de preparacion,
-// se rechaza y se imprime.
+// boton lleva a la pestana Pedidos del TPV, donde se acepta con su tiempo de
+// preparacion, se rechaza y se imprime.
 function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
   const reparto = pedido.modo_entrega === 'delivery'
   const Icono = reparto ? Bike : ShoppingBag
