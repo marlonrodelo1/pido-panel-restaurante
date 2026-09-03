@@ -145,6 +145,18 @@ export default function NegocioTab({ estId, onIrA }) {
                 valor={eur(datos?.compras?.total)}
                 accion={onIrA ? () => onIrA('compras') : null}
               />
+              {/* El desglose por familia responde a "¿cuánto se me fue en comida, en
+                  envases, en aseo?" sin sacar los desechables del almacén: los tarritos
+                  también se acaban y hay que reponerlos. */}
+              {(datos?.compras?.por_familia || []).map(f => (
+                <div key={f.familia} style={{
+                  display: 'flex', justifyContent: 'space-between', gap: 12,
+                  padding: '3px 0 3px 16px', fontSize: type.xs, color: colors.textMute,
+                }}>
+                  <span>{f.familia}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{eur(f.total)}</span>
+                </div>
+              ))}
               {(datos?.gastos?.por_categoria || []).map(g => (
                 <Linea key={g.categoria} label={`${g.categoria} (${g.apuntes})`} valor={eur(g.total)} />
               ))}
