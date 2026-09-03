@@ -184,6 +184,16 @@ function AppContent() {
   }
 
   if (!user) {
+    // En la APP DE WINDOWS del mostrador el login se viste con la paleta del
+    // TPV (la clase .tpv-capa redefine todas las variables al tema oscuro):
+    // es la puerta de la caja, no la del panel. En web y tablet, como siempre.
+    if (esEscritorio) {
+      return (
+        <div className="tpv-capa" style={{ ...shell, minHeight: '100vh', background: '#12100E' }}>
+          <style>{css}</style><Login />
+        </div>
+      )
+    }
     return <div style={shell}><style>{css}</style><Login /></div>
   }
 
