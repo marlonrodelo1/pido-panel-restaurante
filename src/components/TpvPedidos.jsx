@@ -11,6 +11,7 @@
 // Duplicarla aquí sería duplicar justo la parte que mueve dinero.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario } from '../lib/tpvTheme'
 import { hayQueCobrar } from '../lib/metodoPago'
 import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp } from 'lucide-react'
@@ -88,14 +89,19 @@ export default function TpvPedidos({
   // ventana, dos sitios distintos. Cortando por la ventana, la pantalla salia de dos
   // formas segun donde estuviera pintada, y al reducir un poco saltaba a otra cosa
   // sin motivo aparente. El contenedor no miente.
-  const caja = useRef(null)
+  // 🔴 Callback ref, no `useRef` + efecto []: `ref` está puesto en DOS divs
+  // distintos (la rama kanban y la rama listado) y el efecto de una sola pasada
+  // se quedaba observando el nodo DESMONTADO al cambiar de vista — `ancho` se
+  // congelaba y el corte responsive dejaba de responder. El callback re-observa
+  // cada nodo que React le entrega.
   const [ancho, setAncho] = useState(0)
-  useEffect(() => {
-    const el = caja.current
+  const roRef = useRef(null)
+  const caja = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null }
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(([e]) => setAncho(Math.round(e.contentRect.width)))
     ro.observe(el)
-    return () => ro.disconnect()
+    roRef.current = ro
   }, [])
 
   const [pedidos, setPedidos] = useState([])
@@ -110,6 +116,12 @@ export default function TpvPedidos({
   const [repartidores, setRepartidores] = useState([])
   const [repAbierta, setRepAbierta] = useState(false)
 
+  // Si una carga falla, se avisa UNA vez y se conserva lo último cargado: antes
+  // el error se descartaba y la pantalla pintaba "Nada en marcha" — idéntico a
+  // una noche tranquila, con los pedidos vivos escondidos detrás de un fallo de
+  // red.
+  const avisoErrorRef = useRef(false)
+
   const cargar = useCallback(async () => {
     // Desde las 5 de la mañana: un bar que cierra a las 2 sigue teniendo "hoy" a
     // las 3, y partir el día a medianoche le cortaría el registro por la mitad.
@@ -117,22 +129,57 @@ export default function TpvPedidos({
     if (desde.getHours() < 5) desde.setDate(desde.getDate() - 1)
     desde.setHours(5, 0, 0, 0)
 
-    const { data } = await supabase.from('pedidos')
-      .select('id, codigo, estado, modo_entrega, origen_pedido, total, created_at, guest_nombre, metodo_pago')
-      .eq('establecimiento_id', establecimientoId)
-      .or(`estado.in.(${EN_CURSO.join(',')}),created_at.gte.${desde.toISOString()}`)
-      .order('created_at', { ascending: false })
-      .limit(120)
-    setPedidos(data || [])
+    const campos = 'id, codigo, estado, modo_entrega, origen_pedido, total, created_at, guest_nombre, metodo_pago'
+    // 🔴 En DOS consultas: lo EN CURSO entero y lo cerrado del día con tope.
+    // Antes iba todo junto con `limit(120)` aplicado DESPUÉS de ordenar por
+    // fecha: en un viernes de 130 pedidos, un 'preparando' de mediodía caía
+    // fuera de las 120 filas más nuevas y desaparecía de "En curso".
+    const [vivos, cerrados] = await Promise.all([
+      supabase.from('pedidos').select(campos)
+        .eq('establecimiento_id', establecimientoId)
+        .in('estado', EN_CURSO)
+        .order('created_at', { ascending: false }).limit(200),
+      supabase.from('pedidos').select(campos)
+        .eq('establecimiento_id', establecimientoId)
+        .not('estado', 'in', `(${EN_CURSO.join(',')})`)
+        .gte('created_at', desde.toISOString())
+        .order('created_at', { ascending: false }).limit(150),
+    ])
+    if (vivos.error || cerrados.error) {
+      if (!avisoErrorRef.current) {
+        toast('No se pudo actualizar la lista de pedidos: se enseña lo último cargado', 'error')
+        avisoErrorRef.current = true
+      }
+      setCargando(false)
+      return
+    }
+    avisoErrorRef.current = false
+    const vistos = new Set()
+    const junta = []
+    for (const p of [...(vivos.data || []), ...(cerrados.data || [])]) {
+      if (!vistos.has(p.id)) { vistos.add(p.id); junta.push(p) }
+    }
+    junta.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    setPedidos(junta)
     setCargando(false)
   }, [establecimientoId])
+
+  // El detalle abierto también se refresca cuando su pedido cambia: antes solo
+  // se pedía al elegirlo, y un reparto abierto seguía diciendo "Buscando
+  // repartidor…" con el socio ya asignado hasta tocar otro pedido y volver.
+  const selRef = useRef(null)
+  const [refrescoDetalle, setRefrescoDetalle] = useState(0)
 
   useEffect(() => {
     cargar()
     const canal = supabase.channel('tpv-pedidos-' + establecimientoId)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'pedidos', filter: `establecimiento_id=eq.${establecimientoId}` },
-        cargar)
+        (payload) => {
+          cargar()
+          const id = payload?.new?.id || payload?.old?.id
+          if (id && id === selRef.current) setRefrescoDetalle((n) => n + 1)
+        })
       .subscribe()
     // Red de seguridad: si el realtime se cae (pasa con la tablet suspendida), el
     // listado se quedaría congelado sin que nadie se entere.
@@ -142,6 +189,8 @@ export default function TpvPedidos({
 
   // El detalle se pide APARTE y solo del elegido: el listado trae hasta 120 pedidos y
   // cargarles las lineas a todos seria pedir cientos de filas para enseñar una.
+  useEffect(() => { selRef.current = sel }, [sel])
+
   useEffect(() => {
     if (!sel) return
     let vivo = true
@@ -156,6 +205,9 @@ export default function TpvPedidos({
         supabase.from('pedido_items').select('*').eq('pedido_id', sel),
       ])
       if (!vivo) return
+      // Un fallo de red NO es "ese pedido ya no está": si hay error se conserva
+      // lo que hubiera en pantalla (el refresco de los 30 s reintenta solo).
+      if (ped.error || its.error) return
       // Siempre se guarda algo con el id pedido, aunque el pedido ya no exista: si no,
       // `cargandoDetalle` se quedaria en true para siempre girando en el panel.
       setDetalle(ped.data
@@ -163,7 +215,7 @@ export default function TpvPedidos({
         : { id: sel, noExiste: true })
     })()
     return () => { vivo = false }
-  }, [sel])
+  }, [sel, refrescoDetalle])
 
   // Lo que se pinta en el detalle, DEDUCIDO: si lo cargado no es lo elegido, es que
   // todavia esta de camino. Un estado aparte para eso obligaba a escribirlo dentro del
@@ -177,23 +229,27 @@ export default function TpvPedidos({
     if (filtro !== 'reparto' || repartoPropio) return
     let vivo = true
     const traer = async () => {
-      const { data } = await supabase.from('socio_establecimiento')
+      const { data, error } = await supabase.from('socio_establecimiento')
         .select('id, estado, socios(id, nombre_comercial, logo_url, rating, en_servicio, activo)')
         .eq('establecimiento_id', establecimientoId)
         .in('estado', ['activa', 'pendiente'])
-      if (vivo) setRepartidores(data || [])
+      // Con error no se pisa la lista: "fallo de red" no es "no tienes repartidores".
+      if (vivo && !error) setRepartidores(data || [])
     }
     ;(async () => { await traer() })()
     // Dos suscripciones: una para vincular/desvincular y otra para el interruptor de
-    // en linea, que vive en `socios` y cambia mucho mas a menudo.
+    // en linea, que vive en `socios` y cambia mucho mas a menudo. La de `socios` no
+    // se puede filtrar por restaurante (esa tabla no lo tiene), asi que se AGRUPA:
+    // cada ping de GPS de cada socio disparaba una consulta entera.
+    let deb = null
     const canal = supabase.channel('tpv-repartidores-' + establecimientoId)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'socio_establecimiento', filter: `establecimiento_id=eq.${establecimientoId}` },
         () => { traer() })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'socios' },
-        () => { traer() })
+        () => { clearTimeout(deb); deb = setTimeout(traer, 2000) })
       .subscribe()
-    return () => { vivo = false; supabase.removeChannel(canal) }
+    return () => { vivo = false; clearTimeout(deb); supabase.removeChannel(canal) }
   }, [filtro, repartoPropio, establecimientoId])
 
   // Cuantos hay EN MARCHA de cada tipo. Va en el propio filtro para que se vea sin

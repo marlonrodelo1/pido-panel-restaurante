@@ -360,7 +360,11 @@ export default function PedidosEnVivo() {
           // comandas iguales, que en cocina son dos pedidos.
           if (reservarImpresion(p.id)) {
             imprimirPedido(p, lineas, restaurante)
-              .then((r) => { if (!r?.ok) soltarImpresion(p.id) })
+              // Se suelta SOLO si la comanda no salio: si salio la comanda y
+              // fallo el ticket del cliente, soltar hacia que el reintento
+              // imprimiera las dos otra vez — dos comandas iguales en cocina
+              // son dos pedidos. El ticket del cliente se saca con Reimprimir.
+              .then((r) => { if (!r?.cocina) soltarImpresion(p.id) })
               .catch(() => soltarImpresion(p.id))
           }
         }
@@ -542,7 +546,16 @@ export default function PedidosEnVivo() {
     if (hayImpresoraNativa) {
       if (reservarImpresion(pedido.id)) {
         imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante)
-          .then((r) => { if (!r?.ok) soltarImpresion(pedido.id) })
+          .then((r) => {
+            // Soltar SOLO si la comanda fallo (ver el manejador de arriba): un
+            // fallo a mitad no puede acabar en dos comandas iguales en cocina.
+            if (!r?.cocina) {
+              soltarImpresion(pedido.id)
+              toast('La comanda no ha salido por la impresora. Usa Reimprimir.')
+            } else if (!r?.cliente) {
+              toast('Comanda impresa; el ticket del cliente no salio. Usa Reimprimir.')
+            }
+          })
           .catch(() => soltarImpresion(pedido.id))
       }
     }

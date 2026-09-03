@@ -158,10 +158,13 @@ export function generarComandaCocina(pedido, items, restaurante) {
 
   // Items - BIG for kitchen readability
   for (const item of items || []) {
+    // El TAMAÑO va en la línea grande: "1x Pizza" a secas cuando el cliente
+    // pidió la Familiar era la plancha adivinando.
+    const nombreLinea = item.cantidad + 'x ' + item.nombre_producto + (item.tamano ? ' (' + item.tamano + ')' : '')
     bytes.push(
       ...tallSize(),
       ...boldOn(),
-      ...line(item.cantidad + 'x ' + item.nombre_producto),
+      ...line(nombreLinea),
       ...normalSize(),
       ...boldOff(),
     )
@@ -170,6 +173,9 @@ export function generarComandaCocina(pedido, items, restaurante) {
     if (Array.isArray(item.extras) ? item.extras.length : item.extras) {
       bytes.push(...line('   + ' + (Array.isArray(item.extras) ? item.extras.join(', ') : item.extras)))
     }
+    // La nota DE LA LÍNEA ("sin cebolla") existe en la BD y no se imprimía: a
+    // cocina solo le llegaba la nota general del pedido.
+    if (item.notas) bytes.push(...line('   ! ' + item.notas))
   }
 
   // Pedido telefónico: sin items detallados — el pedido va en las notas y el
@@ -322,11 +328,14 @@ export function generarTicketCliente(pedido, items, restaurante, logoBytes = nul
 
   let subtotal = 0
   for (const item of items || []) {
-    const importe = (item.precio_unitario * item.cantidad).toFixed(2)
-    subtotal += item.precio_unitario * item.cantidad
+    // `|| 0`: un precio_unitario nulo reventaba la GENERACIÓN entera del ticket
+    // — y como la comanda ya había salido, el reintento la duplicaba en cocina.
+    const unitario = Number(item.precio_unitario || 0)
+    const importe = (unitario * item.cantidad).toFixed(2)
+    subtotal += unitario * item.cantidad
     bytes.push(
-      ...line(item.cantidad + 'x ' + item.nombre_producto),
-      ...twoColumns('   @' + item.precio_unitario.toFixed(2) + ' EUR', importe + ' EUR'),
+      ...line(item.cantidad + 'x ' + item.nombre_producto + (item.tamano ? ' (' + item.tamano + ')' : '')),
+      ...twoColumns('   @' + unitario.toFixed(2) + ' EUR', importe + ' EUR'),
     )
     // `extras` es text[]: concatenarlo a pelo imprime "Queso,Bacon" sin espacios
     if (Array.isArray(item.extras) ? item.extras.length : item.extras) {
@@ -488,9 +497,10 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
   bytes.push(...line('TOTAL: ' + eur(ticket.total)))
   bytes.push(...normalSize(), ...boldOff(), ...left(), ...separator('='))
 
-  // Desglose impositivo, con los importes tal como se guardaron
-  bytes.push(...twoColumns('Base imponible', Number(ticket.base_imponible).toFixed(2)))
-  bytes.push(...twoColumns('IGIC ' + Number(ticket.igic_pct).toFixed(0) + '%', Number(ticket.cuota_igic).toFixed(2)))
+  // Desglose impositivo, con los importes tal como se guardaron. `|| 0` porque
+  // `Number(undefined).toFixed(2)` imprime literalmente "NaN" en una factura.
+  bytes.push(...twoColumns('Base imponible', Number(ticket.base_imponible || 0).toFixed(2)))
+  bytes.push(...twoColumns('IGIC ' + Number(ticket.igic_pct || 0).toFixed(0) + '%', Number(ticket.cuota_igic || 0).toFixed(2)))
   bytes.push(...separator('-'))
 
   bytes.push(...line('Forma de pago: ' + (ticket.metodo_pago === 'datafono' ? 'TARJETA' : 'EFECTIVO')))
@@ -507,7 +517,9 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
   // El pulso del cajon va DENTRO del mismo envio, detras del corte, y no en una
   // segunda conexion: el plugin abre un socket nuevo por llamada, y varias
   // termicas se comen la segunda orden si llega mientras todavia estan cortando.
-  if (abrirElCajon) bytes.push(ESC, 0x70, 0x00, 0x19, 0xFA)
+  // Los bytes salen de `abrirCajon()`: antes estaban repetidos aqui en literal y
+  // un cambio de pin o de tiempos habria dejado dos cajones distintos.
+  if (abrirElCajon) bytes.push(...abrirCajon())
 
   return new Uint8Array(bytes)
 }

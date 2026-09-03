@@ -33,46 +33,91 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   useEffect(() => { cargar() }, [cargar])
 
-  const importeC = cents(String(importe).replace(',', '.'))
+  // 🔴 El parser de antes hacía `replace(',', '.')` — SOLO la primera coma — y
+  // "1.250,00" (un sábado normal) se convertía en NaN: la pantalla decía
+  // "Sobran NaN €" y el servidor rechazaba el cierre con un error críptico.
+  // Este entiende lo que se teclea de verdad: "50", "50,5", "1.250,00", "70.5".
+  // Devuelve CÉNTIMOS, o null si aquello no es un importe.
+  function aCents(str) {
+    let t = String(str || '').trim()
+    if (!t) return null
+    if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.')       // coma = decimal, puntos = miles
+    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '')      // "1.250" sin coma = miles
+    const num = parseFloat(t)
+    if (!Number.isFinite(num) || num < 0) return null
+    return Math.round(num * 100)
+  }
+  const importeC = aCents(importe)
+
+  // La RPC ya habla claro ("Ya tienes una caja abierta…"); lo único que llegaba
+  // crudo era el 23505 del índice único cuando dos aparatos abren a la vez.
+  function errorCaja(error) {
+    const choque = error?.code === '23505' || /duplicate key/i.test(error?.message || '')
+    toast(choque ? 'Ya hay una caja abierta (quizá desde otro aparato).' : error.message, 'error')
+    cargar()   // la pantalla se pone al día en vez de quedarse mintiendo
+  }
 
   async function abrir() {
+    if (importeC == null) { toast('Escribe el fondo con el que abres (puede ser 0)', 'error'); return }
     setOcupado(true)
     const { error } = await supabase.rpc('tpv_abrir_caja', {
       p_establecimiento_id: establecimientoId, p_fondo: importeC / 100,
     })
     setOcupado(false)
-    if (error) { toast(error.message, 'error'); return }
+    if (error) { errorCaja(error); return }
     toast('Caja abierta con ' + eur(importeC), 'success')
     setImporte(''); setVista('resumen'); cargar()
   }
 
   async function mover(tipo) {
-    if (importeC <= 0) { toast('Escribe el importe', 'error'); return }
+    if (importeC == null || importeC <= 0) { toast('Ese importe no vale. Escribe cuánto, por ejemplo 20,00', 'error'); return }
     setOcupado(true)
     const { error } = await supabase.rpc('tpv_movimiento_caja', {
       p_establecimiento_id: establecimientoId, p_tipo: tipo,
       p_importe: importeC / 100, p_motivo: motivo || null,
     })
     setOcupado(false)
-    if (error) { toast(error.message, 'error'); return }
+    if (error) { errorCaja(error); return }
     toast(`${tipo === 'entrada' ? 'Entrada' : 'Salida'} de ${eur(importeC)} apuntada`, 'success')
     setImporte(''); setMotivo(''); setVista('resumen'); cargar()
   }
 
   async function cerrar() {
+    if (importeC == null) { toast('Cuenta el dinero y escribe el total (puede ser 0)', 'error'); return }
     setOcupado(true)
     const { data, error } = await supabase.rpc('tpv_cerrar_caja', {
       p_establecimiento_id: establecimientoId, p_contado: importeC / 100, p_notas: motivo || null,
     })
     setOcupado(false)
-    if (error) { toast(error.message, 'error'); return }
-    const d = cents(data.descuadre)
+    if (error) { errorCaja(error); return }
+    const d = cents(data?.descuadre)
     toast(d === 0 ? 'Caja cerrada y cuadrada'
       : `Caja cerrada · ${d > 0 ? 'sobran' : 'faltan'} ${eur(Math.abs(d))}`,
       d === 0 ? 'success' : 'error')
-    // El Z sale solo al cerrar: es el papel que se guarda del dia.
-    imprimirReporteCaja(data, restaurante, 'Z').catch(() => {})
+    // El Z sale solo al cerrar: es el papel que se guarda del día. Si la térmica
+    // falla, la caja YA está cerrada — antes eso se tragaba en silencio y no
+    // había forma de volver a sacarlo. Ahora avisa, y abajo queda el botón de
+    // reimprimir el último cierre.
+    imprimirReporteCaja(data, restaurante, 'Z')
+      .then((ok) => { if (!ok) toast('La caja está cerrada, pero el Z no se imprimió. Puedes reimprimirlo desde aquí.', 'error') })
+      .catch(() => toast('La caja está cerrada, pero el Z no se imprimió. Puedes reimprimirlo desde aquí.', 'error'))
     setImporte(''); setMotivo(''); setVista('resumen'); cargar()
+  }
+
+  // Reimprime el Z de la ÚLTIMA caja cerrada, leyéndola del servidor: sirve
+  // igual si la impresora falló al cerrar, si se acabó el papel, o si el papel
+  // de ayer se ha perdido.
+  async function reimprimirUltimoZ() {
+    const { data, error } = await supabase.from('tpv_cajas')
+      .select('*').eq('establecimiento_id', establecimientoId)
+      .not('cerrada_at', 'is', null)
+      .order('cerrada_at', { ascending: false }).limit(1).maybeSingle()
+    if (error) { toast('No se pudo leer el último cierre: ' + error.message, 'error'); return }
+    if (!data) { toast('Todavía no hay ningún cierre de caja'); return }
+    const ok = await imprimirReporteCaja(data, restaurante, 'Z')
+    toast(ok
+      ? `Z reimpreso (caja del ${new Date(data.cerrada_at).toLocaleDateString('es-ES')})`
+      : 'La impresora no responde', ok ? 'success' : 'error')
   }
 
   if (cargando) return <div style={{ padding: 20, textAlign: 'center', color: T.muted }}>Mirando la caja…</div>
@@ -94,9 +139,16 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
           <input value={importe} onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
             placeholder="50,00" inputMode="decimal" style={inputOscuro} />
         </div>
-        <button onClick={abrir} disabled={ocupado} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
+        {/* Sin importe escrito no se puede abrir: quien venía buscando el
+            informe X o el Z aterrizaba aquí y un toque abría una caja a 0 €
+            sin querer — y deshacerla obligaba a un cierre entero con Z falso. */}
+        <button onClick={abrir} disabled={ocupado || importeC == null}
+          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC == null) ? 0.4 : 1 }}>
           <Wallet size={18} style={{ marginRight: 8 }} />
           {ocupado ? 'Abriendo…' : 'Abrir caja'}
+        </button>
+        <button onClick={reimprimirUltimoZ} style={{ ...btnSecundario, height: 44 }}>
+          <Printer size={15} style={{ marginRight: 6 }} /> Reimprimir el último cierre Z
         </button>
       </div>
     )
@@ -123,8 +175,8 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
             placeholder={esEntrada ? 'Cambio de la caja fuerte' : 'Pago al proveedor'}
             maxLength={80} style={inputOscuro} />
         </div>
-        <button onClick={() => mover(vista)} disabled={ocupado || importeC <= 0}
-          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC <= 0) ? 0.4 : 1 }}>
+        <button onClick={() => mover(vista)} disabled={ocupado || importeC == null || importeC <= 0}
+          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC == null || importeC <= 0) ? 0.4 : 1 }}>
           {ocupado ? 'Guardando…' : `Apuntar ${esEntrada ? 'entrada' : 'salida'}`}
         </button>
         <button onClick={() => { setVista('resumen'); setImporte(''); setMotivo('') }}
@@ -135,7 +187,9 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   // ── Cierre ────────────────────────────────────────────────────────────────
   if (vista === 'cierre') {
-    const descuadre = importe === '' ? null : importeC - esperado
+    // `importeC` es null si lo tecleado no es un importe: la vista previa se
+    // esconde en vez de pintar "Sobran NaN €".
+    const descuadre = importeC == null ? null : importeC - esperado
     return (
       <div style={{ display: 'grid', gap: 12 }}>
         <strong style={{ fontSize: 15, color: T.text }}>Cerrar la caja</strong>
@@ -167,8 +221,8 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
             placeholder="Se rompió un billete, propina..." maxLength={120} style={inputOscuro} />
         </div>
 
-        <button onClick={cerrar} disabled={ocupado || importe === ''}
-          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importe === '') ? 0.4 : 1 }}>
+        <button onClick={cerrar} disabled={ocupado || importeC == null}
+          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC == null) ? 0.4 : 1 }}>
           <Lock size={17} style={{ marginRight: 8 }} />
           {ocupado ? 'Cerrando…' : 'Cerrar caja'}
         </button>
@@ -199,7 +253,13 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
       </div>
 
       <button onClick={async () => {
-        const ok = await imprimirReporteCaja(estado, restaurante, 'X')
+        // El X es el papel del cambio de turno: se imprime con una lectura
+        // FRESCA del servidor, no con la foto de cuando se abrió este modal
+        // (que puede llevar un rato abierto, o haberse cobrado desde otro
+        // aparato en medio).
+        const { data: fresco } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: establecimientoId })
+        if (fresco) setEstado(fresco)
+        const ok = await imprimirReporteCaja(fresco || estado, restaurante, 'X')
         toast(ok ? 'Informe X impreso' : 'La impresora no responde', ok ? 'success' : 'error')
       }} style={{ ...btnSecundario, width: '100%', height: 46 }}>
         <Printer size={16} style={{ marginRight: 6 }} /> Imprimir informe X (sin cerrar)

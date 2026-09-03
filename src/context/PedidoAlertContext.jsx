@@ -6,6 +6,9 @@ import { useRest } from './RestContext'
 import { startAlarm, stopAlarm, unlockAudio, requestNotificationPermission, notificarNuevoPedido } from '../lib/alarm'
 import { imprimirPedido, hayImpresoraNativa } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+// Ciclo de modulos App ↔ este contexto: funciona porque `toast` se llama en
+// runtime, mucho despues de inicializar (PedidosEnVivo hace exactamente lo mismo).
+import { toast } from '../App'
 
 const PedidoAlertContext = createContext({
   pedidosNuevos: [],
@@ -27,9 +30,21 @@ async function imprimirPedidoAceptadoSolo(p, restaurante) {
     const { data: items } = await supabase
       .from('pedido_items').select('*').eq('pedido_id', p.id)
     const r = await imprimirPedido(p, items || [], restaurante)
-    if (!r?.ok) soltarImpresion(p.id)
+    // 🔴 Se suelta la reserva SOLO si la COMANDA no salio. Antes se soltaba con
+    // cualquier fallo (`!r.ok`), y el caso real era: comanda impresa, se acaba
+    // el papel, falla el ticket del cliente → reserva suelta → el reintento
+    // volvia a imprimir LAS DOS y cocina hacia el pedido dos veces. El ticket
+    // del cliente se saca a mano con Reimprimir; una comanda duplicada no se
+    // arregla.
+    if (!r?.cocina) {
+      soltarImpresion(p.id)
+      toast(`La comanda de ${p.codigo || 'un pedido'} no ha salido por la impresora`, 'error')
+    } else if (!r?.cliente) {
+      toast(`${p.codigo || 'Pedido'}: comanda impresa, pero el ticket del cliente no salio. Usa Reimprimir.`, 'error')
+    }
   } catch {
     soltarImpresion(p.id)
+    toast('No se pudo imprimir un pedido aceptado automaticamente', 'error')
   }
 }
 

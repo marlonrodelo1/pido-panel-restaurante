@@ -138,13 +138,18 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
     setBuscandoCliente(true)
     const t = setTimeout(async () => {
       const nueve = digitos.slice(-9)
-      const { data } = await supabase.from('clientes_telefonicos')
+      const { data, error } = await supabase.from('clientes_telefonicos')
         .select('nombre, direccion, lat, lng, pedidos_count, last_pedido_at, notas')
         .eq('establecimiento_id', restaurante.id)
         .or(`telefono_normalizado.eq.+34${nueve},telefono_normalizado.eq.${nueve}`)
         .maybeSingle()
       if (!vivo) return
       setBuscandoCliente(false)
+      // 🔴 Un fallo de red NO es "cliente nuevo": antes se trataban igual y un
+      // parpadeo de wifi al corregir un dígito BORRABA el nombre y la dirección
+      // que el operador acababa de confirmar en voz alta. Con error, la pantalla
+      // se queda exactamente como está.
+      if (error) return
       setClienteConocido(data || null)
 
       if (!data) { soltarAutoRelleno(); return }
@@ -201,10 +206,24 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
   // Qué falta para poder crear. Se calcula como LISTA y no como un booleano para
   // poder decirlo: un botón apagado sin explicación, con el cliente esperando al
   // teléfono, es media llamada buscando qué falta.
+  // El MISMO criterio que la edge (`normalizarTelefonoES`): antes aquí bastaban
+  // 9 dígitos cualesquiera, "123456789" habilitaba el botón y el pedido moría
+  // en el servidor después de picarlo entero, con el cliente al teléfono.
+  const telefonoValido = (() => {
+    let t = telefono.replace(/[\s\-().]/g, '')
+    if (t.startsWith('0034')) t = t.slice(4)
+    else if (t.startsWith('+34')) t = t.slice(3)
+    else if (t.startsWith('34') && t.length === 11) t = t.slice(2)
+    return /^[6789]\d{8}$/.test(t)
+  })()
+
   const falta = []
   if (carrito.length === 0) falta.push('añadir algo a la comanda')
   if (esReparto) {
-    if (!telefonoCompleto) falta.push('el teléfono')
+    if (!telefonoValido) falta.push('un teléfono español válido')
+    // La dirección escrita Y las coordenadas: se podía llegar aquí con las
+    // coordenadas del cliente guardado y el campo de dirección en blanco.
+    if (!direccion.trim()) falta.push('la dirección')
     if (!coords) falta.push('elegir la dirección del desplegable')
   } else if (!telefonoCompleto && !nombre.trim()) {
     falta.push('el teléfono o el nombre')
@@ -284,9 +303,13 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
         }
         imprimirPedido(pedidoTicket, body.items || [], restaurante)
           .then((r) => {
-            if (!r?.ok) {
+            // Soltar SOLO si la comanda falló: con la comanda ya en cocina,
+            // reimprimir el paquete entero duplicaría el pedido en la plancha.
+            if (!r?.cocina) {
               soltarImpresion(body.pedido.id)
               toast('El pedido está creado, pero la comanda no ha salido: imprímela desde Pedidos', 'error')
+            } else if (!r?.cliente) {
+              toast('Comanda impresa; el ticket del cliente no salió. Reimprímelo desde Pedidos.', 'error')
             }
           })
           .catch(() => soltarImpresion(body.pedido.id))

@@ -22,10 +22,10 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { usePedidoAlert } from '../context/PedidoAlertContext'
-import { toast } from '../App'
+import { toast, confirmar } from '../App'
 import {
   imprimirTicketTpv, imprimirComandaTpv, imprimirInformeDiaTpv,
-  pulsoCajon, getPrinterConfig, comprobarImpresora, impresoraConfigurada,
+  pulsoCajon, getPrinterConfig, savePrinterConfig, comprobarImpresora, impresoraConfigurada,
 } from '../lib/printService'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
@@ -193,6 +193,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const idemRef = useRef(null)
   const firmaRef = useRef(null)
   const enVueloRef = useRef(false)
+  const comandandoRef = useRef(false)   // candado de "Comandar" (doble toque)
+  const rondaRef = useRef(0)            // nº de comanda dentro de la venta en curso
 
   // uuid v4 de verdad también sin crypto.randomUUID (WebView viejas): el
   // fallback anterior (Date.now()+random) no pasaba el regex del servidor y en
@@ -225,6 +227,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       if (firmaRef.current != null) {
         idemRef.current = null
         firmaRef.current = null
+        rondaRef.current = 0   // la numeración de comandas empieza con cada venta
         try { localStorage.removeItem(claveVenta) } catch { /* nada */ }
       }
       return
@@ -239,38 +242,46 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     } catch { /* storage lleno: la venta sigue, solo pierde el respaldo */ }
   }, [carrito, claveVenta])
 
-  useEffect(() => {
-    if (!restaurante?.id) return
-    let vivo = true
-    ;(async () => {
-      const [cats, prods, gru] = await Promise.all([
-        supabase.from('categorias').select('id, nombre, orden')
-          .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
-        supabase.from('productos').select('id, nombre, precio, precio_local, categoria_id, disponible, orden, imagen_url')
-          .eq('establecimiento_id', restaurante.id).order('orden'),
-        supabase.from('grupos_extras').select('id, nombre, tipo, max_selecciones, extras_opciones(id, nombre, precio, orden)')
-          .eq('establecimiento_id', restaurante.id),
-      ])
-      if (!vivo) return
-      const listaProd = (prods.data || []).filter((p) => p.disponible !== false)
-      setCategorias(cats.data || [])
-      setProductos(listaProd)
-      setCatSel((actual) => actual || cats.data?.[0]?.id || null)
-      // Los grupos llegan con sus opciones anidadas; no hace falta aplanarlas.
-      setGrupos(gru.data || [])
-      if (listaProd.length) {
-        const ids = listaProd.map((p) => p.id)
-        const [tam, vin] = await Promise.all([
-          supabase.from('producto_tamanos').select('id, producto_id, nombre, precio, precio_local, orden')
-            .in('producto_id', ids).order('orden'),
-          supabase.from('producto_extras').select('producto_id, grupo_id').in('producto_id', ids),
-        ])
-        if (vivo) { setTamanos(tam.data || []); setVinculos(vin.data || []) }
-      }
+  // La carta, en una función REUTILIZABLE: se llama al entrar, desde el menú
+  // ("Recargar la carta") y al volver de la capa de Carta. Una tablet de
+  // mostrador vive semanas sin recargarse: la carta se quedaba con los precios
+  // del día que se abrió la app (la pantalla enseñaba uno y el servidor cobraba
+  // otro) y un producto borrado dejaba la venta imposible de cerrar sin matar
+  // la app — y con ella, antes, el carrito.
+  async function cargarCarta(avisar = false) {
+    const [cats, prods, gru] = await Promise.all([
+      supabase.from('categorias').select('id, nombre, orden')
+        .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
+      supabase.from('productos').select('id, nombre, precio, precio_local, categoria_id, disponible, orden, imagen_url')
+        .eq('establecimiento_id', restaurante.id).order('orden'),
+      supabase.from('grupos_extras').select('id, nombre, tipo, max_selecciones, extras_opciones(id, nombre, precio, orden)')
+        .eq('establecimiento_id', restaurante.id),
+    ])
+    if (cats.error || prods.error || gru.error) {
+      if (avisar) toast('No se pudo recargar la carta: ' + (cats.error || prods.error || gru.error).message, 'error')
       setCargando(false)
-    })()
-    return () => { vivo = false }
-  }, [restaurante?.id])
+      return
+    }
+    const listaProd = (prods.data || []).filter((p) => p.disponible !== false)
+    setCategorias(cats.data || [])
+    setProductos(listaProd)
+    setCatSel((actual) => actual || cats.data?.[0]?.id || null)
+    // Los grupos llegan con sus opciones anidadas; no hace falta aplanarlas.
+    setGrupos(gru.data || [])
+    if (listaProd.length) {
+      const ids = listaProd.map((p) => p.id)
+      const [tam, vin] = await Promise.all([
+        supabase.from('producto_tamanos').select('id, producto_id, nombre, precio, precio_local, orden')
+          .in('producto_id', ids).order('orden'),
+        supabase.from('producto_extras').select('producto_id, grupo_id').in('producto_id', ids),
+      ])
+      setTamanos(tam.data || [])
+      setVinculos(vin.data || [])
+    }
+    setCargando(false)
+    if (avisar) toast('Carta recargada', 'success')
+  }
+  useEffect(() => { if (restaurante?.id) cargarCarta() }, [restaurante?.id])
 
   // La impresora se sondea AL ENTRAR, no al cobrar: enterarse de que está apagada
   // con el cliente delante y el cajón cerrado es demasiado tarde.
@@ -296,8 +307,34 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const pantallaPrevia = useRef(null)
   useEffect(() => {
     if (pantallaPrevia.current === 'impresora' && pantalla === null) sondearImpresora()
+    // Al volver de la capa de Carta (donde se apagan productos o cambian
+    // precios), la carta del mostrador se pone al día sola.
+    if (pantallaPrevia.current === 'disponibilidad' && pantalla === null && restaurante?.id) cargarCarta()
     pantallaPrevia.current = pantalla
   }, [pantalla])
+
+  // En teléfono, la hoja de la venta (z 1000) tapaba las capas de pantallas
+  // (z 900): se pulsaba "Ver y aceptar" con la hoja abierta y parecía que el
+  // botón no hacía nada. Al abrir cualquier capa, la hoja se recoge.
+  useEffect(() => { if (pantalla) setHojaVenta(false) }, [pantalla])
+
+  // Respaldo de la impresora de RED guardado en `tpv_config` (lo escribe el
+  // dueño desde el panel web, TpvConfigCard, que prometía exactamente esto):
+  // una tablet recién instalada, sin nada en localStorage, arranca imprimiendo
+  // sin tener que volver a configurar la IP a mano. Solo siembra si aquí no hay
+  // NADA configurado: lo local (incluido el modo USB) siempre manda.
+  useEffect(() => {
+    if (!tpvConfig?.impresora_ip) return
+    if (impresoraConfigurada()) return
+    savePrinterConfig({
+      ...getPrinterConfig(),
+      modo: 'red',
+      ip: tpvConfig.impresora_ip,
+      port: tpvConfig.impresora_puerto || 9100,
+      enabled: true,
+    })
+    sondearImpresora()
+  }, [tpvConfig?.impresora_ip, tpvConfig?.impresora_puerto])
 
   const tamanosDe = useMemo(() => {
     const m = {}
@@ -382,12 +419,29 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
   const sinComandar = carrito.filter((l) => !l.comandada)
 
+  // La RONDA numera los papeles de una misma venta ("MOSTRADOR #1", "#2"...):
+  // tres rondas en hora punta eran tres papeles idénticos y cocina no sabía
+  // cuál iba primero. Se reinicia con cada venta (el efecto del carrito la pone
+  // a 0 al vaciarse).
   async function comandar() {
     if (!sinComandar.length) { toast('No hay nada nuevo que mandar a cocina'); return }
-    const ok = await imprimirComandaTpv(sinComandar, restaurante)
-    if (!ok) { toast('La impresora no responde: la comanda no ha salido', 'error'); return }
-    setCarrito((prev) => prev.map((l) => ({ ...l, comandada: true })))
-    toast('Comanda enviada a cocina', 'success')
+    // Doble toque = dos comandas iguales = comida duplicada. Candado síncrono.
+    if (comandandoRef.current) return
+    comandandoRef.current = true
+    // 🔴 Se capturan AHORA las claves de lo que va a salir por la impresora: el
+    // envío tarda segundos y lo que se pique en ese hueco NO ha salido en este
+    // papel — antes se marcaba TODO el carrito como comandado y esas líneas se
+    // quedaban sin cocinar sin que nadie se enterase.
+    const claves = new Set(sinComandar.map((l) => l.clave))
+    try {
+      const ok = await imprimirComandaTpv(sinComandar, restaurante, { numero: rondaRef.current + 1 })
+      if (!ok) { toast('La impresora no responde: la comanda no ha salido', 'error'); return }
+      rondaRef.current += 1
+      setCarrito((prev) => prev.map((l) => (claves.has(l.clave) ? { ...l, comandada: true } : l)))
+      toast('Comanda enviada a cocina', 'success')
+    } finally {
+      comandandoRef.current = false
+    }
   }
 
   async function informeDelDia() {
@@ -425,11 +479,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       ok ? 'success' : 'error')
   }
 
-  function vaciar() {
-    if (sinComandar.length && carrito.length !== sinComandar.length) {
-      // Si parte ya se mandó a cocina, vaciar sin avisar deja platos hechos que
-      // nadie va a cobrar.
-      toast('Ojo: parte de esta venta ya está en cocina', 'error')
+  async function vaciar() {
+    // Si parte ya se mandó a cocina, vaciar deja platos hechos que nadie va a
+    // cobrar: se pregunta ANTES de borrar. El aviso de antes salía DESPUÉS de
+    // haber borrado, cuando ya no servía para nada.
+    if (carrito.some((l) => l.comandada)) {
+      const seguro = await confirmar('Parte de esta venta ya está en cocina. ¿Vaciarla igualmente?')
+      if (!seguro) return
     }
     setCarrito([])
   }
@@ -484,6 +540,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           tpv_no_activo: 'El TPV está desactivado. Habla con Pidoo.',
           tpv_pausado: 'Tienes el TPV pausado desde Ajustes.',
           forbidden: 'Esta cuenta no puede cobrar en este restaurante.',
+          producto_no_encontrado: 'Un producto de la venta ya no está en la carta. Recárgala desde el menú y vuelve a picarlo.',
+          extra_no_encontrado: 'Un extra de la venta ya no existe. Recarga la carta desde el menú y vuelve a elegirlo.',
+          generar_codigo_failed: 'El servidor no respondió. Vuelve a intentarlo: no se ha cobrado nada.',
         })[body?.error] || body?.detalle || body?.error || 'No se pudo completar la venta')
       }
 
@@ -1021,6 +1080,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
       {modalPago && (
         <ModalEfectivo total_c={totalCarrito} cobrando={cobrando}
+          abreCajon={tpvConfig?.abrir_cajon_efectivo !== false}
           onCerrar={() => setModalPago(false)}
           onCobrar={(entregado) => cobrar('efectivo', entregado)} />
       )}
@@ -1028,7 +1088,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       {nuevoPedido && (
         <Modal titulo={nuevoPedido === 'reparto' ? 'Nuevo reparto' : 'Nueva recogida'}
           onCerrar={() => setNuevoPedido(null)}
-          ancho={esMonitor ? 1240 : 440} altoFijo={esMonitor}>
+          ancho={esMonitor ? 1240 : 440} altoFijo={esMonitor} cerrarAlFondo={false}>
           <TpvNuevoPedido restaurante={restaurante} modo={nuevoPedido}
             onCancelar={() => setNuevoPedido(null)}
             onHecho={() => setNuevoPedido(null)} />
@@ -1148,6 +1208,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
               <OpcionMenu icono={<ToggleLeft size={19} color={T.accent} />} texto="Carta"
                 nota="Qué está disponible y qué se ha agotado"
                 onClick={() => { setMenu(false); setPantalla('disponibilidad') }} />
+              <OpcionMenu icono={<Search size={19} color={T.accent} />} texto="Recargar la carta"
+                nota="Trae los precios y productos de ahora mismo"
+                onClick={() => { setMenu(false); cargarCarta(true) }} />
               <OpcionMenu icono={<Printer size={19} color={T.accent} />} texto="Impresora y cuenta"
                 nota="Abrir o cerrar el local, impresora y salir"
                 onClick={() => { setMenu(false); setPantalla('impresora') }} />
@@ -1288,14 +1351,28 @@ function ModalProducto({ producto, tamanos, grupos, precioBarra, onCerrar, onAce
 
 // ── Modal de cobro ──────────────────────────────────────────────────────────
 // Solo efectivo: la tarjeta no pasa por aquí porque no hay cambio que calcular.
-function ModalEfectivo({ total_c, cobrando, onCerrar, onCobrar }) {
+function ModalEfectivo({ total_c, cobrando, abreCajon = true, onCerrar, onCobrar }) {
   const [entregado_c, setEntregado] = useState(null)
+  const [otro, setOtro] = useState('')
   // Los billetes que de verdad se dan, y el importe justo el primero.
   const sugerencias = useMemo(() => {
     const opciones = [total_c, 500, 1000, 2000, 5000].filter((c) => c >= total_c)
     return [...new Set(opciones)].slice(0, 5)
   }, [total_c])
   const cambio = entregado_c != null ? entregado_c - total_c : null
+  // Con 70 € en la mano y una venta de 62, las sugerencias no valían: en cuanto
+  // el total pasaba de 50, la única opción era "Justo" y el cambio no se podía
+  // ni registrar ni ver. El campo acepta lo que el cliente entregue.
+  const escribirOtro = (texto) => {
+    const limpio = texto.replace(/[^\d.,]/g, '')
+    setOtro(limpio)
+    if (!limpio) { setEntregado(null); return }
+    const num = parseFloat(
+      limpio.includes(',') ? limpio.replace(/\./g, '').replace(',', '.') : limpio
+    )
+    setEntregado(Number.isFinite(num) && num >= 0 ? Math.round(num * 100) : null)
+  }
+  const noLlega = entregado_c != null && entregado_c < total_c
 
   return (
     <Modal titulo={`Cobrar ${eur(total_c)} en efectivo`} onCerrar={onCerrar}>
@@ -1303,28 +1380,39 @@ function ModalEfectivo({ total_c, cobrando, onCerrar, onCobrar }) {
         <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>¿Con cuánto paga?</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {sugerencias.map((c) => (
-            <button key={c} onClick={() => setEntregado(c)} style={{
+            <button key={c} onClick={() => { setEntregado(c); setOtro('') }} style={{
               ...btnSecundario, height: 48, minWidth: 86, fontSize: 15,
-              borderColor: entregado_c === c ? T.accent : T.border,
-              color: entregado_c === c ? T.accent : T.text,
-              fontWeight: entregado_c === c ? 700 : 600,
+              borderColor: entregado_c === c && !otro ? T.accent : T.border,
+              color: entregado_c === c && !otro ? T.accent : T.text,
+              fontWeight: entregado_c === c && !otro ? 700 : 600,
             }}>
               {c === total_c ? 'Justo' : eur(c)}
             </button>
           ))}
+          <input value={otro} onChange={(e) => escribirOtro(e.target.value)}
+            placeholder="Otro…" inputMode="decimal"
+            style={{
+              ...btnSecundario, height: 48, width: 96, fontSize: 15, textAlign: 'center',
+              borderColor: otro ? T.accent : T.border, outline: 'none',
+            }} />
         </div>
 
         {cambio != null && (
-          <div style={{ padding: 14, borderRadius: 12, background: T.surface2, textAlign: 'center' }}>
-            <div style={{ fontSize: 13, color: T.muted }}>Cambio a devolver</div>
-            <div style={{ fontSize: 34, fontWeight: 700, color: T.text }}>{eur(cambio)}</div>
+          <div style={{
+            padding: 14, borderRadius: 12, textAlign: 'center',
+            background: noLlega ? 'rgba(255,122,107,0.12)' : T.surface2,
+          }}>
+            <div style={{ fontSize: 13, color: T.muted }}>{noLlega ? 'No llega' : 'Cambio a devolver'}</div>
+            <div style={{ fontSize: 34, fontWeight: 700, color: noLlega ? T.danger : T.text }}>
+              {noLlega ? `faltan ${eur(total_c - entregado_c)}` : eur(cambio)}
+            </div>
           </div>
         )}
 
-        <button onClick={() => onCobrar(entregado_c)} disabled={cobrando}
-          style={{ ...btnAccion, height: 58, fontSize: 17, opacity: cobrando ? 0.5 : 1 }}>
+        <button onClick={() => onCobrar(entregado_c)} disabled={cobrando || noLlega}
+          style={{ ...btnAccion, height: 58, fontSize: 17, opacity: (cobrando || noLlega) ? 0.5 : 1 }}>
           <Banknote size={19} style={{ marginRight: 8 }} />
-          {cobrando ? 'Cobrando…' : 'Cobrar y abrir cajón'}
+          {cobrando ? 'Cobrando…' : abreCajon ? 'Cobrar y abrir cajón' : 'Cobrar'}
         </button>
       </div>
     </Modal>
@@ -1336,9 +1424,12 @@ function ModalEfectivo({ total_c, cobrando, onCerrar, onCobrar }) {
 // pantalla de nuevo pedido en un monitor son tres columnas). `altoFijo` le pasa el
 // scroll a los hijos: sin el, el modal entero scrollea como un bloque y las tres
 // columnas se mueven juntas, que es justo lo que no queremos.
-function Modal({ titulo, children, onCerrar, ancho = 440, altoFijo = false }) {
+// `cerrarAlFondo: false` para el contenido que duele perder (el pedido nuevo,
+// con teléfono, dirección y doce líneas picadas): un toque fuera del modal lo
+// desmontaba entero sin preguntar.
+function Modal({ titulo, children, onCerrar, ancho = 440, altoFijo = false, cerrarAlFondo = true }) {
   return (
-    <div onClick={onCerrar} style={{
+    <div onClick={cerrarAlFondo ? onCerrar : undefined} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 900,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
