@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { registerWebPush, unregisterWebPush } from '../lib/webPush'
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications'
+import { establecerContextoImpresion, cargarImpresoras } from '../lib/printService'
 
 const RestContext = createContext({})
 
@@ -102,6 +103,11 @@ export function RestProvider({ children }) {
           .then(({ data: cfg }) => setTpvConfig(cfg || null))
         supabase.from('stock_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
           .then(({ data: cfg }) => setStockConfig(cfg || null))
+        // Impresoras de la nube: se fija el establecimiento como contexto de
+        // impresión y se precargan (deja espejo local para poder imprimir
+        // aunque justo se caiga la red).
+        establecerContextoImpresion(data.id)
+        cargarImpresoras(data.id, { fresco: true }).catch(() => {})
         registerWebPush('restaurante', { establecimiento_id: data.id, user_id: userId })
         registerPushNotifications('restaurante', { establecimiento_id: data.id, user_id: userId })
       } else {

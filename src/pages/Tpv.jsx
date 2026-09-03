@@ -25,8 +25,9 @@ import { usePedidoAlert } from '../context/PedidoAlertContext'
 import { toast, confirmar } from '../App'
 import {
   imprimirTicketTpv, imprimirComandaTpv, imprimirInformeDiaTpv,
-  pulsoCajon, getPrinterConfig, savePrinterConfig, comprobarImpresora, impresoraConfigurada,
+  pulsoCajon, getPrinterConfig, savePrinterConfig, comprobarImpresoraActiva, impresoraConfigurada,
 } from '../lib/printService'
+import { crearDestinoDe } from '../lib/destinosImpresion'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
@@ -365,16 +366,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // vez y configurar la impresora desde dentro del TPV dejaba el aviso rojo — y
   // el toast de fallo al imprimir tras cobrar — congelados para siempre.
   const sondearImpresora = () => {
-    const cfg = getPrinterConfig()
-    // Se pregunta por el MODO, no por la IP: en USB no hay IP y esto daba
-    // "sin configurar" con la impresora enchufada delante.
-    if (!impresoraConfigurada(cfg)) { setImpresora({ configurada: false, viva: null }); return }
-    setImpresora({ configurada: true, viva: null })
-    comprobarImpresora(cfg)
-      // 🔴 `r.ok`, no `r`: esto devuelve un OBJETO {ok, error} y un objeto siempre es
-      // verdadero, asi que el aviso de "impresora no conectada" NUNCA podia saltar.
-      // Venia asi de antes, con checkPrinterConnection.
-      .then((r) => setImpresora({ configurada: true, viva: !!r?.ok }))
+    setImpresora((p) => ({ ...p, viva: null }))
+    // La impresora QUE TOCA: la de CAJA de la nube si hay impresoras dadas de
+    // alta ahí, o la clásica de este aparato si no.
+    // 🔴 `r.ok`, no `r`: esto devuelve un OBJETO {ok, error} y un objeto siempre es
+    // verdadero, asi que el aviso de "impresora no conectada" NUNCA podia saltar.
+    // Venia asi de antes, con checkPrinterConnection.
+    comprobarImpresoraActiva()
+      .then((r) => setImpresora(r?.sin_configurar
+        ? { configurada: false, viva: null }
+        : { configurada: true, viva: !!r?.ok }))
       .catch(() => setImpresora({ configurada: true, viva: false }))
   }
   useEffect(() => { sondearImpresora() }, [])
@@ -552,14 +553,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // quedaban sin cocinar sin que nadie se enterase.
     const claves = new Set(sinComandar.map((l) => l.clave))
     try {
-      // Con dos impresoras, cada línea va a la suya según su CATEGORÍA
-      // (categorias.impresora_destino): la comida a cocina, las bebidas a la
-      // barra. Las líneas libres, a cocina.
-      const destinoDe = (pid) => {
-        const p = productos.find((x) => x.id === pid)
-        const c = categorias.find((x) => x.id === p?.categoria_id)
-        return c?.impresora_destino === 'barra' ? 'barra' : 'cocina'
-      }
+      // Con varias impresoras, cada línea va a la suya según su CATEGORÍA
+      // (configurado en la nube; las líneas libres, a la de caja). El helper
+      // resuelve también el camino clásico cocina/barra de este aparato.
+      const destinoDe = await crearDestinoDe(restaurante.id)
       const ok = await imprimirComandaTpv(sinComandar, restaurante, { numero: rondaRef.current + 1 }, destinoDe)
       if (!ok) { toast('La impresora no responde: la comanda no ha salido', 'error'); return }
       rondaRef.current += 1

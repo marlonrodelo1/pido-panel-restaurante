@@ -7,6 +7,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
 import { bytesDelLogo } from './logoTicket'
+import { supabase } from './supabase'
 
 // EL PUENTE CON LA IMPRESORA. Hay DOS implementaciones y el resto del fichero no
 // necesita saber en cual esta:
@@ -74,6 +75,10 @@ export function getPrinterConfig() {
 // ¿Hay algo configurado por donde pueda salir un ticket? Cada modo mira lo suyo:
 // preguntar por la IP en modo USB diría "sin configurar" con la impresora enchufada.
 export function impresoraConfigurada(config = getPrinterConfig()) {
+  // Con impresoras dadas de alta EN LA NUBE, el local está configurado — da
+  // igual lo que tenga este aparato en su configuración clásica.
+  const nube = espejoImpresoras()
+  if (nube && nube.length) return true
   if (!config.enabled) return false
   return config.modo === 'usb' ? !!config.impresoraUsb : !!config.ip
 }
@@ -109,6 +114,134 @@ export function savePrinterConfig(config) {
   localStorage.setItem(PRINTER_CONFIG_KEY, JSON.stringify(config))
 }
 
+// ── IMPRESORAS MÚLTIPLES (la lista vive en la NUBE) ─────────────────────────
+//
+// `tpv_impresoras`: cada una con su NOMBRE, su conexión (red o USB) y una
+// marcada como LA DE CAJA (tickets, cajón, informes, cierres). Se configuran
+// una vez y valen para todos los aparatos; aquí se cachean 60 s y se guarda un
+// ESPEJO en localStorage para poder imprimir aunque la consulta falle.
+//
+// COMPATIBILIDAD: un restaurante SIN filas en la nube sigue funcionando con la
+// configuración local de siempre (`pido_printer_config`). Nada cambia para
+// quien no dé de alta impresoras.
+let estActual = null
+let impCache = { est: null, hasta: 0, lista: null }
+const IMPRESORAS_KEY = (est) => `pidoo_tpv_impresoras_${est}`
+
+// Lo fija RestContext al cargar el restaurante: así el resto de funciones
+// (ticket, cajón, informes) saben de qué local son sin cambiar de firma.
+export function establecerContextoImpresion(establecimientoId) {
+  estActual = establecimientoId || null
+}
+
+export function invalidarImpresoras() {
+  impCache = { est: null, hasta: 0, lista: null }
+}
+
+export async function cargarImpresoras(establecimientoId = estActual, { fresco = false } = {}) {
+  if (!establecimientoId) return null
+  const ahora = Date.now()
+  if (!fresco && impCache.est === establecimientoId && impCache.hasta > ahora) return impCache.lista
+  try {
+    const { data, error } = await supabase.from('tpv_impresoras')
+      .select('*')
+      .eq('establecimiento_id', establecimientoId).eq('activa', true)
+      .order('orden').order('created_at')
+    if (error) throw error
+    const lista = data || []
+    impCache = { est: establecimientoId, hasta: ahora + 60000, lista }
+    try { localStorage.setItem(IMPRESORAS_KEY(establecimientoId), JSON.stringify(lista)) } catch { /* nada */ }
+    return lista
+  } catch {
+    // Sin red: el espejo del último día que sí la hubo. Imprimir manda.
+    try {
+      const v = JSON.parse(localStorage.getItem(IMPRESORAS_KEY(establecimientoId)) || 'null')
+      if (Array.isArray(v)) {
+        impCache = { est: establecimientoId, hasta: ahora + 15000, lista: v }
+        return v
+      }
+    } catch { /* nada */ }
+    return impCache.est === establecimientoId ? impCache.lista : null
+  }
+}
+
+// Lectura SÍNCRONA del espejo, para los gates de "¿hay impresora?" que no
+// pueden esperar una consulta.
+function espejoImpresoras() {
+  if (!estActual) return null
+  if (impCache.est === estActual && impCache.lista) return impCache.lista
+  try {
+    const v = JSON.parse(localStorage.getItem(IMPRESORAS_KEY(estActual)) || 'null')
+    return Array.isArray(v) ? v : null
+  } catch { return null }
+}
+
+export function impresoraCajaDe(lista) {
+  return (lista || []).find((i) => i.es_caja) || (lista || [])[0] || null
+}
+
+// Comprueba UNA impresora de la lista de la nube, sea red o USB.
+export async function comprobarImpresoraDeLista(imp) {
+  if (!imp) return { ok: false, sin_configurar: true }
+  if (!puente) return { ok: false, error: 'Solo disponible en la app (Android o Windows)' }
+  if (imp.modo === 'usb') {
+    // Una USB solo la ve el aparato que la tiene enchufada.
+    if (!escritorio?.checkUsb) return { ok: false, error: 'Esta impresora USB está enchufada a otro aparato' }
+    try {
+      return await escritorio.checkUsb({ printerName: imp.impresora_usb })
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  }
+  return checkPrinterConnection(imp.ip, imp.puerto || 9100)
+}
+
+// Comprueba la impresora QUE TOCA: la de CAJA de la nube si el restaurante
+// tiene impresoras dadas de alta ahí, o la clásica de este aparato si no.
+// Devuelve { ok, error?, sin_configurar? }.
+export async function comprobarImpresoraActiva() {
+  const nube = await cargarImpresoras(undefined, { fresco: true })
+  if (nube && nube.length) return comprobarImpresoraDeLista(impresoraCajaDe(nube))
+  const config = getPrinterConfig()
+  if (!config.enabled || !(config.modo === 'usb' ? config.impresoraUsb : config.ip)) {
+    return { ok: false, sin_configurar: true }
+  }
+  return comprobarImpresora(config)
+}
+
+// Manda una comanda de prueba a UNA impresora de la lista de la nube, con su
+// NOMBRE de rótulo: así el papel dice de qué impresora salió.
+export async function probarImpresoraNube(imp) {
+  if (!imp) return { ok: false, error: 'Sin impresora' }
+  if (imp.modo === 'usb' && !escritorio?.printUsb) {
+    return { ok: false, error: 'Esta impresora USB está enchufada a otro aparato' }
+  }
+  const data = generarComandaTpv(
+    [{ cantidad: 1, nombre: 'PRUEBA', tamano: null, extrasTexto: '', notas: 'Si lees esto, "' + (imp.nombre || '') + '" funciona' }],
+    { nombre: 'Pidoo' },
+    { numero: 0, titulo: '** ' + String(imp.nombre || 'PRUEBA').toUpperCase().slice(0, 30) + ' **' },
+  )
+  const ok = await enviarAImpresora(imp, data)
+  return { ok }
+}
+
+// Manda bytes a UNA impresora concreta de la lista, sea red o USB.
+export async function enviarAImpresora(imp, data) {
+  if (!puente || !imp) return false
+  try {
+    if (imp.modo === 'usb') {
+      if (!escritorio?.printUsb || !imp.impresora_usb) return false
+      await escritorio.printUsb({ printerName: imp.impresora_usb, data: uint8ToBase64(data) })
+      return true
+    }
+    if (!imp.ip) return false
+    return await sendRawToIp(imp.ip, imp.puerto || 9100, data)
+  } catch (err) {
+    console.error('[Print] impresora "' + (imp?.nombre || '?') + '":', err)
+    return false
+  }
+}
+
 function uint8ToBase64(uint8Array) {
   let binary = ''
   for (let i = 0; i < uint8Array.length; i++) {
@@ -136,8 +269,19 @@ export async function sendRawToIp(ip, port, data) {
  * Send raw bytes to configured thermal printer via TCP
  */
 async function sendToThermalPrinter(data) {
+  // Con impresoras en la NUBE, todo lo que pasa por aquí (tickets del cliente,
+  // cajón, informes, X/Z) va a LA DE CAJA. La configuración clásica del
+  // aparato queda de respaldo.
+  const nube = await cargarImpresoras()
+  if (nube && nube.length) {
+    const caja = impresoraCajaDe(nube)
+    const ok = await enviarAImpresora(caja, data)
+    if (ok) return true
+    // La de caja no responde: se intenta la clásica del aparato, si la hay.
+  }
+
   const config = getPrinterConfig()
-  if (!impresoraConfigurada(config)) return false
+  if (!config.enabled || !(config.modo === 'usb' ? config.impresoraUsb : config.ip)) return false
 
   // USB: la impresora está enchufada a este mismo ordenador. Es el caso del
   // mostrador de Duende Burger, donde el 9100 está cerrado porque la térmica no
@@ -376,7 +520,13 @@ export async function imprimirPedido(pedido, items, restaurante, destinoDe = nul
   // respaldo); si no, por la de siempre. Con un mapa de destinos, la comanda se
   // PARTE en dos papeles: cocina y barra, cada uno a su impresora.
   let r1 = true
-  if (destinoDe && impresoraCocinaConfigurada(config)) {
+  const nube = await cargarImpresoras()
+  if (nube && nube.length) {
+    // Impresoras en la NUBE: cada línea a la suya, con su nombre de rótulo.
+    r1 = await imprimirComandaRepartida(nube, items || [],
+      (subset, titulo) => generarComandaCocina(pedido, subset, restaurante, titulo),
+      destinoDe)
+  } else if (destinoDe && impresoraCocinaConfigurada(config)) {
     const paraCocina = []
     const paraBarra = []
     for (const it of items || []) {
@@ -598,15 +748,49 @@ export async function pulsoCajon() {
 /**
  * Manda a cocina lo que hay en el mostrador, sin cobrar todavia.
  */
+// Agrupa las líneas de una comanda por SU impresora (según el mapa de
+// destinos categoría→impresora_id de la nube; sin destino = la de caja),
+// genera un papel por grupo con el NOMBRE de la impresora como título, y lo
+// manda a cada una. Si una impresora no responde, su papel cae a la de caja:
+// molesta en el mostrador, pero nunca sin comanda.
+async function imprimirComandaRepartida(lista, lineas, generar, destinoDe) {
+  const caja = impresoraCajaDe(lista)
+  const porImp = new Map()
+  for (const l of lineas) {
+    const id = destinoDe ? destinoDe(l.producto_id) : null
+    const imp = (id && lista.find((i) => i.id === id)) || caja
+    const clave = imp?.id || 'caja'
+    if (!porImp.has(clave)) porImp.set(clave, { imp, lineas: [] })
+    porImp.get(clave).lineas.push(l)
+  }
+  let ok = true
+  for (const { imp, lineas: subset } of porImp.values()) {
+    const titulo = '** ' + String(imp?.nombre || 'CAJA').toUpperCase().slice(0, 30) + ' **'
+    const bytes = generar(subset, titulo)
+    let salio = await enviarAImpresora(imp, bytes)
+    if (!salio && imp?.id !== caja?.id) {
+      console.warn('[Print] "' + imp?.nombre + '" no responde: su comanda sale por la de caja')
+      salio = await enviarAImpresora(caja, bytes)
+    }
+    ok = salio && ok
+  }
+  return ok
+}
+
 export async function imprimirComandaTpv(lineas, restaurante, opciones = {}, destinoDe = null) {
   const config = getPrinterConfig()
-  // Basta con que haya CUALQUIERA de las dos: la comanda encuentra su camino.
-  if (!impresoraConfigurada(config) && !impresoraCocinaConfigurada(config)) return false
   try {
-    // Con DOS impresoras y un mapa de destinos, la comanda se PARTE: lo de
-    // cocina a la de cocina y lo de barra (bebidas) a la principal, cada papel
-    // con su título. Sin mapa o con una sola impresora, un único papel como
-    // siempre.
+    // Con impresoras en la NUBE: cada línea a la suya, por nombre.
+    const nube = await cargarImpresoras()
+    if (nube && nube.length) {
+      return await imprimirComandaRepartida(nube, lineas,
+        (subset, titulo) => generarComandaTpv(subset, restaurante, { ...opciones, titulo }),
+        destinoDe)
+    }
+
+    // Basta con que haya CUALQUIERA de las dos: la comanda encuentra su camino.
+    if (!impresoraConfigurada(config) && !impresoraCocinaConfigurada(config)) return false
+    // Camino clásico de este aparato (dos impresoras fijas cocina/barra).
     if (destinoDe && impresoraCocinaConfigurada(config)) {
       const cocina = []
       const barra = []

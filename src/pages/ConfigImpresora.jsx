@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Browser } from '@capacitor/browser'
-import { Printer, Wifi, LogOut, AlertTriangle, Globe, Image as IconoImagen, RefreshCw } from 'lucide-react'
+import { Printer, Wifi, LogOut, AlertTriangle, Globe, Image as IconoImagen, RefreshCw, Plus, Pencil, Trash2, Usb } from 'lucide-react'
 import { useRest } from '../context/RestContext'
 import { supabase } from '../lib/supabase'
 import { colors, type, ds, radius } from '../lib/uiStyles'
@@ -9,7 +9,9 @@ import {
   getPrinterConfig, savePrinterConfig,
   scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa, esEscritorio,
   probarImpresoraCocina, listarImpresorasUsb, intercambiarImpresoras,
+  cargarImpresoras, invalidarImpresoras, probarImpresoraNube,
 } from '../lib/printService'
+import { invalidarDestinos } from '../lib/destinosImpresion'
 import { confirmar, toast } from '../App'
 import ImpresoraUsb from '../components/ImpresoraUsb'
 import { bytesDelLogo, previsualizar, olvidarLogo } from '../lib/logoTicket'
@@ -30,6 +32,9 @@ export default function ConfigImpresora() {
   const [ticketCount, setTicketCount] = useState(2)
   // 'red' = socket TCP al 9100 · 'usb' = impresora enchufada a este ordenador.
   const [modo, setModo] = useState('red')
+  // Con el módulo TPV la gestión vive en la NUBE (GestorImpresoras) y la
+  // configuración clásica de este aparato queda plegada como respaldo.
+  const [mostrarClasica, setMostrarClasica] = useState(false)
 
   // Vista previa del logo del ticket.
   const [logoPrevia, setLogoPrevia] = useState(null)
@@ -237,13 +242,30 @@ export default function ConfigImpresora() {
             <Printer size={22} strokeWidth={2} />
           </div>
           <div style={{ minWidth: 0 }}>
-            <h3 style={{ ...ds.h2, margin: 0 }}>Impresora de caja</h3>
+            <h3 style={{ ...ds.h2, margin: 0 }}>{tpvActivo ? 'Impresoras' : 'Impresora de caja'}</h3>
             <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 2 }}>
-              La principal (80mm): tickets del cliente, cajón, informes y cierres.
-              Sin segunda impresora, también las comandas.
+              {tpvActivo
+                ? 'Las de todo el local, con su nombre. Una es la de CAJA: tickets, cajón, informes y cierres.'
+                : 'La principal (80mm): tickets del cliente, cajón, informes y cierres. Sin segunda impresora, también las comandas.'}
             </div>
           </div>
         </div>
+
+        {/* Con el módulo TPV, las impresoras se gestionan EN LA NUBE: se dan de
+            alta UNA VEZ y valen para todos los aparatos del local. La
+            configuración clásica de este aparato queda debajo, plegada, como
+            respaldo (y para poder importarla). */}
+        {tpvActivo && <GestorImpresoras />}
+
+        {tpvActivo && !mostrarClasica && (
+          <button
+            onClick={() => setMostrarClasica(true)}
+            style={{ ...ds.ghostBtn, marginTop: 14, width: '100%', justifyContent: 'center' }}
+          >
+            Configuración clásica de este aparato (respaldo)…
+          </button>
+        )}
+        {(!tpvActivo || mostrarClasica) && (<>
 
         {/* POR DONDE SALE EL TICKET. Solo en la app de Windows: en la tablet la
             impresora va por red, y en un navegador no hay ninguna de las dos. */}
@@ -567,6 +589,8 @@ export default function ConfigImpresora() {
           </div>
         )}
 
+        </>)}
+
           {/* EL LOGO DEL TICKET.
               En pantalla el logo se ve en color y con degradados; en el papel son
               puntos negros o nada. Un logo con sombras o poco contraste puede acabar
@@ -840,6 +864,476 @@ function SeccionCocina({ onIntercambiar }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── GESTOR DE IMPRESORAS EN LA NUBE (módulo TPV) ─────────────────────────────
+//
+// Todas las impresoras del local, con su NOMBRE, en `tpv_impresoras`: se dan
+// de alta UNA VEZ y valen para todos los aparatos. Una es la de CAJA (tickets
+// del cliente, cajón, informes y cierres); por las demás solo salen comandas,
+// repartidas por categoría de la carta. Si una no responde, su papel cae a la
+// de caja.
+function GestorImpresoras() {
+  const { restaurante } = useRest()
+  const est = restaurante?.id
+  const [lista, setLista] = useState(null)       // null = cargando
+  const [form, setForm] = useState(null)         // null = cerrado · {} = alta · {id} = edición
+  const [usbLista, setUsbLista] = useState(null) // null = sin pedir aún
+  const [ocupado, setOcupado] = useState(null)   // id (o 'guardar'/'importar') de la acción en curso
+  const [probeRes, setProbeRes] = useState({})   // id -> { ok, error }
+  const [tickets, setTickets] = useState(() => getPrinterConfig().tickets ?? 2)
+
+  async function recargar() {
+    const l = await cargarImpresoras(est, { fresco: true })
+    setLista(l || [])
+    invalidarDestinos(est)
+  }
+  useEffect(() => { if (est) recargar() }, [est]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // El desplegable de USB solo tiene sentido en la app de Windows, y solo
+  // cuando el formulario está en ese modo.
+  useEffect(() => {
+    if (!form || form.modo !== 'usb' || !esEscritorio) return
+    let vivo = true
+    listarImpresorasUsb().then((r) => { if (vivo) setUsbLista(r.impresoras || []) })
+    return () => { vivo = false }
+  }, [form?.modo, !!form]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function abrirAlta() {
+    setForm({ nombre: '', modo: esEscritorio ? 'usb' : 'red', ip: '', puerto: 9100, impresora_usb: '' })
+  }
+  function abrirEdicion(imp) {
+    setForm({
+      id: imp.id, nombre: imp.nombre || '', modo: imp.modo || 'red',
+      ip: imp.ip || '', puerto: imp.puerto || 9100, impresora_usb: imp.impresora_usb || '',
+    })
+  }
+
+  async function guardar() {
+    const nombre = (form.nombre || '').trim()
+    if (!nombre) { toast('Ponle un nombre a la impresora (Caja, Cocina, Barra…)', 'error'); return }
+    if (form.modo === 'usb' ? !form.impresora_usb : !(form.ip || '').trim()) {
+      toast(form.modo === 'usb' ? 'Elige la impresora USB de la lista' : 'Falta la IP de la impresora', 'error')
+      return
+    }
+    setOcupado('guardar')
+    const datos = {
+      nombre,
+      modo: form.modo === 'usb' ? 'usb' : 'red',
+      ip: form.modo === 'usb' ? null : form.ip.trim(),
+      puerto: form.modo === 'usb' ? null : (Number(form.puerto) || 9100),
+      impresora_usb: form.modo === 'usb' ? form.impresora_usb : null,
+    }
+    let error
+    if (form.id) {
+      ({ error } = await supabase.from('tpv_impresoras').update(datos).eq('id', form.id))
+    } else {
+      // La PRIMERA impresora del local es la de caja automáticamente.
+      ({ error } = await supabase.from('tpv_impresoras').insert({
+        ...datos, establecimiento_id: est,
+        es_caja: !(lista || []).length,
+        orden: (lista || []).length,
+      }))
+    }
+    setOcupado(null)
+    if (error) { toast('No se pudo guardar: ' + error.message, 'error'); return }
+    const eraAlta = !form.id
+    setForm(null)
+    invalidarImpresoras()
+    await recargar()
+    toast(eraAlta ? 'Impresora añadida para todo el local' : 'Impresora actualizada', 'success')
+  }
+
+  async function hacerDeCaja(imp) {
+    if (imp.es_caja) return
+    const seguro = await confirmar(`¿Hacer de "${imp.nombre}" la impresora de CAJA? Pasará a imprimir los tickets del cliente, abrir el cajón y sacar los informes y cierres.`)
+    if (!seguro) return
+    setOcupado(imp.id)
+    // Dos pasos por el candado de "una sola caja por local": primero se le
+    // quita el papel a la actual y luego se le da a la nueva.
+    const { error: e1 } = await supabase.from('tpv_impresoras')
+      .update({ es_caja: false }).eq('establecimiento_id', est).eq('es_caja', true)
+    const { error: e2 } = e1 ? { error: e1 }
+      : await supabase.from('tpv_impresoras').update({ es_caja: true }).eq('id', imp.id)
+    setOcupado(null)
+    if (e1 || e2) toast('No se pudo cambiar la caja: ' + (e1 || e2).message, 'error')
+    invalidarImpresoras()
+    await recargar()
+  }
+
+  async function borrar(imp) {
+    const seguro = await confirmar(`¿Quitar la impresora "${imp.nombre}" de todo el local?`
+      + (imp.es_caja && (lista || []).length > 1 ? ' Es la de CAJA: otra pasará a serlo.' : ''))
+    if (!seguro) return
+    setOcupado(imp.id)
+    const { error } = await supabase.from('tpv_impresoras').delete().eq('id', imp.id)
+    if (!error && imp.es_caja) {
+      const resto = (lista || []).filter((i) => i.id !== imp.id)
+      if (resto.length) {
+        await supabase.from('tpv_impresoras').update({ es_caja: true }).eq('id', resto[0].id)
+      }
+    }
+    setOcupado(null)
+    if (error) { toast('No se pudo quitar: ' + error.message, 'error'); return }
+    invalidarImpresoras()
+    await recargar()
+  }
+
+  async function probar(imp) {
+    setOcupado(imp.id)
+    setProbeRes((p) => ({ ...p, [imp.id]: null }))
+    const r = await probarImpresoraNube(imp)
+    setOcupado(null)
+    setProbeRes((p) => ({ ...p, [imp.id]: r }))
+    setTimeout(() => setProbeRes((p) => ({ ...p, [imp.id]: null })), 6000)
+  }
+
+  // Da de alta en la nube lo que este aparato ya tenía configurado a la
+  // antigua: la principal como "Caja" y la segunda como "Cocina".
+  async function importarDeEsteAparato() {
+    const cfg = getPrinterConfig()
+    const filas = []
+    if (cfg.enabled && (cfg.modo === 'usb' ? cfg.impresoraUsb : cfg.ip)) {
+      filas.push({
+        establecimiento_id: est, nombre: 'Caja',
+        modo: cfg.modo === 'usb' ? 'usb' : 'red',
+        ip: cfg.modo === 'usb' ? null : cfg.ip,
+        puerto: cfg.modo === 'usb' ? null : (cfg.port || 9100),
+        impresora_usb: cfg.modo === 'usb' ? cfg.impresoraUsb : null,
+        es_caja: true, orden: 0,
+      })
+    }
+    const co = cfg.cocina
+    if (co?.activa && (co.modo === 'usb' ? co.impresoraUsb : co.ip)) {
+      filas.push({
+        establecimiento_id: est, nombre: 'Cocina',
+        modo: co.modo === 'usb' ? 'usb' : 'red',
+        ip: co.modo === 'usb' ? null : co.ip,
+        puerto: co.modo === 'usb' ? null : (co.port || 9100),
+        impresora_usb: co.modo === 'usb' ? co.impresoraUsb : null,
+        es_caja: !filas.length, orden: filas.length,
+      })
+    }
+    if (!filas.length) { toast('Este aparato no tiene ninguna impresora configurada que importar', 'error'); return }
+    setOcupado('importar')
+    const { error } = await supabase.from('tpv_impresoras').insert(filas)
+    setOcupado(null)
+    if (error) { toast('No se pudo importar: ' + error.message, 'error'); return }
+    invalidarImpresoras()
+    await recargar()
+    toast('Listo: la configuración de este aparato ya vale para todo el local', 'success')
+  }
+
+  const btnMini = {
+    padding: '7px 10px', borderRadius: 8, border: `1px solid ${colors.border}`,
+    background: 'transparent', color: colors.ink, fontSize: type.xs, fontWeight: 700,
+    cursor: 'pointer', fontFamily: 'inherit', minHeight: 36,
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+  }
+
+  if (!est) return null
+  if (lista === null) {
+    return <div style={{ marginTop: 14, fontSize: type.xs, color: colors.stone }}>Cargando impresoras…</div>
+  }
+
+  const legacy = getPrinterConfig()
+  const hayLegacy = legacy.enabled && (legacy.modo === 'usb' ? legacy.impresoraUsb : legacy.ip)
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {/* Sin ninguna dada de alta: explicación + alta o importación */}
+      {!lista.length && (
+        <div style={{ background: colors.cream2, borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
+          <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>
+            Aún no hay impresoras dadas de alta
+          </div>
+          <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 4, lineHeight: 1.5 }}>
+            Añade las de tu local (una, dos, tres… las que tengas), cada una con su
+            nombre. La primera será la de CAJA. Se configuran una sola vez y valen
+            para todos los aparatos.
+          </div>
+          {hayLegacy && (
+            <button
+              onClick={importarDeEsteAparato}
+              disabled={ocupado === 'importar'}
+              style={{ ...ds.secondaryBtn, marginTop: 10, width: '100%', height: 42, opacity: ocupado === 'importar' ? 0.6 : 1 }}
+            >
+              {ocupado === 'importar' ? 'Importando…' : 'Usar la configuración de este aparato'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* La lista */}
+      {lista.map((imp) => {
+        const res = probeRes[imp.id]
+        const conexion = imp.modo === 'usb'
+          ? (imp.impresora_usb || 'USB')
+          : `${imp.ip}:${imp.puerto || 9100}`
+        return (
+          <div key={imp.id} style={{
+            background: colors.paper, border: `1px solid ${colors.border}`,
+            borderRadius: 12, padding: '10px 12px', marginBottom: 8,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                background: imp.es_caja ? colors.terracotta : colors.cream2,
+                color: imp.es_caja ? '#fff' : colors.stone,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {imp.modo === 'usb' ? <Usb size={17} strokeWidth={2.2} /> : <Printer size={17} strokeWidth={2.2} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>{imp.nombre}</span>
+                  {imp.es_caja && (
+                    <span style={{
+                      fontSize: type.xxs, fontWeight: 800, letterSpacing: '0.03em',
+                      background: colors.terracotta, color: '#fff',
+                      borderRadius: 6, padding: '2px 7px',
+                    }}>
+                      CAJA
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: type.xxs, color: colors.stone, fontFamily: imp.modo === 'usb' ? 'inherit' : type.mono, marginTop: 2 }}>
+                  {imp.modo === 'usb' ? 'USB · ' + conexion : conexion}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={() => probar(imp)} disabled={ocupado === imp.id} style={{ ...btnMini, opacity: ocupado === imp.id ? 0.5 : 1 }}>
+                  <Printer size={13} strokeWidth={2.2} />
+                  {ocupado === imp.id ? '…' : 'Probar'}
+                </button>
+                {!imp.es_caja && (
+                  <button onClick={() => hacerDeCaja(imp)} disabled={!!ocupado} style={btnMini}>
+                    Hacer de caja
+                  </button>
+                )}
+                <button onClick={() => abrirEdicion(imp)} aria-label={'Editar ' + imp.nombre} style={{ ...btnMini, padding: '7px 9px' }}>
+                  <Pencil size={13} strokeWidth={2.2} />
+                </button>
+                <button
+                  onClick={() => borrar(imp)}
+                  aria-label={'Quitar ' + imp.nombre}
+                  style={{ ...btnMini, padding: '7px 9px', border: 'none', background: colors.dangerSoft, color: colors.danger }}
+                >
+                  <Trash2 size={13} strokeWidth={2.2} />
+                </button>
+              </div>
+            </div>
+            {res && (
+              <div style={{
+                marginTop: 8, fontSize: type.xs, fontWeight: 700,
+                color: res.ok ? (colors.success || '#4a7c59') : colors.danger,
+              }}>
+                {res.ok
+                  ? 'Ha salido el papel de prueba.'
+                  : 'No respondió' + (res.error ? ': ' + res.error : '. Revisa que esté encendida y en la misma red.')}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Alta / edición */}
+      {form ? (
+        <div style={{ background: colors.cream2, borderRadius: 12, padding: '14px 16px', marginTop: 4 }}>
+          <div style={{ ...ds.label, marginBottom: 10 }}>
+            {form.id ? 'Editar impresora' : 'Nueva impresora'}
+          </div>
+          <input
+            value={form.nombre}
+            onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+            placeholder="Nombre (Caja, Cocina, Barra, Postres…)"
+            maxLength={30}
+            style={{ ...ds.input, height: 44, width: '100%', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            {[
+              { id: 'red', txt: 'Por red (IP)' },
+              ...(esEscritorio ? [{ id: 'usb', txt: 'Por USB (este PC)' }] : []),
+            ].map((o) => {
+              const activa = form.modo === o.id
+              return (
+                <button key={o.id} onClick={() => setForm((f) => ({ ...f, modo: o.id }))} style={{
+                  flex: 1, padding: '9px 8px', borderRadius: 10,
+                  border: activa ? 'none' : `1px solid ${colors.border}`,
+                  background: activa ? `linear-gradient(180deg, ${colors.ink2} 0%, ${colors.ink} 100%)` : colors.paper,
+                  color: activa ? colors.cream : colors.ink,
+                  fontSize: type.sm, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minHeight: 40,
+                }}>
+                  {o.txt}
+                </button>
+              )
+            })}
+          </div>
+
+          {form.modo === 'usb' ? (
+            <select
+              value={form.impresora_usb}
+              onChange={(e) => setForm((f) => ({ ...f, impresora_usb: e.target.value }))}
+              style={{ ...ds.input, height: 44, width: '100%', marginTop: 10, boxSizing: 'border-box' }}
+            >
+              <option value="">{usbLista === null ? 'Buscando impresoras USB…' : 'Elige la impresora…'}</option>
+              {(usbLista || []).map((n) => {
+                const nombre = typeof n === 'string' ? n : (n?.nombre || n?.name || '')
+                if (!nombre) return null
+                return (
+                  <option key={nombre} value={nombre}>
+                    {nombre}{n?.puerto ? ` (${n.puerto})` : ''}{n?.desconectada ? ' — sin conexión' : ''}
+                  </option>
+                )
+              })}
+            </select>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <input
+                value={form.ip}
+                onChange={(e) => setForm((f) => ({ ...f, ip: e.target.value.trim() }))}
+                placeholder="IP (192.168.1.100)"
+                inputMode="decimal"
+                style={{ ...ds.input, flex: 1, height: 44, fontFamily: type.mono, minWidth: 0 }}
+              />
+              <input
+                value={form.puerto}
+                onChange={(e) => setForm((f) => ({ ...f, puerto: Number(e.target.value.replace(/\D/g, '')) || '' }))}
+                placeholder="9100"
+                inputMode="numeric"
+                style={{ ...ds.input, width: 80, height: 44, fontFamily: type.mono }}
+              />
+            </div>
+          )}
+
+          {form.modo === 'usb' && (
+            <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 8, lineHeight: 1.5 }}>
+              Una impresora USB solo imprime desde el aparato que la tiene enchufada.
+              Para compartirla entre aparatos, conéctala por red.
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              onClick={guardar}
+              disabled={ocupado === 'guardar'}
+              style={{ ...ds.glossyBtn, flex: 1, height: 44, opacity: ocupado === 'guardar' ? 0.6 : 1 }}
+            >
+              {ocupado === 'guardar' ? 'Guardando…' : (form.id ? 'Guardar cambios' : 'Añadir impresora')}
+            </button>
+            <button onClick={() => setForm(null)} style={{ ...ds.secondaryBtn, height: 44, padding: '0 16px' }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={abrirAlta} style={{ ...ds.secondaryBtn, width: '100%', height: 44, marginTop: 4 }}>
+          <Plus size={15} strokeWidth={2.4} />
+          Añadir impresora
+        </button>
+      )}
+
+      {/* Qué imprime cada una, por categoría de la carta */}
+      {lista.length >= 2 && <DestinosPorImpresora lista={lista} />}
+
+      {/* Cuántos papeles por pedido (ajuste de ESTE aparato, como siempre) */}
+      {lista.length > 0 && (
+        <div style={{ marginTop: 14, padding: '12px 14px', background: colors.cream2, borderRadius: 12 }}>
+          <div style={{ ...ds.label, marginBottom: 8 }}>¿Qué imprimir en cada pedido?</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { v: 2, label: 'Comanda + Cliente' },
+              { v: 1, label: 'Solo comanda' },
+            ].map((opt) => {
+              const active = tickets === opt.v
+              return (
+                <button
+                  key={opt.v}
+                  onClick={() => {
+                    setTickets(opt.v)
+                    savePrinterConfig({ ...getPrinterConfig(), tickets: opt.v })
+                  }}
+                  style={{
+                    flex: 1, padding: '9px 8px', borderRadius: 10,
+                    border: active ? 'none' : `1px solid ${colors.border}`,
+                    background: active ? `linear-gradient(180deg, ${colors.ink2} 0%, ${colors.ink} 100%)` : colors.paper,
+                    color: active ? colors.cream : colors.ink,
+                    fontSize: type.sm, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minHeight: 42,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Qué impresora imprime la comanda de cada CATEGORÍA de la carta. Vive en la
+// carta (`categorias.impresora_id`), así que vale para todos los aparatos.
+// Sin elegir nada, todo sale por la de caja.
+function DestinosPorImpresora({ lista }) {
+  const { restaurante } = useRest()
+  const [cats, setCats] = useState(null)
+  const caja = lista.find((i) => i.es_caja) || lista[0]
+
+  useEffect(() => {
+    if (!restaurante?.id) return
+    supabase.from('categorias')
+      .select('id, nombre, impresora_id')
+      .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden')
+      .then(({ data }) => setCats(data || []))
+  }, [restaurante?.id])
+
+  async function cambiar(id, impresoraId) {
+    setCats((prev) => prev.map((c) => (c.id === id ? { ...c, impresora_id: impresoraId || null } : c)))
+    const { error } = await supabase.from('categorias')
+      .update({ impresora_id: impresoraId || null }).eq('id', id)
+    if (error) toast('No se pudo guardar el destino', 'error')
+    invalidarDestinos(restaurante.id)
+  }
+
+  if (!cats?.length) return null
+
+  const idsValidos = new Set(lista.map((i) => i.id))
+
+  return (
+    <div style={{ marginTop: 14, padding: '12px 14px', background: colors.cream2, borderRadius: 12 }}>
+      <div style={{ ...ds.label, marginBottom: 4 }}>¿Por dónde sale cada categoría?</div>
+      <div style={{ fontSize: type.xxs, color: colors.stone, marginBottom: 10, lineHeight: 1.5 }}>
+        Solo las comandas: el ticket del cliente siempre sale por la de caja.
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {cats.map((c) => (
+          <div key={c.id} style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            padding: '8px 10px', borderRadius: 10, background: colors.paper,
+            border: `1px solid ${colors.border}`,
+          }}>
+            <span style={{
+              flex: 1, minWidth: 110, fontSize: type.sm, fontWeight: 600, color: colors.ink,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {c.nombre}
+            </span>
+            <select
+              value={idsValidos.has(c.impresora_id) ? c.impresora_id : ''}
+              onChange={(e) => cambiar(c.id, e.target.value)}
+              style={{ ...ds.input, height: 38, fontSize: type.xs, width: 150, flexShrink: 0 }}
+            >
+              <option value="">{(caja?.nombre || 'Caja') + ' (caja)'}</option>
+              {lista.filter((i) => !i.es_caja).map((i) => (
+                <option key={i.id} value={i.id}>{i.nombre}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
