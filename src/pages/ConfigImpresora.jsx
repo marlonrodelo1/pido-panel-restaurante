@@ -8,8 +8,9 @@ import { colors, type, ds, radius } from '../lib/uiStyles'
 import {
   getPrinterConfig, savePrinterConfig,
   scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa, esEscritorio,
-  probarImpresoraCocina, listarImpresorasUsb,
+  probarImpresoraCocina, listarImpresorasUsb, intercambiarImpresoras,
 } from '../lib/printService'
+import { confirmar, toast } from '../App'
 import ImpresoraUsb from '../components/ImpresoraUsb'
 import { bytesDelLogo, previsualizar, olvidarLogo } from '../lib/logoTicket'
 
@@ -52,6 +53,23 @@ export default function ConfigImpresora() {
   function cambiarModo(nuevo) {
     setModo(nuevo)
     savePrinterConfig({ ...getPrinterConfig(), modo: nuevo })
+  }
+
+  // INTERCAMBIAR los papeles de las dos impresoras (caja ↔ cocina) en un toque:
+  // montar el local al revés es un clásico, y re-teclear IPs para arreglarlo, no.
+  // Tras el cruce se refrescan los estados de ESTA tarjeta y se remonta la de
+  // cocina (via `versionSwap`) para que las dos enseñen la verdad nueva.
+  const [versionSwap, setVersionSwap] = useState(0)
+  async function manejarIntercambio() {
+    const seguro = await confirmar('¿Intercambiar las impresoras? La de CAJA pasará a imprimir las comandas de cocina, y la de COCINA imprimirá los tickets, el cajón y los cierres.')
+    if (!seguro) return
+    const cfg = intercambiarImpresoras()
+    setPrinterIp(cfg.ip || '')
+    setPrinterPort(cfg.port || 9100)
+    setPrinterEnabled(cfg.enabled || false)
+    setModo(cfg.modo || 'red')
+    setVersionSwap((v) => v + 1)
+    toast('Impresoras intercambiadas: comprueba las dos con sus botones de Probar', 'success')
   }
 
   async function toggleActivo() {
@@ -219,9 +237,10 @@ export default function ConfigImpresora() {
             <Printer size={22} strokeWidth={2} />
           </div>
           <div style={{ minWidth: 0 }}>
-            <h3 style={{ ...ds.h2, margin: 0 }}>Impresora térmica</h3>
+            <h3 style={{ ...ds.h2, margin: 0 }}>Impresora de caja</h3>
             <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 2 }}>
-              Comandas en cocina y ticket cliente (80mm).
+              La principal (80mm): tickets del cliente, cajón, informes y cierres.
+              Sin segunda impresora, también las comandas.
             </div>
           </div>
         </div>
@@ -381,8 +400,9 @@ export default function ConfigImpresora() {
             {/* La segunda impresora es una pieza del MODULO TPV: sin el modulo
                 contratado, esta seccion no existe. Los restaurantes que solo
                 reciben pedidos de Pidoo siguen viendo su pantalla de impresora
-                EXACTAMENTE como siempre. */}
-            {tpvActivo && <SeccionCocina />}
+                EXACTAMENTE como siempre. La `key` remonta la seccion tras un
+                intercambio de papeles, para que relea la config cruzada. */}
+            {tpvActivo && <SeccionCocina key={versionSwap} onIntercambiar={manejarIntercambio} />}
 
           </div>
         ) : (
@@ -657,7 +677,7 @@ export default function ConfigImpresora() {
 // Solo las COMANDAS salen por ella; el ticket del cliente, los informes y el
 // cajón siguen en la principal. Si falla, la comanda cae a la principal sola
 // (printService.sendComanda): molesta en barra, pero nunca sin comanda.
-function SeccionCocina() {
+function SeccionCocina({ onIntercambiar }) {
   const [c, setC] = useState(() => getPrinterConfig().cocina || {
     activa: false, modo: 'red', ip: '', port: 9100, impresoraUsb: '',
   })
@@ -802,8 +822,19 @@ function SeccionCocina() {
 
           <DestinosCategorias />
 
+          {/* Cruzar los papeles en un toque: la de caja pasa a cocina y al revés,
+              cada una con su conexión (red o USB) tal cual la tenía. */}
+          {onIntercambiar && destinoListo && (
+            <button onClick={onIntercambiar} style={{
+              ...ds.glossyBtn, height: 44, background: 'transparent',
+              border: `1px solid ${colors.border}`, color: colors.ink, boxShadow: 'none',
+            }}>
+              ⇄ Intercambiar: esta pasa a CAJA y la de arriba a COCINA
+            </button>
+          )}
+
           <div style={{ fontSize: type.xxs, color: colors.stone, lineHeight: 1.5 }}>
-            La impresora principal (la de arriba) es la de <strong>CAJA</strong>: abre el
+            La impresora de arriba es la de <strong>CAJA</strong>: abre el
             cajón e imprime los tickets del cliente, los informes y los cierres.
             Por la de cocina solo salen comandas.
           </div>

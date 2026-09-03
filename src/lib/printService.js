@@ -179,6 +179,26 @@ async function sendComanda(data) {
   return sendToThermalPrinter(data)
 }
 
+// INTERCAMBIA los papeles de las dos impresoras: la de CAJA pasa a ser la de
+// COCINA y al revés, conservando cada conexión (red o USB) tal cual. Existe
+// porque montar el local al revés es un clásico — y re-teclear IPs para
+// arreglarlo, una tortura. Devuelve la configuración ya cruzada.
+export function intercambiarImpresoras() {
+  const cfg = getPrinterConfig()
+  const caja = { modo: cfg.modo || 'red', ip: cfg.ip || '', port: cfg.port || 9100, impresoraUsb: cfg.impresoraUsb || '' }
+  const cocina = cfg.cocina || {}
+  savePrinterConfig({
+    ...cfg,
+    modo: cocina.modo || 'red',
+    ip: cocina.ip || '',
+    port: cocina.port || 9100,
+    impresoraUsb: cocina.impresoraUsb || '',
+    enabled: true,
+    cocina: { ...cocina, activa: true, ...caja },
+  })
+  return getPrinterConfig()
+}
+
 // Prueba la impresora de cocina imprimiendo una comanda de verdad EN ELLA
 // (sin fallback: probar es ver si responde ESA, no otra).
 export async function probarImpresoraCocina(c) {
