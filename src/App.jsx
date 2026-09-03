@@ -35,6 +35,7 @@ import CrearEnvio from './pages/CrearEnvio'
 import Creadores from './pages/Creadores'
 import Tpv from './pages/Tpv'
 import Almacen from './pages/Almacen'
+import Contabilidad from './pages/Contabilidad'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -63,7 +64,7 @@ const FORZAR_TPV_APP = import.meta.env.DEV &&
 // para levantar su barra de venta y no taparla.
 const ALTO_NAV_MOVIL = 64
 
-const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes, impresora: Printer }
+const NAV_ICONS_WEB = { pedidos: ClipboardList, historial: Clock, carta: UtensilsCrossed, promos: Tag, ajustes: Settings, 'crear-envio': PhoneCall, tpv: Calculator, almacen: Boxes, contabilidad: Wallet, impresora: Printer }
 const NAV_ICONS_NATIVE = { pedidos: ClipboardList, 'crear-envio': PhoneCall, 'historial-movil': History, disponibilidad: ToggleLeft, impresora: Printer, tpv: Calculator }
 
 // Etiquetas legibles para breadcrumbs y títulos
@@ -87,6 +88,7 @@ const SECCION_LABELS = {
   impresora: 'Impresora',
   tpv: 'TPV',
   almacen: 'Almacén',
+  contabilidad: 'Contabilidad',
 }
 
 // Hook simple para detectar viewport desktop
@@ -336,6 +338,7 @@ function Sidebar({ seccion, setSeccion, restaurante, user, sociosPendientes, onL
     { id: 'crear-envio', Icon: PhoneCall, label: 'Pedido telefónico' },
     { id: 'carta', Icon: BookOpen, label: 'Carta' },
     ...(stockActivo ? [{ id: 'almacen', Icon: Boxes, label: 'Almacén' }] : []),
+    ...(stockActivo ? [{ id: 'contabilidad', Icon: Wallet, label: 'Contabilidad' }] : []),
     // Solo en la app de Windows: alli SI se puede hablar con la impresora por el
     // puerto 9100. En un navegador la entrada no podria hacer nada.
     ...(esEscritorio ? [{ id: 'impresora', Icon: Printer, label: 'Impresora' }] : []),
@@ -590,6 +593,7 @@ function AppInner({ seccion, setSeccion, nav }) {
     { id: 'liquidacion-pido', label: 'Liquidación con Pido', Icon: Receipt },
     { id: 'creadores', label: 'Creadores', Icon: Video },
     ...(stockActivo ? [{ id: 'almacen', label: 'Almacén', Icon: Boxes }] : []),
+    ...(stockActivo ? [{ id: 'contabilidad', label: 'Contabilidad', Icon: Wallet }] : []),
     { id: 'soporte', label: 'Soporte', Icon: MessageCircle },
   ]
   const extraActive = extraOpciones.find(e => e.id === seccion)
@@ -663,6 +667,9 @@ function AppInner({ seccion, setSeccion, nav }) {
           con el dedo en una tablet es inviable, y meterlo en la APK obligaria a un
           AAB por cada retoque. En la tablet solo va lo del servicio, dentro del TPV. */}
       {seccion === 'almacen' && !isNative && <Almacen />}
+      {/* Contabilidad tambien es de escritorio: facturas y gastos se meten con
+          teclado, y el resumen es para sentarse a mirarlo, no para el mostrador. */}
+      {seccion === 'contabilidad' && !isNative && <Contabilidad />}
       {seccion === 'ajustes' && <Ajustes />}
       {seccion === 'eliminar-cuenta' && <EliminarCuenta onBack={() => setSeccion('ajustes')} />}
     </>

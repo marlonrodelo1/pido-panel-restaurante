@@ -15,18 +15,17 @@ import { colors, ds, radius, type } from '../lib/uiStyles'
 import { cargarArticulos, cargarResumen } from '../lib/stock'
 import ArranqueAsistido from '../components/almacen/ArranqueAsistido'
 import ResumenTab from '../components/almacen/ResumenTab'
-import NegocioTab from '../components/almacen/NegocioTab'
 import ArticulosTab from '../components/almacen/ArticulosTab'
 import EscandallosTab from '../components/almacen/EscandallosTab'
-import ComprasTab from '../components/almacen/ComprasTab'
 import MovimientosTab from '../components/almacen/MovimientosTab'
 
+// Las facturas de compra y el resumen del negocio se MUDARON a Contabilidad
+// (3 sep 2026, pedido por Marlon): el Almacén es la casa de las COSAS, la
+// Contabilidad la del DINERO. Mismas tablas, cero duplicados.
 const PESTANAS = [
   { id: 'resumen', label: 'Resumen' },
-  { id: 'negocio', label: 'Negocio' },
   { id: 'articulos', label: 'Artículos de compra' },
   { id: 'escandallos', label: 'Escandallos' },
-  { id: 'compras', label: 'Compras' },
   { id: 'movimientos', label: 'Movimientos' },
 ]
 
@@ -102,9 +101,10 @@ export default function Almacen() {
         <h1 style={ds.h1}>Almacén</h1>
       </div>
       <div style={{ ...ds.muted, marginBottom: 16 }}>
-        Lo que tienes, lo que te cuesta y lo que entra por tus proveedores.
-        En <strong>Artículos de compra</strong> van la carne, el pan, el aceite. En{' '}
-        <strong>Escandallos</strong>, la receta de cada plato de tu carta.
+        Lo que tienes y lo que te cuesta. En <strong>Artículos de compra</strong> van
+        la carne, el pan, el aceite. En <strong>Escandallos</strong>, la receta de cada
+        plato de tu carta. Las facturas del proveedor se meten en{' '}
+        <strong>Contabilidad</strong>.
       </div>
 
       {stockConfig.pausado_por_restaurante && (
@@ -138,17 +138,11 @@ export default function Almacen() {
       {pestana === 'resumen' && (
         <ResumenTab resumen={resumen} articulos={articulos} onIrA={setPestana} />
       )}
-      {pestana === 'negocio' && (
-        <NegocioTab estId={estId} onIrA={setPestana} />
-      )}
       {pestana === 'articulos' && (
         <ArticulosTab estId={estId} articulos={articulos} onCambio={recargar} />
       )}
       {pestana === 'escandallos' && (
         <EscandallosTab estId={estId} articulos={articulos} onCambio={recargar} />
-      )}
-      {pestana === 'compras' && (
-        <ComprasTab estId={estId} articulos={articulos} onCambio={recargar} />
       )}
       {pestana === 'movimientos' && (
         <MovimientosTab estId={estId} articulos={articulos} />

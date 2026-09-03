@@ -159,6 +159,47 @@ export async function borrarGasto(id) {
   if (error) throw new Error(traducir(error))
 }
 
+/* ── Gastos fijos ─────────────────────────────────────────────────────────── */
+// La plantilla del mes: alquiler, sueldos, luz… Cada fijo se apunta al libro CUANDO
+// SE PAGA (botón por fijo, o "apuntar todos"), nunca en silencio: quien sabe si el
+// recibo salió es el dueño. Un índice único garantiza un apunte por fijo y mes.
+
+export async function cargarFijos(estId) {
+  const { data, error } = await supabase
+    .from('stock_gastos_fijos')
+    .select('*')
+    .eq('establecimiento_id', estId)
+    .order('importe', { ascending: false })
+  if (error) throw new Error(traducir(error))
+  return data || []
+}
+
+export async function crearFijo(estId, { categoria, concepto, importe }) {
+  const { error } = await supabase.from('stock_gastos_fijos').insert({
+    establecimiento_id: estId,
+    categoria: categoria.trim(),
+    concepto: concepto?.trim() || null,
+    importe,
+  })
+  if (error) throw new Error(traducir(error))
+}
+
+export async function borrarFijo(id) {
+  const { error } = await supabase.from('stock_gastos_fijos').delete().eq('id', id)
+  if (error) throw new Error(traducir(error))
+}
+
+export async function activarFijo(id, activo) {
+  const { error } = await supabase.from('stock_gastos_fijos').update({ activo }).eq('id', id)
+  if (error) throw new Error(traducir(error))
+}
+
+export const apuntarFijo = (fijoId) =>
+  rpc('stock_apuntar_fijo', { p_fijo_id: fijoId })
+
+export const apuntarFijosMes = (estId) =>
+  rpc('stock_apuntar_fijos_mes', { p_establecimiento_id: estId })
+
 export async function cargarMovimientos(estId, { articuloId, tipo, limite = 100 } = {}) {
   let q = supabase
     .from('stock_movimientos')
@@ -264,6 +305,7 @@ const MENSAJES = {
   PD252: 'Ese artículo no es una preparación.',
   PD253: 'Esta preparación no tiene receta: añádesela antes de apuntar una tanda.',
   PD255: 'Una preparación no puede ser ingrediente de otra preparación.',
+  PD256: 'Ese fijo ya estaba apuntado este mes.',
 }
 
 function traducir(error) {
