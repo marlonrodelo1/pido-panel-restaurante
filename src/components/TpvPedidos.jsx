@@ -22,7 +22,8 @@ import {
   marcarEntregado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
 } from '../lib/accionesPedido'
 import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
-import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban } from 'lucide-react'
+import { unlockAudio, startAlarm, stopAlarm } from '../lib/alarm'
+import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
@@ -345,6 +346,13 @@ export default function TpvPedidos({
         style={{ ...btnSecundario, height: 36, borderRadius: RADIO, padding: '0 10px', ...(alLado ? null : { marginLeft: 'auto' }) }}
         title="Actualizar" aria-label="Actualizar">
         <RefreshCw size={14} />
+      </button>
+      {/* Vivía en la capa "Pedidos en vivo", que ya no existe en el TPV: sin
+          esto no había forma de comprobar que el aparato de verdad suena. */}
+      <button onClick={() => { unlockAudio(); startAlarm(); setTimeout(stopAlarm, 2000) }}
+        style={{ ...btnSecundario, height: 36, borderRadius: RADIO, padding: '0 10px' }}
+        title="Probar alarma" aria-label="Probar alarma">
+        <Bell size={14} />
       </button>
       <input value={busca} onChange={(e) => setBusca(e.target.value)}
         placeholder="Buscar código o nombre…"
