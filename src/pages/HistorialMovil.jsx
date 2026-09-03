@@ -15,8 +15,12 @@ const RANGOS = [
 ]
 
 function startOfTodayIso() {
+  // "Hoy" empieza a las 5:00, igual que en la pantalla de Pedidos del TPV: un bar
+  // que cierra a las 2 sigue teniendo "hoy" a las 3, y cortar a medianoche partía
+  // el servicio por la mitad (y este historial decía una cosa y Pedidos otra).
   const d = new Date()
-  d.setHours(0, 0, 0, 0)
+  if (d.getHours() < 5) d.setDate(d.getDate() - 1)
+  d.setHours(5, 0, 0, 0)
   return d.toISOString()
 }
 

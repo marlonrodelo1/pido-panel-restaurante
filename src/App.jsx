@@ -618,13 +618,18 @@ function AppInner({ seccion, setSeccion, nav }) {
     </div>
   ) : null
 
+  // El TPV ocupando la pantalla del escritorio. Se calcula ANTES de armar el
+  // contenido porque tanto el shell como el contenido esconden piezas con él.
+  const tpvFull = isDesktop && !isNative && seccion === 'tpv' && tpvExpandido
+
   // Contenido de la sección (compartido)
   const seccionContent = (
     <>
       {/* Aviso de cuota sin pagar, en TODAS las secciones. Solo sale si el
           restaurante es de cuota fija y no está al día; el que no ha pagado no
-          va a entrar en Ajustes por su cuenta a buscarlo. */}
-      <SuscripcionCard variant="banner" />
+          va a entrar en Ajustes por su cuenta a buscarlo. (Con el TPV a pantalla
+          completa no: ahí encima del mostrador oscuro no pinta nada.) */}
+      {!tpvFull && <SuscripcionCard variant="banner" />}
       {seccion === 'pedidos' && isNative && <PedidosEnVivo />}
       {seccion === 'historial-movil' && <HistorialMovil />}
       {seccion === 'disponibilidad' && <DisponibilidadProductos />}
@@ -681,33 +686,27 @@ function AppInner({ seccion, setSeccion, nav }) {
   // ─────────────────────────────────────────────────────────────────────────
   // SHELL DESKTOP (≥1024px, no native)
   // ─────────────────────────────────────────────────────────────────────────
-  // TPV a pantalla completa: se pinta SOLO el, sin barra lateral ni migas. Es el
-  // mismo componente y el mismo arbol, asi que el carrito a medias no se pierde al
-  // ampliar o reducir.
-  if (isDesktop && !isNative && seccion === 'tpv' && tpvExpandido) {
-    return (
-      <div style={{ ...shell, minHeight: '100vh', background: '#12100E' }}>
-        <style>{css}</style>
-        <Tpv pantallaCompleta onAlternarPantalla={alternarTpv} />
-      </div>
-    )
-  }
-
+  // TPV a pantalla completa: la barra lateral, las migas y el banner se ESCONDEN
+  // pero el árbol es EL MISMO — antes había una rama aparte que devolvía otro
+  // árbol y React desmontaba el Tpv al ampliar o reducir (Tpv vs Sidebar en la
+  // misma posición): el carrito a medias se borraba, y Escape lo disparaba de un
+  // tecleo. Los `{!tpvFull && ...}` conservan el hueco en el árbol, así que el
+  // Tpv no se mueve de sitio y su estado sobrevive al cambio.
   if (isDesktop && !isNative) {
     return (
-      <div style={{ ...shell, minHeight: '100vh', display: 'flex' }}>
+      <div style={{ ...shell, minHeight: '100vh', display: 'flex', ...(tpvFull ? { background: '#12100E' } : null) }}>
         <style>{css}</style>
-        <Sidebar
+        {!tpvFull && <Sidebar
           seccion={seccion}
           setSeccion={setSeccion}
           restaurante={restaurante}
           user={user}
           sociosPendientes={sociosPendientes}
           onLogout={logout}
-        />
+        />}
         <main style={{
           flex: 1, minWidth: 0,
-          padding: 'clamp(20px, 2.4vw, 36px) clamp(16px, 3vw, 40px)',
+          padding: tpvFull ? 0 : 'clamp(20px, 2.4vw, 36px) clamp(16px, 3vw, 40px)',
           width: '100%',
           overflowX: 'hidden',
           animation: 'fadeIn 0.3s ease',
@@ -716,9 +715,9 @@ function AppInner({ seccion, setSeccion, nav }) {
               a los lados. Mismo criterio que se aplicó en pido-super-admin el 24 jul.
               El <main> ya lleva minWidth: 0, necesario para que las tablas anchas no
               provoquen scroll horizontal en tablet. */}
-          <div style={{ maxWidth: 1600, margin: '0 auto', width: '100%', minWidth: 0 }}>
-            <Breadcrumbs seccion={seccion} />
-            {fiscalBanner}
+          <div style={{ maxWidth: tpvFull ? 'none' : 1600, margin: '0 auto', width: '100%', minWidth: 0 }}>
+            {!tpvFull && <Breadcrumbs seccion={seccion} />}
+            {!tpvFull && fiscalBanner}
             <div>
               {seccionContent}
             </div>

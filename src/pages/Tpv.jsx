@@ -178,8 +178,66 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // vez (desde el 31 ago los fallos ya NO se guardan).
   useEffect(() => { prepararLogo(restaurante?.logo_url) }, [restaurante?.logo_url])
 
+  // ── La venta a medias SOBREVIVE ───────────────────────────────────────────
+  // El carrito y su clave de idempotencia se guardan en localStorage por
+  // restaurante. Cubre tres muertes reales: recargar la tablet, un crash del
+  // WebView, y el remonte del componente al cambiar de shell en escritorio.
+  //
+  // 🔴 La clave de idempotencia va ATADA A LA FIRMA del carrito (líneas y
+  // cantidades), no a cada pulsación de cobrar: un reintento tras un fallo de
+  // red lleva LA MISMA clave y el servidor devuelve la venta ya grabada en vez
+  // de cobrar dos veces. Antes se regeneraba en cada pulsación y la idempotencia
+  // solo protegía el doble-tap dentro del mismo intento — con tarjeta, reintentar
+  // tras un corte de red eran dos tickets. Si el carrito CAMBIA, la clave cambia
+  // con él: cobrar un carrito distinto es otra venta.
   const idemRef = useRef(null)
+  const firmaRef = useRef(null)
   const enVueloRef = useRef(false)
+
+  // uuid v4 de verdad también sin crypto.randomUUID (WebView viejas): el
+  // fallback anterior (Date.now()+random) no pasaba el regex del servidor y en
+  // esos aparatos NINGUNA venta se podía cobrar.
+  const uuidv4 = () => crypto?.randomUUID?.() ||
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+    })
+
+  const claveVenta = restaurante?.id ? `pidoo_tpv_venta_${restaurante.id}` : null
+
+  useEffect(() => {
+    if (!claveVenta) return
+    try {
+      const v = JSON.parse(localStorage.getItem(claveVenta) || 'null')
+      if (Array.isArray(v?.lineas) && v.lineas.length) {
+        idemRef.current = v.clave || null
+        firmaRef.current = v.firma || null
+        setCarrito(v.lineas)
+      }
+    } catch { /* respaldo roto: se empieza de cero */ }
+  }, [claveVenta])
+
+  useEffect(() => {
+    if (!claveVenta) return
+    if (!carrito.length) {
+      // Venta cerrada o vaciada. El pase inicial (sin firma todavía) no toca
+      // nada: si borrase aquí, pisaría lo que la hidratación acaba de leer.
+      if (firmaRef.current != null) {
+        idemRef.current = null
+        firmaRef.current = null
+        try { localStorage.removeItem(claveVenta) } catch { /* nada */ }
+      }
+      return
+    }
+    const firma = JSON.stringify(carrito.map((l) => [l.clave, l.cantidad]))
+    if (!idemRef.current || firmaRef.current !== firma) {
+      idemRef.current = uuidv4()
+      firmaRef.current = firma
+    }
+    try {
+      localStorage.setItem(claveVenta, JSON.stringify({ clave: idemRef.current, firma, lineas: carrito }))
+    } catch { /* storage lleno: la venta sigue, solo pierde el respaldo */ }
+  }, [carrito, claveVenta])
 
   useEffect(() => {
     if (!restaurante?.id) return
@@ -216,7 +274,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
   // La impresora se sondea AL ENTRAR, no al cobrar: enterarse de que está apagada
   // con el cliente delante y el cajón cerrado es demasiado tarde.
-  useEffect(() => {
+  //
+  // Y se VUELVE a sondear al cerrar la pantalla de configuración, que se abre
+  // como capa ENCIMA sin desmontar esto: antes el estado se calculaba una sola
+  // vez y configurar la impresora desde dentro del TPV dejaba el aviso rojo — y
+  // el toast de fallo al imprimir tras cobrar — congelados para siempre.
+  const sondearImpresora = () => {
     const cfg = getPrinterConfig()
     // Se pregunta por el MODO, no por la IP: en USB no hay IP y esto daba
     // "sin configurar" con la impresora enchufada delante.
@@ -228,7 +291,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // Venia asi de antes, con checkPrinterConnection.
       .then((r) => setImpresora({ configurada: true, viva: !!r?.ok }))
       .catch(() => setImpresora({ configurada: true, viva: false }))
-  }, [])
+  }
+  useEffect(() => { sondearImpresora() }, [])
+  const pantallaPrevia = useRef(null)
+  useEffect(() => {
+    if (pantallaPrevia.current === 'impresora' && pantalla === null) sondearImpresora()
+    pantallaPrevia.current = pantalla
+  }, [pantalla])
 
   const tamanosDe = useMemo(() => {
     const m = {}
@@ -322,7 +391,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   }
 
   async function informeDelDia() {
-    const desde = new Date(); desde.setHours(0, 0, 0, 0)
+    // Desde las 5 de la mañana, igual que la pantalla de Pedidos: este informe
+    // se imprime al CERRAR, a la 1 o a las 2 de la madrugada, y cortar a
+    // medianoche dejaba fuera todo el servicio de la noche — y al día siguiente
+    // esos tickets ya eran "ayer", así que no salían en ningún informe nunca.
+    const desde = new Date()
+    if (desde.getHours() < 5) desde.setDate(desde.getDate() - 1)
+    desde.setHours(5, 0, 0, 0)
     const { data, error } = await supabase.from('tpv_tickets')
       .select('serie, numero, total, base_imponible, cuota_igic, metodo_pago')
       .eq('establecimiento_id', restaurante.id)
@@ -359,22 +434,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setCarrito([])
   }
 
-  // Una venta = una clave, y se genera aquí, antes de elegir cómo se paga: si el
-  // dedo se va dos veces, las dos llamadas llevan la misma y el servidor devuelve
-  // el mismo ticket en vez de cobrar dos veces.
-  function nuevaVenta() {
-    idemRef.current = (crypto?.randomUUID?.() || String(Date.now()) + Math.random())
-  }
-
+  // La clave de idempotencia YA vive en `idemRef`, atada a la firma del carrito
+  // (ver arriba): aquí no se genera nada. Reintentar un cobro fallido reusa la
+  // misma clave y el servidor devuelve la venta ya grabada en vez de repetirla.
   function cobrarEnEfectivo() {
     if (!carrito.length) return
-    nuevaVenta()
     setModalPago(true)      // hace falta preguntar con cuánto paga, para el cambio
   }
 
   function cobrarConTarjeta() {
     if (!carrito.length) return
-    nuevaVenta()
     // Con tarjeta no hay cambio que calcular: el importe se teclea en el datáfono
     // y aquí solo se deja constancia. Un paso menos en cada venta con tarjeta.
     cobrar('datafono', null)
@@ -384,11 +453,19 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (enVueloRef.current) return
     enVueloRef.current = true
     setCobrando(true)
+    // Sin límite de tiempo, una red a medias (TCP abierto, sin respuesta) dejaba
+    // los dos botones deshabilitados SIN SALIDA durante minutos, y la única
+    // escapatoria era recargar. 30 s y se corta: reintentar es seguro porque la
+    // clave de idempotencia no cambia.
+    const corte = new AbortController()
+    const reloj = setTimeout(() => corte.abort(), 30000)
     try {
+      if (!idemRef.current) idemRef.current = uuidv4()  // red de seguridad; la pone el efecto del carrito
       const { data: sess } = await supabase.auth.getSession()
       const token = sess?.session?.access_token
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/tpv-venta`, {
         method: 'POST',
+        signal: corte.signal,
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           establecimiento_id: restaurante.id,
@@ -412,7 +489,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
       // A partir de aquí LA VENTA YA ESTÁ COBRADA Y GRABADA.
       setUltimaVenta(body)
-      setCarrito([])
+      setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
       setModalPago(false)
       if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
       else toast(`Cobrado ${eur(cents(body.pedido?.total))}${body.repetida ? ' (ya estaba cobrado)' : ''}`, 'success')
@@ -420,14 +497,26 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       if (body.ticket) {
         imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
           pieTicket: body.config?.pie_ticket,
-          abrirCajonTambien: !!body.config?.abrir_cajon,
+          // Si la respuesta viene SIN `config` (venta repetida servida por una
+          // edge anterior a la v6), en efectivo el cajón se abre igual: el
+          // reintento es justo el momento en que hay que dar el cambio.
+          abrirCajonTambien: body.config ? !!body.config.abrir_cajon : metodo_pago === 'efectivo',
         }).then((r) => {
-          if (!r.ticket && impresora.configurada) toast('No se pudo imprimir el ticket', 'error')
+          // `impresoraConfigurada()` EN VIVO, no el estado congelado al montar:
+          // si se configuró la impresora desde la capa, el aviso tiene que salir.
+          if (!r.ticket && impresoraConfigurada()) toast('No se pudo imprimir el ticket', 'error')
         }).catch(() => {})
       }
     } catch (err) {
-      toast(err.message || 'Error al cobrar', 'error')
+      // Un corte o un fallo de red dejan la venta EN DUDA (puede haber entrado).
+      // El consejo correcto es reintentar tal cual: la misma clave hace que el
+      // servidor conteste con la venta ya grabada en vez de cobrarla otra vez.
+      const enDuda = err?.name === 'AbortError' || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
+      toast(enDuda
+        ? 'Sin respuesta del servidor. Vuelve a pulsar cobrar TAL CUAL está la venta: si ya había entrado, no se cobra dos veces.'
+        : (err.message || 'Error al cobrar'), 'error')
     } finally {
+      clearTimeout(reloj)
       enVueloRef.current = false
       setCobrando(false)
     }

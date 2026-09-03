@@ -1,4 +1,11 @@
-// tpv-venta v1 (26-ago-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
+// tpv-venta v6 (3-sep-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
+//
+// v6: (1) la respuesta de venta REPETIDA lleva `config` como una venta nueva —
+// sin ella, el reintento en efectivo imprimía sin pie y NO ABRÍA EL CAJÓN, justo
+// cuando hay que dar el cambio; (2) el pedido se inserta CON `idempotency_key`
+// (unique parcial en `pedidos`): dos envíos simultáneos con la misma clave ya no
+// pueden dejar un pedido duplicado — el segundo choca y devuelve la venta del
+// primero.
 //
 // Por que una edge con service_role y no un RPC, que seria mas rapido y atomico:
 // `trg_00_blindar_origen_pedido` reescribe el origen a 'pido' para cualquier
@@ -25,8 +32,8 @@
 // Body: { establecimiento_id, lineas: [{producto_id?, nombre?, cantidad, tamano?,
 //         precio_unitario?, notas?}], metodo_pago: 'efectivo'|'datafono',
 //         entregado_efectivo?, idempotency_key }
-// verify_jwt=true. Candado adicional en codigo: dueno del establecimiento,
-// admin/superadmin, o service role.
+// verify_jwt=true. Candado adicional en codigo: dueno del establecimiento, alguien
+// de su equipo (`establecimiento_usuarios`), admin/superadmin, o service role.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -95,36 +102,60 @@ Deno.serve(async (req) => {
     entregado_efectivo = n
   }
 
+  // ── La venta ya grabada con esta clave, con la MISMA forma que una nueva ──
+  //
+  // `esperas` cubre la carrera del doble envio simultaneo: el pedido del otro
+  // intento ya existe pero su ticket puede estar emitiendose en este instante.
+  const ventaYaGrabada = async (esperas = 0) => {
+    let yaEmitido: any = null
+    for (let i = 0; i <= esperas; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 700))
+      const { data } = await sb.from('tpv_tickets')
+        .select('*, pedidos(id, codigo, subtotal, total, metodo_pago, created_at)')
+        .eq('idempotency_key', idempotency_key).maybeSingle()
+      if (data) { yaEmitido = data; break }
+    }
+    if (!yaEmitido) return null
+    // Se devuelve con la MISMA forma que una venta nueva (`pedido`, `items`,
+    // `establecimiento`, `config`): quien llama no deberia tener que distinguir
+    // el caso. La primera version devolvia solo el ticket y la pantalla
+    // reventaba al leer `pedido.total` — justo en el escenario para el que
+    // existe la idempotencia. Y hasta la v5 faltaba `config`: el reintento en
+    // efectivo no abria el cajon.
+    const { pedidos: pedidoRepetido, ...ticketRepetido } = yaEmitido
+    const [{ data: itemsRep }, { data: estRep }, { data: cfgRep }] = await Promise.all([
+      sb.from('pedido_items')
+        .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+        .eq('pedido_id', ticketRepetido.pedido_id),
+      sb.from('establecimientos')
+        .select('id, nombre, razon_social, nif, direccion, direccion_fiscal, ciudad_fiscal, telefono')
+        .eq('id', ticketRepetido.establecimiento_id).maybeSingle(),
+      sb.from('tpv_config')
+        .select('pie_ticket, abrir_cajon_efectivo, abrir_cajon_datafono')
+        .eq('establecimiento_id', ticketRepetido.establecimiento_id).maybeSingle(),
+    ])
+    return json({
+      ok: true,
+      repetida: true,
+      ticket: ticketRepetido,
+      pedido: pedidoRepetido,
+      items: itemsRep || [],
+      establecimiento: estRep,
+      config: cfgRep ? {
+        pie_ticket: cfgRep.pie_ticket,
+        abrir_cajon: ticketRepetido.metodo_pago === 'efectivo'
+          ? cfgRep.abrir_cajon_efectivo
+          : cfgRep.abrir_cajon_datafono,
+      } : null,
+    })
+  }
+
   // ── Idempotencia ANTES de crear nada ──
   // La RPC tambien la comprueba, pero si dejasemos llegar hasta alli un segundo
   // toque ya habriamos creado un pedido huerfano sin ticket. Aqui se corta antes.
   {
-    const { data: yaEmitido } = await sb.from('tpv_tickets')
-      .select('*, pedidos(id, codigo, subtotal, total, metodo_pago, created_at)')
-      .eq('idempotency_key', idempotency_key).maybeSingle()
-    if (yaEmitido) {
-      // Se devuelve con la MISMA forma que una venta nueva (`pedido`, `items`,
-      // `establecimiento`): quien llama no deberia tener que distinguir el caso.
-      // La primera version devolvia solo el ticket y la pantalla reventaba al leer
-      // `pedido.total` — justo en el escenario para el que existe la idempotencia.
-      const { pedidos: pedidoRepetido, ...ticketRepetido } = yaEmitido as any
-      const [{ data: itemsRep }, { data: estRep }] = await Promise.all([
-        sb.from('pedido_items')
-          .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
-          .eq('pedido_id', ticketRepetido.pedido_id),
-        sb.from('establecimientos')
-          .select('id, nombre, razon_social, nif, direccion, direccion_fiscal, ciudad_fiscal, telefono')
-          .eq('id', ticketRepetido.establecimiento_id).maybeSingle(),
-      ])
-      return json({
-        ok: true,
-        repetida: true,
-        ticket: ticketRepetido,
-        pedido: pedidoRepetido,
-        items: itemsRep || [],
-        establecimiento: estRep,
-      })
-    }
+    const repetida = await ventaYaGrabada()
+    if (repetida) return repetida
   }
 
   // ── Establecimiento + ownership ──
@@ -315,8 +346,34 @@ Deno.serve(async (req) => {
     guest_nombre: 'Mostrador',
     aceptado_at: now,
     entregado_at: now,
+    // v6: el unique parcial de `pedidos.idempotency_key` convierte el doble
+    // envio simultaneo en un choque controlado en vez de en un pedido duplicado.
+    idempotency_key,
   }).select('id, codigo').single()
-  if (insPedErr || !pedido) return json({ error: 'pedido_insert_failed', detalle: insPedErr?.message }, 500)
+  if (insPedErr || !pedido) {
+    if (insPedErr?.code === '23505' && /idempotency/i.test(insPedErr?.message || '')) {
+      // Otro envio con la misma clave gano la carrera y SU venta es la buena.
+      // Se le da un momento a su ticket para terminar de emitirse.
+      const repetida = await ventaYaGrabada(3)
+      if (repetida) return repetida
+      // Su pedido existe pero su ticket aun no: se responde con el pedido, la
+      // pantalla ya sabe pintar una venta sin numero de ticket.
+      const { data: pedRep } = await sb.from('pedidos')
+        .select('id, codigo, subtotal, total, metodo_pago, created_at')
+        .eq('idempotency_key', idempotency_key).maybeSingle()
+      if (pedRep) {
+        const { data: itemsRep } = await sb.from('pedido_items')
+          .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+          .eq('pedido_id', pedRep.id)
+        return json({
+          ok: true, repetida: true, sin_ticket: true,
+          aviso: 'La venta ya estaba grabada; el ticket lo emite el otro intento.',
+          pedido: pedRep, items: itemsRep || [], establecimiento: est,
+        })
+      }
+    }
+    return json({ error: 'pedido_insert_failed', detalle: insPedErr?.message }, 500)
+  }
 
   // ── Las lineas ──
   const { error: insItemsErr } = await sb.from('pedido_items')

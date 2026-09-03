@@ -178,8 +178,14 @@ export async function checkPrinterConnection(ip, port = 9100) {
  * Returns { ok: boolean }
  */
 export async function connectAndTestPrinter(ip, port = 9100, logoBytes = null) {
-  // Save config
-  savePrinterConfig({ ip, port, enabled: true })
+  // 🔴 Se conserva TODO lo demás de la configuración (tickets, impresoraUsb…).
+  // Antes esto guardaba `{ip, port, enabled}` a secas: probar una IP borraba la
+  // impresora USB configurada y el ajuste de "solo comanda", y si la prueba
+  // fallaba se revertía a vacío — un mostrador funcionando por USB se quedaba
+  // sin imprimir NADA por curiosear la pestaña de red. `probarImpresoraUsb`
+  // siempre lo hizo bien (guarda `anterior` y lo restaura); ahora este igual.
+  const anterior = getPrinterConfig()
+  savePrinterConfig({ ...anterior, ip, port, modo: 'red', enabled: true })
 
   // Send test ticket (using CP850 for proper Spanish characters)
   const ESC = 0x1B, GS = 0x1D, LF = 0x0A
@@ -187,7 +193,7 @@ export async function connectAndTestPrinter(ip, port = 9100, logoBytes = null) {
 
   const data = new Uint8Array([
     ESC, 0x40, // Init
-    ESC, 0x74, 0x02, // CP850
+    ESC, 0x74, 0x13, // CP858 (la página con el €; ver escpos.js)
     ESC, 0x61, 0x01, // Center
   ])
 
@@ -240,17 +246,19 @@ export async function connectAndTestPrinter(ip, port = 9100, logoBytes = null) {
 
   const ok = await sendRawToIp(ip, port, todo)
   if (!ok) {
-    // Revert if failed
-    savePrinterConfig({ ip: '', port: 9100, enabled: false })
+    // La prueba no salió: se deja la configuración EXACTAMENTE como estaba,
+    // sin dar por buena una impresora muda ni borrar la que sí funcionaba.
+    savePrinterConfig(anterior)
   }
   return { ok }
 }
 
 /**
- * Disconnect printer: clear config
+ * Disconnect printer: deja de imprimir, pero CONSERVA el resto de la
+ * configuración (tickets, impresora USB elegida) para que reconectar sea un clic.
  */
 export function disconnectPrinter() {
-  savePrinterConfig({ ip: '', port: 9100, enabled: false })
+  savePrinterConfig({ ...getPrinterConfig(), enabled: false })
 }
 
 /**
@@ -306,7 +314,7 @@ export async function probarImpresoraUsb(nombreImpresora, logoBytes = null) {
   const ESC = 0x1B, GS = 0x1D, LF = 0x0A
   const t = (str) => escTextToBytes(str)
 
-  const cabecera = [ESC, 0x40, ESC, 0x74, 0x02, ESC, 0x61, 0x01]
+  const cabecera = [ESC, 0x40, ESC, 0x74, 0x13, ESC, 0x61, 0x01] // init + CP858 + center
   const conLogo = logoBytes && logoBytes.length ? [...cabecera, ...logoBytes, LF] : [...cabecera]
 
   const resto = new Uint8Array([

@@ -8,12 +8,29 @@ const ESC = 0x1B
 const GS = 0x1D
 const LF = 0x0A
 
-// Encoder for text → bytes (Latin-1 / CP850 for Spanish chars)
+// Encoder for text → bytes (CP858 for Spanish chars + € symbol)
+//
+// 🔴 El € vive en 0xD5 SOLO en CP858 (ESC t 19). Con CP850 (ESC t 2) ese byte es
+// una "ı" y todos los extras de pago salían "Queso (+0.50ı)". CP858 ES CP850 con
+// ese único byte cambiado, así que el resto del mapa vale igual en las dos.
 export function textToBytes(text) {
-  const map = { 'á': 0xA0, 'é': 0x82, 'í': 0xA1, 'ó': 0xA2, 'ú': 0xA3, 'ñ': 0xA4, 'Á': 0xB5, 'É': 0x90, 'Í': 0xD6, 'Ó': 0xE0, 'Ú': 0xE9, 'Ñ': 0xA5, 'ü': 0x81, 'Ü': 0x9A, '¿': 0xA8, '¡': 0xAD, '€': 0xD5 }
+  const map = {
+    'á': 0xA0, 'é': 0x82, 'í': 0xA1, 'ó': 0xA2, 'ú': 0xA3, 'ñ': 0xA4,
+    'Á': 0xB5, 'É': 0x90, 'Í': 0xD6, 'Ó': 0xE0, 'Ú': 0xE9, 'Ñ': 0xA5,
+    'ü': 0x81, 'Ü': 0x9A, '¿': 0xA8, '¡': 0xAD, '€': 0xD5,
+    'à': 0x85, 'è': 0x8A, 'ì': 0x8D, 'ò': 0x95, 'ù': 0x97,
+    'â': 0x83, 'ê': 0x88, 'î': 0x8C, 'ô': 0x93, 'û': 0x96,
+    'ä': 0x84, 'ë': 0x89, 'ï': 0x8B, 'ö': 0x94, 'ç': 0x87, 'Ç': 0x80,
+    'º': 0xA7, 'ª': 0xA6, '°': 0xF8, '·': 0xFA,
+    // Tipográficos que llegan al pegar el pie del ticket desde Word/WhatsApp:
+    // se bajan a su versión de máquina de escribir en vez de imprimir "?".
+    '’': 0x27, '‘': 0x27, '´': 0x27, '“': 0x22, '”': 0x22,
+    '–': 0x2D, '—': 0x2D, ' ': 0x20,
+  }
   const bytes = []
   for (const ch of text) {
     if (map[ch]) bytes.push(map[ch])
+    else if (ch === '…') bytes.push(0x2E, 0x2E, 0x2E)
     else if (ch.charCodeAt(0) < 128) bytes.push(ch.charCodeAt(0))
     else bytes.push(0x3F) // '?' for unknown
   }
@@ -22,7 +39,9 @@ export function textToBytes(text) {
 
 function cmd(...args) { return args }
 function init() { return [ESC, 0x40] } // Initialize printer
-function codepage850() { return [ESC, 0x74, 0x02] } // Set CP850
+// CP858 (página 19), no CP850 (página 2): es la única con el € en 0xD5. Si una
+// impresora vieja no la tuviera, ignora el comando y los acentos base coinciden.
+function codepage850() { return [ESC, 0x74, 0x13] } // Set CP858
 function center() { return [ESC, 0x61, 0x01] }
 function left() { return [ESC, 0x61, 0x00] }
 function right() { return [ESC, 0x61, 0x02] }
