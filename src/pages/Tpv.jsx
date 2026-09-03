@@ -158,9 +158,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const pedidoAvisado = pedidosNuevos?.[0] || null
   // 🔴 Sin `modoApp`. Ese candado dejaba a la app de WINDOWS sin aviso de pedido nuevo:
   // el TPV ocupa la pantalla entera, el pedido entraba y no se enteraba nadie.
-  // El aviso solo sobra si YA se está mirando la pestaña Pedidos sin capas encima.
+  // Y SIN esconderlo en la pestaña Pedidos (pedido de Marlon, 3 sep): ahí se
+  // puede estar mirando el detalle de un pedido viejo, y el nuevo entraría a la
+  // lista sin que nadie levante la vista. El aviso se va solo al aceptarlo o
+  // con "Luego".
   const hayAviso = pedidoAvisado && avisoFuera !== pedidoAvisado.id
-    && !(pestana === 'pedidos' && !pantalla)
+  // "Ver pedido" del aviso abre ESE pedido en la pestaña Pedidos, con su botón
+  // de aceptar delante, en vez de dejar al usuario buscándolo en la lista.
+  const [pedidoParaAbrir, setPedidoParaAbrir] = useState(null)
 
   // Ir a una pantalla desde donde sea; `CrearEnvio` pide 'pedidos' con este
   // evento al terminar. Los pedidos YA NO son una capa: la capa "Pedidos en
@@ -839,6 +844,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       {pestana === 'pedidos' ? (
         <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil} huecoAbajo={huecoAbajo}
           repartoPropio={restaurante?.delivery_sin_socio === true}
+          abrirPedidoId={pedidoParaAbrir}
           onNuevo={(tipo) => setNuevoPedido(tipo)}
           onAbrirRepartidores={() => setPantalla('socios-riders')} />
       ) : (
@@ -1372,7 +1378,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         <AvisoPedido
           pedido={pedidoAvisado}
           cuantos={pedidosNuevos.length}
-          onVer={() => { setAvisoFuera(pedidoAvisado.id); setPantalla(null); setPestana('pedidos') }}
+          onVer={() => {
+            setAvisoFuera(pedidoAvisado.id)
+            setPedidoParaAbrir(pedidoAvisado.id)
+            setPantalla(null)
+            setPestana('pedidos')
+          }}
           onLuego={() => setAvisoFuera(pedidoAvisado.id)}
         />
       )}

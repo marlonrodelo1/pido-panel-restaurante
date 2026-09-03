@@ -89,7 +89,7 @@ const FILTROS = [
 
 export default function TpvPedidos({
   establecimientoId, esMovil = false, huecoAbajo = 0, repartoPropio = false,
-  onNuevo, onAbrirRepartidores,
+  abrirPedidoId = null, onNuevo, onAbrirRepartidores,
 }) {
   // El restaurante entero y la config del TPV, para las acciones y los tickets.
   const { restaurante, tpvConfig } = useRest()
@@ -197,6 +197,15 @@ export default function TpvPedidos({
     const t = setInterval(cargar, 30000)
     return () => { supabase.removeChannel(canal); clearInterval(t) }
   }, [establecimientoId, cargar])
+
+  // "Ver pedido" del aviso de pedido nuevo: se abre ESE pedido directamente,
+  // en la lista de En curso, con su botón de aceptar delante.
+  useEffect(() => {
+    if (!abrirPedidoId) return
+    setSel(abrirPedidoId)
+    setVista('lista')
+    setRegistro('curso')
+  }, [abrirPedidoId])
 
   // El detalle se pide APARTE y solo del elegido: el listado trae hasta 120 pedidos y
   // cargarles las lineas a todos seria pedir cientos de filas para enseñar una.
