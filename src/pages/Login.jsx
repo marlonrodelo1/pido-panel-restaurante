@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { Capacitor } from '@capacitor/core'
 import { Browser } from '@capacitor/browser'
 import { colors, type, ds } from '../lib/uiStyles'
+import { esEscritorio } from '../lib/printService'
 
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24">
@@ -276,8 +277,11 @@ export default function Login() {
                   </p>
                 </div>
 
-                {/* Tabs pill segmented */}
-                <div style={{
+                {/* Tabs pill segmented. En la APP DE WINDOWS no hay pestañas: el
+                    ordenador del mostrador solo INICIA SESIÓN con la cuenta del
+                    restaurante — el registro de negocios nuevos y Google se
+                    quedan en la web y la tablet (decisión de Marlon, 3 sep). */}
+                {!esEscritorio && <div style={{
                   display: 'flex',
                   background: colors.cream2,
                   borderRadius: 10, padding: 3,
@@ -298,7 +302,7 @@ export default function Login() {
                       {m === 'login' ? 'Iniciar sesión' : 'Registrarse'}
                     </button>
                   ))}
-                </div>
+                </div>}
 
                 {modo === 'login' ? (
                   <>
@@ -440,16 +444,21 @@ export default function Login() {
                   </>
                 )}
 
-                {/* Divider + Google ghost */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
-                  <div style={{ flex: 1, height: 1, background: colors.border }} />
-                  <span style={{ fontSize: 11, color: colors.stone, fontWeight: 600 }}>o</span>
-                  <div style={{ flex: 1, height: 1, background: colors.border }} />
-                </div>
+                {/* Divider + Google ghost — fuera en la app de Windows: en el
+                    mostrador se entra con la cuenta del restaurante y punto. */}
+                {!esEscritorio && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+                      <div style={{ flex: 1, height: 1, background: colors.border }} />
+                      <span style={{ fontSize: 11, color: colors.stone, fontWeight: 600 }}>o</span>
+                      <div style={{ flex: 1, height: 1, background: colors.border }} />
+                    </div>
 
-                <button onClick={handleGoogle} style={{ ...ds.ghostBtn, width: '100%', height: 42 }}>
-                  <GoogleIcon /> Continuar con Google
-                </button>
+                    <button onClick={handleGoogle} style={{ ...ds.ghostBtn, width: '100%', height: 42 }}>
+                      <GoogleIcon /> Continuar con Google
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
