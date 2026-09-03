@@ -14,7 +14,7 @@ import ImpresoraUsb from '../components/ImpresoraUsb'
 import { bytesDelLogo, previsualizar, olvidarLogo } from '../lib/logoTicket'
 
 export default function ConfigImpresora() {
-  const { restaurante, updateRestaurante, logout } = useRest()
+  const { restaurante, updateRestaurante, logout, tpvActivo } = useRest()
   const [activo, setActivo] = useState(restaurante?.activo ?? true)
 
   const [printerIp, setPrinterIp] = useState('')
@@ -378,7 +378,11 @@ export default function ConfigImpresora() {
               </div>
             </div>
 
-            <SeccionCocina />
+            {/* La segunda impresora es una pieza del MODULO TPV: sin el modulo
+                contratado, esta seccion no existe. Los restaurantes que solo
+                reciben pedidos de Pidoo siguen viendo su pantalla de impresora
+                EXACTAMENTE como siempre. */}
+            {tpvActivo && <SeccionCocina />}
 
           </div>
         ) : (
