@@ -1291,10 +1291,18 @@ function DestinosPorImpresora({ lista }) {
   }, [restaurante?.id])
 
   async function cambiar(id, impresoraId) {
+    const antes = cats.find((c) => c.id === id)?.impresora_id ?? null
     setCats((prev) => prev.map((c) => (c.id === id ? { ...c, impresora_id: impresoraId || null } : c)))
-    const { error } = await supabase.from('categorias')
-      .update({ impresora_id: impresoraId || null }).eq('id', id)
-    if (error) toast('No se pudo guardar el destino', 'error')
+    // `.select('id')` para distinguir el fallo TRAICIONERO: una RLS que no
+    // cubre a esta cuenta hace que el update afecte 0 filas SIN error, y la
+    // pantalla enseñaba el cambio que nunca se guardó (pasó con las cuentas
+    // de equipo antes de `carta_update_tambien_para_equipo`).
+    const { data, error } = await supabase.from('categorias')
+      .update({ impresora_id: impresoraId || null }).eq('id', id).select('id')
+    if (error || !data?.length) {
+      setCats((prev) => prev.map((c) => (c.id === id ? { ...c, impresora_id: antes } : c)))
+      toast('No se pudo guardar el destino' + (error ? ': ' + error.message : ' (esta cuenta no puede)'), 'error')
+    }
     invalidarDestinos(restaurante.id)
   }
 
