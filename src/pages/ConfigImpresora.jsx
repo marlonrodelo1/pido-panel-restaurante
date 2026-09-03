@@ -7,6 +7,7 @@ import { colors, type, ds, radius } from '../lib/uiStyles'
 import {
   getPrinterConfig, savePrinterConfig,
   scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa, esEscritorio,
+  probarImpresoraCocina, listarImpresorasUsb,
 } from '../lib/printService'
 import ImpresoraUsb from '../components/ImpresoraUsb'
 import { bytesDelLogo, previsualizar, olvidarLogo } from '../lib/logoTicket'
@@ -376,6 +377,8 @@ export default function ConfigImpresora() {
               </div>
             </div>
 
+            <SeccionCocina />
+
           </div>
         ) : (
           /* DESCONECTADA */
@@ -640,6 +643,151 @@ export default function ConfigImpresora() {
         <LogOut size={15} strokeWidth={2.2} />
         Cerrar sesión
       </button>
+    </div>
+  )
+}
+
+// ── Segunda impresora: LA DE COCINA (opcional) ───────────────────────────────
+//
+// Solo las COMANDAS salen por ella; el ticket del cliente, los informes y el
+// cajón siguen en la principal. Si falla, la comanda cae a la principal sola
+// (printService.sendComanda): molesta en barra, pero nunca sin comanda.
+function SeccionCocina() {
+  const [c, setC] = useState(() => getPrinterConfig().cocina || {
+    activa: false, modo: 'red', ip: '', port: 9100, impresoraUsb: '',
+  })
+  const [usbLista, setUsbLista] = useState([])
+  const [probando, setProbando] = useState(false)
+  const [resultado, setResultado] = useState(null)
+
+  function guardarCocina(cambios) {
+    const nueva = { ...c, ...cambios }
+    setC(nueva)
+    setResultado(null)
+    savePrinterConfig({ ...getPrinterConfig(), cocina: nueva })
+  }
+
+  useEffect(() => {
+    if (!c.activa || c.modo !== 'usb' || !esEscritorio) return
+    listarImpresorasUsb().then((r) => setUsbLista(r.impresoras || []))
+  }, [c.activa, c.modo])
+
+  async function probar() {
+    setProbando(true)
+    setResultado(null)
+    const r = await probarImpresoraCocina(c)
+    setResultado(r)
+    setProbando(false)
+  }
+
+  const destinoListo = c.modo === 'usb' ? !!c.impresoraUsb : !!c.ip
+
+  return (
+    <div style={{ marginTop: 14, padding: '14px 16px', background: colors.cream2, borderRadius: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div>
+          <div style={ds.label}>Segunda impresora para cocina</div>
+          <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 4 }}>
+            Las comandas salen por ella; el ticket del cliente sigue en la de barra.
+            Si no responde, la comanda sale por la principal.
+          </div>
+        </div>
+        <button
+          onClick={() => guardarCocina({ activa: !c.activa })}
+          role="switch" aria-checked={c.activa}
+          style={{
+            width: 46, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+            background: c.activa ? colors.terracotta : colors.border, position: 'relative',
+            flexShrink: 0, transition: 'background 0.15s',
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: 3, left: c.activa ? 23 : 3,
+            width: 20, height: 20, borderRadius: '50%', background: '#fff',
+            transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+          }} />
+        </button>
+      </div>
+
+      {c.activa && (
+        <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { id: 'red', txt: 'Por red (IP)' },
+              { id: 'usb', txt: 'Por USB' },
+            ].map((o) => {
+              const activa = c.modo === o.id
+              return (
+                <button key={o.id} onClick={() => guardarCocina({ modo: o.id })} style={{
+                  flex: 1, padding: '9px 8px', borderRadius: 10,
+                  border: activa ? 'none' : `1px solid ${colors.border}`,
+                  background: activa ? `linear-gradient(180deg, ${colors.ink2} 0%, ${colors.ink} 100%)` : colors.paper,
+                  color: activa ? colors.cream : colors.ink,
+                  fontSize: type.sm, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minHeight: 40,
+                }}>
+                  {o.txt}
+                </button>
+              )
+            })}
+          </div>
+
+          {c.modo === 'usb' ? (
+            esEscritorio ? (
+              <select
+                value={c.impresoraUsb}
+                onChange={(e) => guardarCocina({ impresoraUsb: e.target.value })}
+                style={{ ...ds.input, height: 44 }}
+              >
+                <option value="">Elige la impresora de cocina…</option>
+                {usbLista.map((n) => {
+                  const nombre = typeof n === 'string' ? n : (n?.name || '')
+                  return <option key={nombre} value={nombre}>{nombre}</option>
+                })}
+              </select>
+            ) : (
+              <div style={{ fontSize: type.xxs, color: colors.stone }}>
+                El USB solo funciona en la app de Windows: en la tablet usa "Por red".
+              </div>
+            )
+          ) : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={c.ip}
+                onChange={(e) => guardarCocina({ ip: e.target.value.trim() })}
+                placeholder="IP de la impresora de cocina"
+                inputMode="decimal"
+                style={{ ...ds.input, flex: 1, height: 44 }}
+              />
+              <input
+                value={c.port}
+                onChange={(e) => guardarCocina({ port: Number(e.target.value.replace(/\D/g, '')) || 9100 })}
+                placeholder="9100"
+                inputMode="numeric"
+                style={{ ...ds.input, width: 84, height: 44 }}
+              />
+            </div>
+          )}
+
+          <button onClick={probar} disabled={probando || !destinoListo} style={{
+            ...ds.glossyBtn, height: 44,
+            opacity: (probando || !destinoListo) ? 0.6 : 1,
+            cursor: (probando || !destinoListo) ? 'default' : 'pointer',
+          }}>
+            {probando ? 'Imprimiendo prueba…' : 'Imprimir una comanda de prueba'}
+          </button>
+
+          {resultado && (
+            <div style={{
+              fontSize: type.sm, fontWeight: 700,
+              color: resultado.ok ? colors.success || '#4a7c59' : colors.danger || '#B5564A',
+            }}>
+              {resultado.ok
+                ? 'Ha salido la comanda de prueba: cocina lista.'
+                : `No respondió${resultado.error ? ': ' + resultado.error : ''}. Revisa la IP o el nombre.`}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

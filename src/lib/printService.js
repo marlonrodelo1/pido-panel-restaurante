@@ -140,6 +140,67 @@ async function sendToThermalPrinter(data) {
   return sendRawToIp(config.ip, config.port, data)
 }
 
+// ── Segunda impresora: LA DE COCINA (opcional) ───────────────────────────────
+//
+// `config.cocina = { activa, modo: 'red'|'usb', ip, port, impresoraUsb }`.
+// Solo las COMANDAS van por aquí; tickets de cliente, informes, X/Z y el cajón
+// siguen en la principal (el cajón cuelga de la de barra). Sin `cocina.activa`
+// todo funciona EXACTAMENTE como con una sola impresora — ningún restaurante
+// existente cambia de comportamiento al actualizar.
+export function impresoraCocinaConfigurada(config = getPrinterConfig()) {
+  const c = config.cocina
+  if (!c?.activa) return false
+  return c.modo === 'usb' ? !!c.impresoraUsb : !!c.ip
+}
+
+// Manda una comanda al destino que toque. Si la de cocina FALLA, cae a la
+// principal: una comanda en la barra es molesta; una comanda que no sale es un
+// cliente sin su comida.
+async function sendComanda(data) {
+  const config = getPrinterConfig()
+  if (impresoraCocinaConfigurada(config)) {
+    const c = config.cocina
+    let ok = false
+    if (c.modo === 'usb') {
+      if (escritorio?.printUsb) {
+        try {
+          await escritorio.printUsb({ printerName: c.impresoraUsb, data: uint8ToBase64(data) })
+          ok = true
+        } catch (err) {
+          console.error('[Print cocina USB]', err)
+        }
+      }
+    } else {
+      ok = await sendRawToIp(c.ip, c.port || 9100, data)
+    }
+    if (ok) return true
+    console.warn('[Print] La impresora de cocina no responde: la comanda sale por la principal')
+  }
+  return sendToThermalPrinter(data)
+}
+
+// Prueba la impresora de cocina imprimiendo una comanda de verdad EN ELLA
+// (sin fallback: probar es ver si responde ESA, no otra).
+export async function probarImpresoraCocina(c) {
+  if (!c) return { ok: false, error: 'Sin configuración' }
+  const data = generarComandaTpv(
+    [{ cantidad: 1, nombre: 'PRUEBA DE COCINA', tamano: null, extrasTexto: '', notas: 'Si lees esto, la impresora de cocina funciona' }],
+    { nombre: 'Pidoo' },
+    { numero: 0 },
+  )
+  try {
+    if (c.modo === 'usb') {
+      if (!escritorio?.printUsb) return { ok: false, error: 'El USB solo funciona en la app de Windows' }
+      await escritorio.printUsb({ printerName: c.impresoraUsb, data: uint8ToBase64(data) })
+      return { ok: true }
+    }
+    const ok = await sendRawToIp(c.ip, c.port || 9100, data)
+    return { ok }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
 /**
  * Scan the local network for thermal printers (port 9100)
  * Only works on Capacitor/Android
@@ -272,8 +333,10 @@ export async function imprimirPedido(pedido, items, restaurante) {
   // La COMANDA DE COCINA va SIN logo, a proposito. Ese papel lo lee el de la plancha y
   // lo tira: un logo son ~30 mm de papel y unos segundos de impresion en CADA pedido,
   // a cambio de nada. Ahi lo que importa es el codigo grande y las notas.
+  // Sale por la impresora DE COCINA si hay una configurada (con la principal de
+  // respaldo); si no, por la de siempre.
   const cocina = generarComandaCocina(pedido, items, restaurante)
-  const r1 = await sendToThermalPrinter(cocina)
+  const r1 = await sendComanda(cocina)
 
   let r2 = true
   if (config.tickets !== 1) {
@@ -482,9 +545,10 @@ export async function pulsoCajon() {
  */
 export async function imprimirComandaTpv(lineas, restaurante, opciones = {}) {
   const config = getPrinterConfig()
-  if (!impresoraConfigurada(config)) return false
+  // Basta con que haya CUALQUIERA de las dos: la comanda encuentra su camino.
+  if (!impresoraConfigurada(config) && !impresoraCocinaConfigurada(config)) return false
   try {
-    return await sendToThermalPrinter(generarComandaTpv(lineas, restaurante, opciones))
+    return await sendComanda(generarComandaTpv(lineas, restaurante, opciones))
   } catch (err) {
     console.error('[TPV] Error imprimiendo la comanda:', err)
     return false

@@ -95,7 +95,9 @@ export function RestProvider({ children }) {
       setRestaurante(data)
       if (data) {
         // El modulo TPV se lee aqui una vez, con el restaurante: la pantalla de
-        // cobro y la entrada del menu dependen de el.
+        // cobro y la entrada del menu dependen de el. (Y se RELEE al volver la
+        // app a primer plano — ver el efecto de abajo: antes, activar el modulo
+        // con la tablet abierta exigia matar la app y volver a entrar.)
         supabase.from('tpv_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
           .then(({ data: cfg }) => setTpvConfig(cfg || null))
         supabase.from('stock_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
@@ -112,6 +114,23 @@ export function RestProvider({ children }) {
     }
     setLoading(false)
   }
+
+  // Los MÓDULOS (TPV, almacén) se refrescan al VOLVER A PRIMER PLANO: los
+  // enciende Pidoo desde el super-admin y la tablet no se enteraba hasta matar
+  // la app y volver a entrar. `visibilitychange` cubre la web, la app de
+  // Windows y el WebView de Android sin depender de ningún plugin.
+  useEffect(() => {
+    if (!restaurante?.id) return
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return
+      supabase.from('tpv_config').select('*').eq('establecimiento_id', restaurante.id).maybeSingle()
+        .then(({ data: cfg }) => setTpvConfig(cfg || null))
+      supabase.from('stock_config').select('*').eq('establecimiento_id', restaurante.id).maybeSingle()
+        .then(({ data: cfg }) => setStockConfig(cfg || null))
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [restaurante?.id])
 
   async function updateRestaurante(updates) {
     if (!restaurante) return

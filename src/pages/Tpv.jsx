@@ -467,6 +467,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         clave: firma,
         producto_id: producto.id,
         nombre: producto.nombre,
+        // El id del tamaño ADEMÁS del nombre: el servidor casaba solo por
+        // nombre y renombrar un tamaño con el TPV abierto cobraba el precio
+        // base sin avisar. Con el id, el precio es el de ESE tamaño siempre.
+        tamano_id: tam?.id || null,
         tamano: tam?.nombre || null,
         extras: extrasElegidos.map((o) => o.id),
         extrasTexto: extrasElegidos.map((o) => o.nombre).join(', '),
@@ -558,7 +562,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     }
   }
 
+  const informandoRef = useRef(false)
   async function informeDelDia() {
+    // Candado: dos toques eran dos informes por la impresora.
+    if (informandoRef.current) return
+    informandoRef.current = true
+    try {
     // Desde las 5 de la mañana, igual que la pantalla de Pedidos: este informe
     // se imprime al CERRAR, a la 1 o a las 2 de la madrugada, y cortar a
     // medianoche dejaba fuera todo el servicio de la noche — y al día siguiente
@@ -570,7 +579,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       .select('serie, numero, total, base_imponible, cuota_igic, metodo_pago')
       .eq('establecimiento_id', restaurante.id)
       .gte('emitido_at', desde.toISOString())
-      .order('numero')
+      .order('emitido_at')
+      // Tope explícito y AVISADO: sin él, PostgREST cortaría por max-rows y el
+      // informe sumaría de menos sin ninguna señal.
+      .limit(2000)
     if (error) { toast('No se pudo leer el día: ' + error.message, 'error'); return }
     const t = data || []
     if (!t.length) { toast('Hoy todavía no se ha cobrado nada'); return }
@@ -586,11 +598,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       primero: `${t[0].serie}-${t[0].numero}`,
       ultimo: `${t[t.length - 1].serie}-${t[t.length - 1].numero}`,
     }
+    if (t.length >= 2000) toast('Hay más de 2000 tickets hoy: el informe puede quedarse corto', 'error')
     const ok = await imprimirInformeDiaTpv(resumen, restaurante)
     toast(ok
       ? `Informe impreso · ${t.length} tickets · ${eur(cents(resumen.total))}`
       : `Hoy: ${t.length} tickets, ${eur(cents(resumen.total))} (la impresora no responde)`,
       ok ? 'success' : 'error')
+    } finally {
+      informandoRef.current = false
+    }
   }
 
   async function vaciar() {
@@ -629,6 +645,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // clave de idempotencia no cambia.
     const corte = new AbortController()
     const reloj = setTimeout(() => corte.abort(), 30000)
+    // El total que VE el camarero en este momento, para poder comparar después
+    // con el que cobró de verdad el servidor.
+    const totalPantalla = totalCarrito
     try {
       if (!idemRef.current) idemRef.current = uuidv4()  // red de seguridad; la pone el efecto del carrito
       const { data: sess } = await supabase.auth.getSession()
@@ -646,7 +665,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           // la carta (ids, el precio lo pone el servidor) o línea LIBRE (aquí
           // sí viaja el importe, validado 0-500 en los dos lados).
           lineas: carrito.map((l) => (l.producto_id
-            ? { producto_id: l.producto_id, tamano: l.tamano, cantidad: l.cantidad, extras: l.extras, notas: l.notas || null }
+            ? { producto_id: l.producto_id, tamano: l.tamano, tamano_id: l.tamano_id || null, cantidad: l.cantidad, extras: l.extras, notas: l.notas || null }
             : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
         }),
       })
@@ -669,6 +688,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       setModalPago(false)
       if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
       else toast(`Cobrado ${eur(cents(body.pedido?.total))}${body.repetida ? ' (ya estaba cobrado)' : ''}`, 'success')
+
+      // El CAMBIO se enseñó en el modal con el total de la PANTALLA. Si el del
+      // servidor difiere (carta desactualizada), el camarero ya contó mal el
+      // cambio en la cabeza: se le canta el bueno, bien alto.
+      if (metodo_pago === 'efectivo' && entregado_c != null && body.pedido?.total != null) {
+        const totalServidor = cents(body.pedido.total)
+        if (totalServidor !== totalPantalla && entregado_c >= totalServidor) {
+          toast(`OJO: el total real es ${eur(totalServidor)} — el cambio correcto son ${eur(entregado_c - totalServidor)}`, 'error')
+        }
+      }
 
       if (body.ticket) {
         imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {

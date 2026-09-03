@@ -1,4 +1,10 @@
-// tpv-venta v6 (3-sep-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
+// tpv-venta v7 (3-sep-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
+//
+// v7: (1) el tamano se casa por `tamano_id` cuando la tablet lo manda (el
+// nombre queda de respaldo): renombrar un tamano con el TPV abierto cobraba el
+// precio base sin avisar; (2) las lineas guardan `extras_ids` (uuid[]) ademas
+// del texto legado — es la columna que el almacen usa para descontar los
+// ingredientes de los extras, y NINGUN canal la escribia.
 //
 // v6: (1) la respuesta de venta REPETIDA lleva `config` como una venta nueva —
 // sin ella, el reintento en efectivo imprimía sin pie y NO ABRÍA EL CAJÓN, justo
@@ -206,7 +212,7 @@ Deno.serve(async (req) => {
   if (idsProducto.length) {
     const [prods, tams, vincs] = await Promise.all([
       sb.from('productos').select('id, nombre, precio, precio_local, establecimiento_id').in('id', idsProducto),
-      sb.from('producto_tamanos').select('producto_id, nombre, precio, precio_local').in('producto_id', idsProducto),
+      sb.from('producto_tamanos').select('id, producto_id, nombre, precio, precio_local').in('producto_id', idsProducto),
       sb.from('producto_extras').select('producto_id, grupo_id').in('producto_id', idsProducto),
     ])
     if (prods.error) return json({ error: 'productos_error', detalle: prods.error.message }, 500)
@@ -238,10 +244,15 @@ Deno.serve(async (req) => {
       // Precio de BARRA del producto (o de su tamano). Se calcula aqui porque hay
       // que poder SUMARLE los extras; el trigger `enforce_pedido_item_precio` sigue
       // siendo la red de seguridad: nunca deja que una linea baje de su suelo.
-      const tam = l?.tamano
-        ? tamanosCarta.find((t) => t.producto_id === prod.id &&
-            String(t.nombre).trim().toLowerCase() === String(l.tamano).trim().toLowerCase())
-        : null
+      // v7: primero por ID (inmune a renombres); el nombre, de respaldo para
+      // clientes que aun no lo manden.
+      const tam = (l?.tamano_id
+        ? tamanosCarta.find((t) => t.producto_id === prod.id && t.id === l.tamano_id)
+        : null)
+        || (l?.tamano
+          ? tamanosCarta.find((t) => t.producto_id === prod.id &&
+              String(t.nombre).trim().toLowerCase() === String(l.tamano).trim().toLowerCase())
+          : null)
       const base = Number(tam ? (tam.precio_local ?? tam.precio) : (prod.precio_local ?? prod.precio)) || 0
 
       const elegidas = (Array.isArray(l?.extras) ? l.extras : [])
@@ -281,9 +292,13 @@ Deno.serve(async (req) => {
       return {
         producto_id: prod.id,
         nombre_producto: prod.nombre,
-        tamano: l?.tamano ? String(l.tamano) : null,
+        tamano: tam ? String(tam.nombre) : (l?.tamano ? String(l.tamano) : null),
         precio_unitario: Math.round((base + extras) * 100) / 100,
         cantidad,
+        // v7: los IDS de los extras ademas del texto — es lo que
+        // `stock_consumir_linea` necesita para descontar los ingredientes de
+        // los extras. Ningun canal escribia esta columna.
+        extras_ids: elegidas.map((o: any) => o.id),
         // Formato legado, el mismo que ya hay en `pedido_items` de otros canales:
         // "Queso (+0.50€)" cuando cuesta, y solo "Al punto" cuando es gratis. Un
         // tercio de las opciones valen 0 EUR: no son extras, son elecciones
