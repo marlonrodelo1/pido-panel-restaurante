@@ -1,7 +1,7 @@
 {
   "name": "pidoo-negocios-escritorio",
   "productName": "Pidoo Negocios",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Panel de Pidoo para Windows, con impresora termica y cajon",
   "main": "main.js",
   "author": "Rogotech",

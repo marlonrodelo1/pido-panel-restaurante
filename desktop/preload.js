@@ -23,4 +23,8 @@ contextBridge.exposeInMainWorld('pidooDesktop', {
   printUsb: ({ printerName, data }) => ipcRenderer.invoke('pidoo:print-usb', { printerName, data }),
   listPrinters: () => ipcRenderer.invoke('pidoo:list-printers'),
   checkUsb: ({ printerName }) => ipcRenderer.invoke('pidoo:check-usb', { printerName }),
+
+  // Minimizar la ventana desde el boton del TPV (la app va a pantalla completa
+  // sin menu del panel, y esta es la unica salida hacia el escritorio).
+  minimize: () => ipcRenderer.invoke('pidoo:minimize'),
 })

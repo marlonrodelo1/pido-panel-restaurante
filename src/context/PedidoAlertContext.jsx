@@ -4,8 +4,9 @@ import { App as CapApp } from '@capacitor/app'
 import { supabase } from '../lib/supabase'
 import { useRest } from './RestContext'
 import { startAlarm, stopAlarm, unlockAudio, requestNotificationPermission, notificarNuevoPedido } from '../lib/alarm'
-import { imprimirPedido, hayImpresoraNativa } from '../lib/printService'
+import { imprimirPedido, hayImpresoraNativa, esEscritorio } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+import { crearDestinoDe } from '../lib/destinosImpresion'
 // Ciclo de modulos App ↔ este contexto: funciona porque `toast` se llama en
 // runtime, mucho despues de inicializar (PedidosEnVivo hace exactamente lo mismo).
 import { toast } from '../App'
@@ -18,6 +19,11 @@ const PedidoAlertContext = createContext({
 })
 
 const isNative = Capacitor.isNativePlatform()
+// La ALARMA y el aviso de pedido nuevo suenan donde hay un mostrador de verdad:
+// la tablet Android Y el ordenador de Windows. Antes todos los candados eran
+// `isNative` (solo Capacitor) y en el PC del mostrador un pedido entraba EN
+// SILENCIO — con el TPV a pantalla completa, no se enteraba nadie.
+const esApp = isNative || esEscritorio
 
 // Saca la comanda de un pedido que ha aceptado el servidor.
 //
@@ -29,7 +35,8 @@ async function imprimirPedidoAceptadoSolo(p, restaurante) {
   try {
     const { data: items } = await supabase
       .from('pedido_items').select('*').eq('pedido_id', p.id)
-    const r = await imprimirPedido(p, items || [], restaurante)
+    const destinoDe = await crearDestinoDe(p.establecimiento_id)
+    const r = await imprimirPedido(p, items || [], restaurante, destinoDe)
     // 🔴 Se suelta la reserva SOLO si la COMANDA no salio. Antes se soltaba con
     // cualquier fallo (`!r.ok`), y el caso real era: comanda impresa, se acaba
     // el papel, falla el ticket del cliente → reserva suelta → el reintento
@@ -75,7 +82,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
       .eq('canal', 'pido')
       .order('created_at', { ascending: false })
     setPedidosNuevos(data || [])
-    if ((data || []).length > 0 && isNative && !silenciadaRef.current) startAlarm()
+    if ((data || []).length > 0 && esApp && !silenciadaRef.current) startAlarm()
   }, [restaurante?.id])
 
   // Realtime global — vive en el provider, por encima del router,
@@ -109,7 +116,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         // Al llegar un pedido nuevo, resetear estado silenciado → vuelve a sonar
         setSilenciada(false)
         silenciadaRef.current = false
-        if (isNative) {
+        if (esApp) {
           startAlarm()
           notificarNuevoPedido(payload.new.codigo)
         }
@@ -130,7 +137,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
           })
           setSilenciada(false)
           silenciadaRef.current = false
-          if (isNative) {
+          if (esApp) {
             startAlarm()
             notificarNuevoPedido(p.codigo)
           }
@@ -225,7 +232,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
   // 25s garantiza que un pedido pagado se vea y suene la alarma aunque el
   // realtime esté caído. Coste mínimo: 1 query de pocas filas.
   useEffect(() => {
-    if (!restaurante || !isNative) return
+    if (!restaurante || !esApp) return
     const id = setInterval(() => { fetchNuevos() }, 25000)
     return () => clearInterval(id)
   }, [restaurante?.id, fetchNuevos])
@@ -234,7 +241,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
   // sonando. Cubre casos extremos (recarga con pedidos ya en BD, o stopAlarm
   // llamado desde otro punto).
   useEffect(() => {
-    if (!isNative) return
+    if (!esApp) return
     if (pedidosNuevos.length > 0 && !silenciada) {
       startAlarm()
     } else if (pedidosNuevos.length === 0) {

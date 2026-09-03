@@ -1,4 +1,5 @@
-// tpv-pedido v4 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
+// tpv-pedido v5 (3-sep-2026) — v5: los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
+// v4 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
 // con los productos de la carta.
 //
 // v4: REPARTO PROPIO (`establecimientos.delivery_sin_socio`): no se exigen
@@ -161,7 +162,7 @@ Deno.serve(async (req) => {
       .eq('idempotency_key', idempotency_key).maybeSingle()
     if (!p) return null
     const { data: itemsRep } = await sb.from('pedido_items')
-      .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+      .select('producto_id, nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
       .eq('pedido_id', p.id)
     const { socio_id, guest_nombre, guest_telefono, direccion_entrega, ...pedidoRep } = p as any
     return json({
@@ -387,7 +388,7 @@ Deno.serve(async (req) => {
   // Que falle la asignacion NO revierte el pedido: se puede reasignar desde el panel.
 
   const { data: items } = await sb.from('pedido_items')
-    .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+    .select('producto_id, nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
     .eq('pedido_id', pedido.id)
 
   return json({

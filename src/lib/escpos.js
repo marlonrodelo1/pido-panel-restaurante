@@ -100,7 +100,7 @@ function formatDate(isoStr) {
  * COMANDA COCINA - For the kitchen
  * Big text, no prices, focus on items and notes
  */
-export function generarComandaCocina(pedido, items, restaurante) {
+export function generarComandaCocina(pedido, items, restaurante, titulo = '** COCINA **') {
   const bytes = [
     ...init(),
     ...codepage850(),
@@ -109,7 +109,7 @@ export function generarComandaCocina(pedido, items, restaurante) {
     ...center(),
     ...doubleSize(),
     ...boldOn(),
-    ...line('** COCINA **'),
+    ...line(titulo),
     ...normalSize(),
     ...boldOff(),
     ...feed(1),
@@ -538,12 +538,14 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
  * paga. Por eso no lleva precios — a cocina no le importan y solo estorban.
  */
 export function generarComandaTpv(lineas, restaurante, opciones = {}) {
-  const { nota = null, numero = null } = opciones
+  // `titulo` distingue el papel cuando hay DOS impresoras: el de la plancha
+  // dice COCINA y el de las bebidas dice BARRA.
+  const { nota = null, numero = null, titulo = '** COCINA **' } = opciones
   const bytes = []
 
   bytes.push(...init(), ...codepage850(), ...center())
   bytes.push(...boldOn(), ...doubleSize())
-  bytes.push(...line('** COCINA **'))
+  bytes.push(...line(titulo))
   bytes.push(...normalSize(), ...boldOff())
   if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
   bytes.push(...line('MOSTRADOR' + (numero ? ' #' + numero : '')))

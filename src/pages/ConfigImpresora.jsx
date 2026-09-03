@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { Browser } from '@capacitor/browser'
 import { Printer, Wifi, LogOut, AlertTriangle, Globe, Image as IconoImagen, RefreshCw } from 'lucide-react'
 import { useRest } from '../context/RestContext'
+import { supabase } from '../lib/supabase'
 import { colors, type, ds, radius } from '../lib/uiStyles'
 import {
   getPrinterConfig, savePrinterConfig,
@@ -786,8 +787,86 @@ function SeccionCocina() {
                 : `No respondió${resultado.error ? ': ' + resultado.error : ''}. Revisa la IP o el nombre.`}
             </div>
           )}
+
+          <DestinosCategorias />
+
+          <div style={{ fontSize: type.xxs, color: colors.stone, lineHeight: 1.5 }}>
+            La impresora principal (la de arriba) es la de <strong>CAJA</strong>: abre el
+            cajón e imprime los tickets del cliente, los informes y los cierres.
+            Por la de cocina solo salen comandas.
+          </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Qué categorías de la carta salen por COCINA y cuáles por BARRA (la
+// principal). Se guarda en la propia carta (`categorias.impresora_destino`),
+// así vale para todos los aparatos del local a la vez. Sin tocar nada, todo
+// sale por cocina, que es el comportamiento de siempre.
+function DestinosCategorias() {
+  const { restaurante } = useRest()
+  const [cats, setCats] = useState(null)
+
+  useEffect(() => {
+    if (!restaurante?.id) return
+    supabase.from('categorias')
+      .select('id, nombre, impresora_destino')
+      .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden')
+      .then(({ data }) => setCats(data || []))
+  }, [restaurante?.id])
+
+  async function cambiar(id, destino) {
+    setCats((prev) => prev.map((c) => (c.id === id ? { ...c, impresora_destino: destino } : c)))
+    await supabase.from('categorias').update({ impresora_destino: destino }).eq('id', id)
+  }
+
+  if (!cats) return null
+  if (!cats.length) return null
+
+  return (
+    <div>
+      <div style={{ ...ds.label, marginBottom: 8 }}>
+        ¿Qué sale por cada impresora? (solo las comandas)
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {cats.map((c) => {
+          const enBarra = c.impresora_destino === 'barra'
+          return (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 10px', borderRadius: 10, background: colors.paper,
+              border: `1px solid ${colors.border}`,
+            }}>
+              <span style={{
+                flex: 1, minWidth: 0, fontSize: type.sm, fontWeight: 600, color: colors.ink,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {c.nombre}
+              </span>
+              {[
+                { v: 'cocina', txt: 'Cocina' },
+                { v: 'barra', txt: 'Barra' },
+              ].map((o) => {
+                const activa = (o.v === 'barra') === enBarra
+                return (
+                  <button key={o.v} onClick={() => cambiar(c.id, o.v)} style={{
+                    padding: '7px 12px', borderRadius: 8,
+                    border: activa ? 'none' : `1px solid ${colors.border}`,
+                    background: activa ? colors.terracotta : 'transparent',
+                    color: activa ? '#fff' : colors.stone,
+                    fontSize: type.xs, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    flexShrink: 0, minHeight: 36,
+                  }}>
+                    {o.txt}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

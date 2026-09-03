@@ -674,7 +674,12 @@ function AppInner({ seccion, setSeccion, nav }) {
   // false, asi que panel.pidoo.es nunca entra en esta shell.
   // El fondo OSCURO del TPV, no el crema del panel: aqui el TPV ocupa la pantalla
   // entera y con el `shell` de siempre quedaba una franja clara debajo de la caja.
-  if ((isNative || FORZAR_TPV_APP) && tpvActivo) {
+  // También en la APP DE WINDOWS (decisión de Marlon, 3 sep 2026): en el
+  // ordenador del mostrador solo existe el TPV, a pantalla completa y sin menú
+  // del panel — todo lo demás (pedidos, carta, impresora, historial) cuelga de
+  // su propio menú como capas. El panel completo sigue en panel.pidoo.es desde
+  // cualquier navegador. Quien no tenga el módulo TPV ve la app como siempre.
+  if ((isNative || esEscritorio || FORZAR_TPV_APP) && tpvActivo) {
     return (
       <div style={{ ...shell, minHeight: '100vh', background: '#12100E' }}>
         <style>{css}</style>

@@ -262,7 +262,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // la app — y con ella, antes, el carrito.
   async function cargarCarta(avisar = false) {
     const [cats, prods, gru] = await Promise.all([
-      supabase.from('categorias').select('id, nombre, orden')
+      supabase.from('categorias').select('id, nombre, orden, impresora_destino')
         .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
       supabase.from('productos').select('id, nombre, precio, precio_local, categoria_id, disponible, orden, imagen_url')
         .eq('establecimiento_id', restaurante.id).order('orden'),
@@ -552,7 +552,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // quedaban sin cocinar sin que nadie se enterase.
     const claves = new Set(sinComandar.map((l) => l.clave))
     try {
-      const ok = await imprimirComandaTpv(sinComandar, restaurante, { numero: rondaRef.current + 1 })
+      // Con dos impresoras, cada línea va a la suya según su CATEGORÍA
+      // (categorias.impresora_destino): la comida a cocina, las bebidas a la
+      // barra. Las líneas libres, a cocina.
+      const destinoDe = (pid) => {
+        const p = productos.find((x) => x.id === pid)
+        const c = categorias.find((x) => x.id === p?.categoria_id)
+        return c?.impresora_destino === 'barra' ? 'barra' : 'cocina'
+      }
+      const ok = await imprimirComandaTpv(sinComandar, restaurante, { numero: rondaRef.current + 1 }, destinoDe)
       if (!ok) { toast('La impresora no responde: la comanda no ha salido', 'error'); return }
       rondaRef.current += 1
       setCarrito((prev) => prev.map((l) => (claves.has(l.clave) ? { ...l, comandada: true } : l)))
@@ -1880,6 +1888,17 @@ function CabeceraApp({ restaurante, esMovil, onAbrir }) {
           ...btnAccion, height: esMovil ? 34 : 38, padding: esMovil ? '0 14px' : '0 18px',
           fontSize: esMovil ? 13 : 14, borderRadius: 11, flexShrink: 0,
         }}>Abrir</button>
+      )}
+      {/* Minimizar la app de WINDOWS desde dentro del TPV: la app va a pantalla
+          completa sin menú del panel, y esta es la salida hacia el escritorio.
+          Solo existe donde existe el puente (en la tablet no aparece). */}
+      {typeof window !== 'undefined' && window.pidooDesktop?.minimize && (
+        <button onClick={() => window.pidooDesktop.minimize()} title="Minimizar"
+          aria-label="Minimizar" style={{
+            ...btnIcono, width: esMovil ? 34 : 38, height: esMovil ? 34 : 38, flexShrink: 0,
+          }}>
+          <Minimize2 size={16} />
+        </button>
       )}
     </div>
   )

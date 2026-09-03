@@ -6,6 +6,7 @@ import { stopAlarm, unlockAudio, startAlarm, notificarNuevoPedido } from '../lib
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb, hayImpresoraNativa } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+import { crearDestinoDe } from '../lib/destinosImpresion'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { toast, confirmar } from '../App'
@@ -359,7 +360,8 @@ export default function PedidosEnVivo() {
           // `PedidoAlertContext` puede ir a por el mismo pedido y saldrian dos
           // comandas iguales, que en cocina son dos pedidos.
           if (reservarImpresion(p.id)) {
-            imprimirPedido(p, lineas, restaurante)
+            crearDestinoDe(restaurante?.id).then((destinoDe) =>
+            imprimirPedido(p, lineas, restaurante, destinoDe))
               // Se suelta SOLO si la comanda no salio: si salio la comanda y
               // fallo el ticket del cliente, soltar hacia que el reintento
               // imprimiera las dos otra vez — dos comandas iguales en cocina
@@ -545,7 +547,8 @@ export default function PedidosEnVivo() {
     // pedido sin que cocina viera la comanda.
     if (hayImpresoraNativa) {
       if (reservarImpresion(pedido.id)) {
-        imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante)
+        crearDestinoDe(restaurante?.id).then((destinoDe) =>
+        imprimirPedido({ ...pedido, minutos_preparacion: minutos }, itemsMap[pedido.id] || [], restaurante, destinoDe))
           .then((r) => {
             // Soltar SOLO si la comanda fallo (ver el manejador de arriba): un
             // fallo a mitad no puede acabar en dos comandas iguales en cocina.
@@ -768,7 +771,10 @@ export default function PedidosEnVivo() {
     // Igual aqui: con puente nativo se manda al papel; el dialogo del navegador es
     // solo para quien NO tiene impresora conectada.
     if (hayImpresoraNativa) {
-      imprimirPedido(pedido, items, restaurante).then(r => { if (!r?.ok) toast('No se pudo imprimir. Verifica la IP de la impresora en Config.') }).catch(() => toast('Error de conexión con la impresora.'))
+      crearDestinoDe(restaurante?.id)
+        .then((destinoDe) => imprimirPedido(pedido, items, restaurante, destinoDe))
+        .then(r => { if (!r?.ok) toast('No se pudo imprimir. Verifica la IP de la impresora en Config.') })
+        .catch(() => toast('Error de conexión con la impresora.'))
     } else {
       imprimirPedidoWeb(pedido, items, restaurante)
     }

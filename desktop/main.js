@@ -20,8 +20,19 @@ const { registrarCanalesUsb } = require('./impresionUsb')
 const URL_PANEL = process.env.PIDOO_URL || 'https://panel.pidoo.es'
 const ORIGEN = new URL(URL_PANEL).origin
 
+// La ALARMA de pedido nuevo tiene que sonar SIN que nadie haya tocado la
+// pantalla antes: Chromium bloquea el audio hasta el primer clic (política de
+// autoplay) y en un mostrador el primer pedido del día llegaba mudo. Este
+// interruptor lo levanta solo para esta app.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
 registrarCanales(ipcMain)
 registrarCanalesUsb(ipcMain)
+
+// Minimizar desde un botón DENTRO del TPV: la app va a pantalla completa y sin
+// menú, así que la página necesita una manera de apartarse para dejar ver el
+// escritorio (mirar un correo, el datáfono virtual...).
+ipcMain.handle('pidoo:minimize', () => { ventana?.minimize() })
 
 // Fuera el menu de fabrica de Electron (File / Edit / View / Window / Help). En el
 // ordenador de un restaurante no pinta nada, y dentro de "View" hay "Recargar" y
@@ -42,6 +53,9 @@ function crearVentana() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
+    // El TPV es la pantalla del mostrador: arranca MAXIMIZADA ocupando todo
+    // (la barra de título de Windows se queda, que es donde viven minimizar y
+    // cerrar de toda la vida; el TPV añade su propio botón de minimizar).
     backgroundColor: '#F7F3EC',
     show: false,
     title: 'Pidoo Negocios',
@@ -56,7 +70,7 @@ function crearVentana() {
     },
   })
 
-  ventana.once('ready-to-show', () => ventana.show())
+  ventana.once('ready-to-show', () => { ventana.maximize(); ventana.show() })
   ventana.loadURL(URL_PANEL)
 
   // Nada de navegar fuera del panel dentro de la ventana. Un enlace externo se abre en

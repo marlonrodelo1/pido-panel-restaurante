@@ -28,6 +28,7 @@ import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpv
 import { useEsMonitor } from '../lib/tamanoPantalla'
 import { imprimirPedido, impresoraConfigurada } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+import { crearDestinoDe } from '../lib/destinosImpresion'
 import {
   Search, Plus, Minus, Phone, MapPin, User, Bike, ShoppingBag, Check,
   UserPlus, Trash2, StickyNote,
@@ -302,7 +303,8 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
           lng_entrega: esReparto ? (coords?.lng ?? null) : null,
           notas: notas.trim() || null,
         }
-        imprimirPedido(pedidoTicket, body.items || [], restaurante)
+        crearDestinoDe(restaurante?.id)
+          .then((destinoDe) => imprimirPedido(pedidoTicket, body.items || [], restaurante, destinoDe))
           .then((r) => {
             // Soltar SOLO si la comanda falló: con la comanda ya en cocina,
             // reimprimir el paquete entero duplicaría el pedido en la plancha.

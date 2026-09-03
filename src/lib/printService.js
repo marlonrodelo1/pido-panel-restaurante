@@ -326,7 +326,7 @@ export function disconnectPrinter() {
  * Print both receipts: kitchen command + customer ticket
  * Called automatically when an order is accepted
  */
-export async function imprimirPedido(pedido, items, restaurante) {
+export async function imprimirPedido(pedido, items, restaurante, destinoDe = null) {
   const config = getPrinterConfig()
   if (!impresoraConfigurada(config)) return { ok: false, reason: 'not_configured' }
 
@@ -334,9 +334,25 @@ export async function imprimirPedido(pedido, items, restaurante) {
   // lo tira: un logo son ~30 mm de papel y unos segundos de impresion en CADA pedido,
   // a cambio de nada. Ahi lo que importa es el codigo grande y las notas.
   // Sale por la impresora DE COCINA si hay una configurada (con la principal de
-  // respaldo); si no, por la de siempre.
-  const cocina = generarComandaCocina(pedido, items, restaurante)
-  const r1 = await sendComanda(cocina)
+  // respaldo); si no, por la de siempre. Con un mapa de destinos, la comanda se
+  // PARTE en dos papeles: cocina y barra, cada uno a su impresora.
+  let r1 = true
+  if (destinoDe && impresoraCocinaConfigurada(config)) {
+    const paraCocina = []
+    const paraBarra = []
+    for (const it of items || []) {
+      (destinoDe(it.producto_id) === 'barra' ? paraBarra : paraCocina).push(it)
+    }
+    if (paraCocina.length) {
+      r1 = (await sendComanda(generarComandaCocina(pedido, paraCocina, restaurante))) && r1
+    }
+    if (paraBarra.length) {
+      r1 = (await sendToThermalPrinter(generarComandaCocina(pedido, paraBarra, restaurante, '** BARRA **'))) && r1
+    }
+  } else {
+    const cocina = generarComandaCocina(pedido, items, restaurante)
+    r1 = await sendComanda(cocina)
+  }
 
   let r2 = true
   if (config.tickets !== 1) {
@@ -543,11 +559,30 @@ export async function pulsoCajon() {
 /**
  * Manda a cocina lo que hay en el mostrador, sin cobrar todavia.
  */
-export async function imprimirComandaTpv(lineas, restaurante, opciones = {}) {
+export async function imprimirComandaTpv(lineas, restaurante, opciones = {}, destinoDe = null) {
   const config = getPrinterConfig()
   // Basta con que haya CUALQUIERA de las dos: la comanda encuentra su camino.
   if (!impresoraConfigurada(config) && !impresoraCocinaConfigurada(config)) return false
   try {
+    // Con DOS impresoras y un mapa de destinos, la comanda se PARTE: lo de
+    // cocina a la de cocina y lo de barra (bebidas) a la principal, cada papel
+    // con su título. Sin mapa o con una sola impresora, un único papel como
+    // siempre.
+    if (destinoDe && impresoraCocinaConfigurada(config)) {
+      const cocina = []
+      const barra = []
+      for (const l of lineas) {
+        (destinoDe(l.producto_id) === 'barra' ? barra : cocina).push(l)
+      }
+      let ok = true
+      if (cocina.length) {
+        ok = (await sendComanda(generarComandaTpv(cocina, restaurante, opciones))) && ok
+      }
+      if (barra.length) {
+        ok = (await sendToThermalPrinter(generarComandaTpv(barra, restaurante, { ...opciones, titulo: '** BARRA **' }))) && ok
+      }
+      return ok
+    }
     return await sendComanda(generarComandaTpv(lineas, restaurante, opciones))
   } catch (err) {
     console.error('[TPV] Error imprimiendo la comanda:', err)

@@ -1,4 +1,5 @@
-// tpv-venta v7 (3-sep-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
+// tpv-venta v8 (3-sep-2026) — v8: los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
+// v7 (3-sep-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
 //
 // v7: (1) el tamano se casa por `tamano_id` cuando la tablet lo manda (el
 // nombre queda de respaldo): renombrar un tamano con el TPV abierto cobraba el
@@ -131,7 +132,7 @@ Deno.serve(async (req) => {
     const { pedidos: pedidoRepetido, ...ticketRepetido } = yaEmitido
     const [{ data: itemsRep }, { data: estRep }, { data: cfgRep }] = await Promise.all([
       sb.from('pedido_items')
-        .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+        .select('producto_id, nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
         .eq('pedido_id', ticketRepetido.pedido_id),
       sb.from('establecimientos')
         .select('id, nombre, razon_social, nif, direccion, direccion_fiscal, ciudad_fiscal, telefono')
@@ -378,7 +379,7 @@ Deno.serve(async (req) => {
         .eq('idempotency_key', idempotency_key).maybeSingle()
       if (pedRep) {
         const { data: itemsRep } = await sb.from('pedido_items')
-          .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+          .select('producto_id, nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
           .eq('pedido_id', pedRep.id)
         return json({
           ok: true, repetida: true, sin_ticket: true,
@@ -433,7 +434,7 @@ Deno.serve(async (req) => {
 
   // ── Lo que la tablet necesita para imprimir ──
   const { data: items } = await sb.from('pedido_items')
-    .select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
+    .select('producto_id, nombre_producto, tamano, extras, precio_unitario, cantidad, notas')
     .eq('pedido_id', pedido.id)
 
   return json({
