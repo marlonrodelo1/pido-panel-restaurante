@@ -193,7 +193,13 @@ export async function comprobarImpresoraDeLista(imp) {
       return { ok: false, error: err.message }
     }
   }
-  return checkPrinterConnection(imp.ip, imp.puerto || 9100)
+  const r = await checkPrinterConnection(imp.ip, imp.puerto || 9100)
+  if (r?.ok) return r
+  // El sondeo también sabe rescatar la IP: así el aviso rojo del TPV se
+  // arregla solo cuando la impresora amaneció con otra dirección.
+  const nueva = await rescatarIpImpresora(imp)
+  if (nueva) return checkPrinterConnection(nueva, imp.puerto || 9100)
+  return r
 }
 
 // Comprueba la impresora QUE TOCA: la de CAJA de la nube si el restaurante
@@ -225,6 +231,44 @@ export async function probarImpresoraNube(imp) {
   return { ok }
 }
 
+// ── RESCATE DE IP ────────────────────────────────────────────────────────────
+//
+// La térmica de cocina de Duende coge una IP DISTINTA cada vez que se enciende
+// (DHCP sin reserva): ayer .12, hoy .11. En vez de pedirle al restaurante que
+// reconfigure cada mañana, cuando una impresora de red no responde la app
+// ESCANEA la red buscando el puerto de impresora y, si aparece exactamente UNA
+// candidata que no sea de otra impresora del local, se corrige sola en la nube
+// y reintenta. Con cero (apagada) o dos o más (ambiguo) no se adivina nada.
+let ultimoRescate = 0
+async function rescatarIpImpresora(imp) {
+  if (!puente?.scanNetwork || imp?.modo !== 'red' || !imp?.id) return null
+  const ahora = Date.now()
+  if (ahora - ultimoRescate < 60000) return null // un escaneo por minuto como mucho
+  ultimoRescate = ahora
+  try {
+    const res = await puente.scanNetwork({ port: imp.puerto || 9100 })
+    const halladas = (res?.printers || []).map((p) => p.ip).filter(Boolean)
+    const lista = espejoImpresoras() || []
+    const ajenas = new Set(lista
+      .filter((i) => i.id !== imp.id && i.modo === 'red' && i.ip)
+      .map((i) => i.ip))
+    const candidatas = halladas.filter((ip) => ip !== imp.ip && !ajenas.has(ip))
+    if (candidatas.length !== 1) return null
+    const nueva = candidatas[0]
+    console.warn('[Print] "' + imp.nombre + '" cambió de IP: ' + imp.ip + ' → ' + nueva)
+    // Se guarda en la nube para TODOS los aparatos. Si este no pudiera
+    // escribir, al menos el envío de ahora sale por la IP nueva.
+    try {
+      const { data } = await supabase.from('tpv_impresoras')
+        .update({ ip: nueva }).eq('id', imp.id).select('id')
+      if (data?.length) invalidarImpresoras()
+    } catch { /* nada */ }
+    return nueva
+  } catch {
+    return null
+  }
+}
+
 // Manda bytes a UNA impresora concreta de la lista, sea red o USB.
 export async function enviarAImpresora(imp, data) {
   if (!puente || !imp) return false
@@ -235,7 +279,12 @@ export async function enviarAImpresora(imp, data) {
       return true
     }
     if (!imp.ip) return false
-    return await sendRawToIp(imp.ip, imp.puerto || 9100, data)
+    const ok = await sendRawToIp(imp.ip, imp.puerto || 9100, data)
+    if (ok) return true
+    // ¿Le cambió el router la IP al encenderla? Se busca sola y reintenta.
+    const nueva = await rescatarIpImpresora(imp)
+    if (nueva) return await sendRawToIp(nueva, imp.puerto || 9100, data)
+    return false
   } catch (err) {
     console.error('[Print] impresora "' + (imp?.nombre || '?') + '":', err)
     return false
