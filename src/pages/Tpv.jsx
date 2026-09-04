@@ -204,6 +204,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const firmaRef = useRef(null)
   const enVueloRef = useRef(false)
   const comandandoRef = useRef(false)   // candado de "Comandar" (doble toque)
+  // …y su cara visible: sin esto, mientras la impresora tardaba el botón se
+  // quedaba mudo y parecía que el clic no había hecho nada.
+  const [comandando, setComandando] = useState(false)
   const rondaRef = useRef(0)            // nº de comanda dentro de la venta en curso
 
   // uuid v4 de verdad también sin crypto.randomUUID (WebView viejas): el
@@ -546,6 +549,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // Doble toque = dos comandas iguales = comida duplicada. Candado síncrono.
     if (comandandoRef.current) return
     comandandoRef.current = true
+    setComandando(true)
     // 🔴 Se capturan AHORA las claves de lo que va a salir por la impresora: el
     // envío tarda segundos y lo que se pique en ese hueco NO ha salido en este
     // papel — antes se marcaba TODO el carrito como comandado y esas líneas se
@@ -563,6 +567,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       toast('Comanda enviada a cocina', 'success')
     } finally {
       comandandoRef.current = false
+      setComandando(false)
     }
   }
 
@@ -762,7 +767,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
 
   return (
-    <div style={modoApp || pantallaCompleta
+    <div className="tpv-raiz" style={modoApp || pantallaCompleta
       // Ocupando la pantalla, la caja ES la pantalla: columna flex de alto completo,
       // para que la fila de abajo pueda quedarse con lo que sobre SIN numeros magicos.
       ? {
@@ -775,6 +780,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             : { minHeight: '100vh' }),
         }
       : esMovil ? { ...caja, padding: 10, borderRadius: 12 } : caja}>
+      {/* SENSACIÓN DE PULSACIÓN en todo el TPV (pedido de Marlon, 4 sep): en un
+          mostrador se toca deprisa y sin mirar dos veces — cada botón se hunde
+          un pelín al pulsarlo para que se SIENTA el toque, y el que está
+          deshabilitado no se inmuta (ni miente). */}
+      <style>{`
+        .tpv-raiz button { transition: transform 0.06s ease, filter 0.06s ease; }
+        .tpv-raiz button:active:not(:disabled) { transform: scale(0.96); filter: brightness(1.25); }
+      `}</style>
       {/* Mostrador y Pedidos en la misma pantalla: durante el servicio no se puede
           estar saltando de una sección a otra. No hay pestaña de Reservas porque
           Pidoo no tiene reservas: no existe ninguna tabla detrás. */}
@@ -1180,12 +1193,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           {/* Comandar va ANTES de cobrar y no cobra: en un mostrador con cocina lo
               primero es que empiecen a hacerlo. Solo aparece si hay algo pendiente. */}
           {sinComandar.length > 0 && (
-            <button onClick={comandar} style={{
+            <button onClick={comandar} disabled={comandando} style={{
               ...btnSecundario, width: '100%', height: 48, fontSize: 15, marginBottom: 8,
               borderColor: T.accent, color: T.accent,
+              opacity: comandando ? 0.6 : 1, cursor: comandando ? 'default' : 'pointer',
             }}>
               <ChefHat size={17} style={{ marginRight: 8 }} />
-              Comandar a cocina{carrito.length !== sinComandar.length ? ` (${sinComandar.length} nuevo${sinComandar.length > 1 ? 's' : ''})` : ''}
+              {comandando
+                ? 'Enviando a cocina…'
+                : 'Comandar a cocina' + (carrito.length !== sinComandar.length ? ` (${sinComandar.length} nuevo${sinComandar.length > 1 ? 's' : ''})` : '')}
             </button>
           )}
 

@@ -194,11 +194,10 @@ export async function comprobarImpresoraDeLista(imp) {
     }
   }
   const r = await checkPrinterConnection(imp.ip, imp.puerto || 9100)
-  if (r?.ok) return r
-  // El sondeo también sabe rescatar la IP: así el aviso rojo del TPV se
-  // arregla solo cuando la impresora amaneció con otra dirección.
-  const nueva = await rescatarIpImpresora(imp)
-  if (nueva) return checkPrinterConnection(nueva, imp.puerto || 9100)
+  // Si no responde, el rescate de IP corre EN SEGUNDO PLANO (el escaneo puede
+  // tardar minutos y este chequeo pinta el badge del TPV: no puede esperar).
+  // El siguiente sondeo ya verá la dirección corregida.
+  if (!r?.ok) rescatarIpImpresora(imp).catch(() => {})
   return r
 }
 
@@ -270,6 +269,12 @@ async function rescatarIpImpresora(imp) {
 }
 
 // Manda bytes a UNA impresora concreta de la lista, sea red o USB.
+//
+// 🔴 AQUÍ NO SE RESCATA LA IP: el 4 sep el rescate iba dentro de este camino y
+// una comanda de Duende tardó 2-3 MINUTOS en salir (el fallo esperó al escaneo
+// de la red entera). El papel no espera a nadie: si esta impresora no
+// responde, el llamante saca el papel por la de caja YA, y el rescate corre en
+// segundo plano para que la SIGUIENTE vaya bien.
 export async function enviarAImpresora(imp, data) {
   if (!puente || !imp) return false
   try {
@@ -280,11 +285,8 @@ export async function enviarAImpresora(imp, data) {
     }
     if (!imp.ip) return false
     const ok = await sendRawToIp(imp.ip, imp.puerto || 9100, data)
-    if (ok) return true
-    // ¿Le cambió el router la IP al encenderla? Se busca sola y reintenta.
-    const nueva = await rescatarIpImpresora(imp)
-    if (nueva) return await sendRawToIp(nueva, imp.puerto || 9100, data)
-    return false
+    if (!ok) rescatarIpImpresora(imp).catch(() => {}) // en segundo plano, sin esperar
+    return ok
   } catch (err) {
     console.error('[Print] impresora "' + (imp?.nombre || '?') + '":', err)
     return false
