@@ -5,7 +5,7 @@
  * - On Web: fallback using window.print() with formatted receipt
  */
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
+import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarComandaModificacion, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
 import { bytesDelLogo } from './logoTicket'
 import { supabase } from './supabase'
 
@@ -842,6 +842,56 @@ async function imprimirComandaRepartida(lista, lineas, generar, destinoDe) {
     ok = salio && ok
   }
   return ok
+}
+
+/**
+ * Manda a la plancha SOLO lo que ha cambiado de un pedido que ya esta hecho.
+ *
+ * `delta` es el que devuelve `tpv-pedido-editar`: lo calcula el SERVIDOR
+ * comparando las lineas de antes con las de ahora, no la pantalla. Si el
+ * servidor corrigio algo por el camino, el papel lo refleja.
+ *
+ * Se reparte por impresora igual que una comanda normal (`destinoDe`), asi que
+ * el refresco que se quita sale por la barra y la hamburguesa que se anade por
+ * la cocina, con la caida a la de caja si una no responde.
+ */
+export async function imprimirModificacion(pedido, delta, restaurante, destinoDe = null) {
+  const lineas = [
+    ...(delta?.anadidas || []).map((l) => ({ ...l, signo: '+' })),
+    ...(delta?.quitadas || []).map((l) => ({ ...l, signo: '-' })),
+    ...(delta?.notas_cambiadas || []).map((l) => ({ ...l, signo: '!' })),
+  ]
+  if (!lineas.length) return true      // no cambio nada de cocina: no se gasta papel
+
+  const config = getPrinterConfig()
+  try {
+    const nube = await cargarImpresoras()
+    if (nube && nube.length) {
+      return await imprimirComandaRepartida(nube, lineas,
+        (subset, titulo) => generarComandaModificacion(pedido, subset, restaurante, titulo),
+        destinoDe)
+    }
+    if (!impresoraConfigurada(config) && !impresoraCocinaConfigurada(config)) return false
+    if (destinoDe && impresoraCocinaConfigurada(config)) {
+      const cocina = []
+      const barra = []
+      for (const l of lineas) {
+        (destinoDe(l.producto_id) === 'barra' ? barra : cocina).push(l)
+      }
+      let ok = true
+      if (cocina.length) {
+        ok = (await sendComanda(generarComandaModificacion(pedido, cocina, restaurante))) && ok
+      }
+      if (barra.length) {
+        ok = (await sendToThermalPrinter(generarComandaModificacion(pedido, barra, restaurante, '** BARRA **'))) && ok
+      }
+      return ok
+    }
+    return await sendComanda(generarComandaModificacion(pedido, lineas, restaurante))
+  } catch (err) {
+    console.error('[TPV] Error imprimiendo la modificacion:', err)
+    return false
+  }
 }
 
 export async function imprimirComandaTpv(lineas, restaurante, opciones = {}, destinoDe = null) {

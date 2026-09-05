@@ -26,7 +26,7 @@ import { toast } from '../App'
 import AddressInput from './AddressInput'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { useEsMonitor } from '../lib/tamanoPantalla'
-import { imprimirPedido, impresoraConfigurada } from '../lib/printService'
+import { imprimirPedido, imprimirModificacion, impresoraConfigurada } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import {
@@ -41,8 +41,18 @@ const RADIO = 12
 // así que no se va a la base de datos a preguntar por medio número.
 const DIGITOS_TELEFONO = 9
 
-export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar }) {
-  const esReparto = modo === 'reparto'
+export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null, onHecho, onCancelar }) {
+  // MODO EDICION: el mismo formulario, cargado con un pedido que ya existe. El
+  // cliente ha vuelto a llamar («anademe unas patatas», «me equivoque de
+  // portal») y hasta hoy no habia forma de tocarlo: habia que cancelar y
+  // rehacerlo entero, perdiendo el codigo y el sitio en la cola de cocina.
+  const editando = !!pedidoEditar
+
+  // En edicion el modo se puede cambiar (un reparto pasa a recogida si el
+  // cliente decide venir a por ello), asi que vive en estado y no en la prop.
+  const [modoActual, setModoActual] = useState(
+    pedidoEditar ? (pedidoEditar.modo_entrega === 'delivery' ? 'reparto' : 'recogida') : modo)
+  const esReparto = modoActual === 'reparto'
   const esMonitor = useEsMonitor()
 
   const [productos, setProductos] = useState([])
@@ -73,6 +83,33 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
       const r = (Math.random() * 16) | 0
       return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
     })
+
+  // ── Precarga del pedido que se edita ──────────────────────────────────────
+  // Cada linea se queda con su `id` real. El servidor lo usa para saber cual ya
+  // existia: a esas les respeta el precio que se le dijo al cliente por
+  // telefono, y solo las nuevas nacen a 0 para que las tase el servidor.
+  useEffect(() => {
+    if (!pedidoEditar) return
+    setCarrito((pedidoEditar.items || []).map((it) => ({
+      k: it.id,
+      linea_id: it.id,
+      producto_id: it.producto_id,
+      nombre: it.nombre_producto || it.nombre,
+      tamano: it.tamano || null,
+      notas: it.notas || null,
+      precio_c: cents(it.precio_unitario),
+      cantidad: it.cantidad,
+    })))
+    setTelefono(pedidoEditar.guest_telefono || pedidoEditar.cliente_telefono || '')
+    setNombre(pedidoEditar.guest_nombre || '')
+    setDireccion(pedidoEditar.direccion_entrega || '')
+    setCoords(pedidoEditar.lat_entrega != null && pedidoEditar.lng_entrega != null
+      ? { lat: pedidoEditar.lat_entrega, lng: pedidoEditar.lng_entrega }
+      : null)
+    setNotas(pedidoEditar.notas || '')
+    if (pedidoEditar.minutos_preparacion) setMinutos(pedidoEditar.minutos_preparacion)
+    if (pedidoEditar.metodo_pago) setMetodo(pedidoEditar.metodo_pago)
+  }, [pedidoEditar?.id])
 
   // ── La carta ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -187,19 +224,29 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
     return productos
   }, [productos, busqueda, catActiva])
 
+  // La clave de una linea del carrito. Al EDITAR, dos lineas pueden ser del
+  // mismo producto (una que ya estaba, con su precio congelado, y otra recien
+  // anadida), asi que el producto ya no basta para distinguirlas: manda el `id`
+  // de la linea cuando existe. Al crear, la clave es el producto de siempre y
+  // todo se comporta exactamente igual que antes.
+  const clave = (l) => l.k || l.producto_id
+
   const anadir = (p) => setCarrito((prev) => {
     const i = prev.findIndex((l) => l.producto_id === p.id)
     if (i >= 0) {
       const c = [...prev]; c[i] = { ...c[i], cantidad: c[i].cantidad + 1 }; return c
     }
-    return [...prev, { producto_id: p.id, nombre: p.nombre, precio_c: cents(p.precio), cantidad: 1 }]
+    return [...prev, {
+      k: 'n:' + p.id, producto_id: p.id, nombre: p.nombre,
+      tamano: null, notas: null, precio_c: cents(p.precio), cantidad: 1,
+    }]
   })
 
-  const cambiar = (id, d) => setCarrito((prev) => prev
-    .map((l) => (l.producto_id === id ? { ...l, cantidad: l.cantidad + d } : l))
+  const cambiar = (k, d) => setCarrito((prev) => prev
+    .map((l) => (clave(l) === k ? { ...l, cantidad: l.cantidad + d } : l))
     .filter((l) => l.cantidad > 0))
 
-  const quitar = (id) => setCarrito((prev) => prev.filter((l) => l.producto_id !== id))
+  const quitar = (k) => setCarrito((prev) => prev.filter((l) => clave(l) !== k))
 
   const subtotal = carrito.reduce((s, l) => s + l.precio_c * l.cantidad, 0)
   const unidades = carrito.reduce((s, l) => s + l.cantidad, 0)
@@ -230,6 +277,98 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
     falta.push('el teléfono o el nombre')
   }
   const listo = falta.length === 0
+
+  // ── GUARDAR LOS CAMBIOS de un pedido que ya existe ────────────────────────
+  //
+  // No lleva clave de idempotencia y no le hace falta: aqui no se manda «suma
+  // una hamburguesa» sino «el pedido queda ASI». Reenviarlo tal cual tras un
+  // corte de red deja exactamente lo mismo, y el delta del segundo intento sale
+  // vacio, asi que tampoco se imprime la comanda dos veces.
+  async function guardarCambios() {
+    if (!listo || enVuelo.current) return
+    enVuelo.current = true
+    setCreando(true)
+    const corte = new AbortController()
+    const reloj = setTimeout(() => corte.abort(), 45000)
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/tpv-pedido-editar`, {
+        method: 'POST',
+        signal: corte.signal,
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          pedido_id: pedidoEditar.id,
+          modo: modoActual,
+          minutos_preparacion: minutos,
+          notas: notas.trim() || null,
+          cliente: {
+            telefono: telefono || null, nombre: nombre.trim() || null,
+            direccion: esReparto ? direccion : null,
+            lat: esReparto ? coords?.lat : null, lng: esReparto ? coords?.lng : null,
+          },
+          lineas: carrito.map((l) => ({
+            ...(l.linea_id ? { id: l.linea_id } : null),
+            producto_id: l.producto_id, tamano: l.tamano || null,
+            cantidad: l.cantidad, notas: l.notas || null,
+          })),
+        }),
+      })
+      const body = await resp.json().catch(() => ({}))
+      if (!resp.ok || !body?.ok) {
+        // El servidor manda su propio `mensaje` en castellano para los PD29x:
+        // se prefiere ese, que sabe POR QUE ha dicho que no.
+        throw new Error(body?.mensaje || ({
+          forbidden: 'Esta cuenta no puede tocar pedidos de este restaurante.',
+          producto_no_encontrado: 'Un producto de la comanda ya no existe en la carta. Quítalo y vuelve a añadirlo.',
+          calcular_envio_failed: 'No se pudo recalcular el envío. Vuelve a intentarlo.',
+          calcular_envio_timeout: 'No se pudo recalcular el envío. Vuelve a intentarlo.',
+          pedido_no_encontrado: 'Ese pedido ya no está.',
+        })[body?.error] || body?.detalle || body?.error || 'No se pudieron guardar los cambios')
+      }
+
+      const dif = Number(body.diferencia || 0)
+      toast(`${body.pedido?.codigo} actualizado · ${eur(cents(body.pedido?.total))}` +
+        (dif ? ` (${dif > 0 ? '+' : '−'}${eur(cents(Math.abs(dif)))})` : ''), 'success')
+
+      // Ya cobrado: alguien tiene que cobrar o devolver la diferencia EN MANO.
+      // Es lo primero que hay que saber, y por eso va como aviso aparte.
+      if (body.aviso_cobro) {
+        toast(dif > 0
+          ? `Este pedido ya estaba pagado: hay que COBRAR ${eur(cents(Math.abs(dif)))} más.`
+          : `Este pedido ya estaba pagado: hay que DEVOLVER ${eur(cents(Math.abs(dif)))}.`, 'error')
+      }
+      if (body.socio_soltado) toast('El repartidor ya no lleva este pedido: se le ha avisado.', 'error')
+      else if (body.aviso_socio) toast('El repartidor ya lo tenía asignado: se le ha avisado del cambio.', 'error')
+      if (body.asignacion && body.asignacion.ok === false) {
+        toast('Ahora es un reparto pero no hay repartidor: asígnalo desde Pedidos.', 'error')
+      }
+
+      // La plancha se entera SOLO de lo que cambia. Nunca del pedido entero: el
+      // de cocina ya tiene delante el papel de antes y lo haria dos veces.
+      if (body.hay_cambio_en_cocina && impresoraConfigurada()) {
+        crearDestinoDe(restaurante?.id)
+          .then((destinoDe) => imprimirModificacion(body.pedido, body.delta, restaurante, destinoDe))
+          .then((ok) => {
+            if (!ok) toast('Los cambios están guardados, pero el papel de cocina NO salió. Avisa a mano.', 'error')
+          })
+          .catch(() => toast('Los cambios están guardados, pero el papel de cocina NO salió. Avisa a mano.', 'error'))
+      } else if (body.hay_cambio_en_cocina) {
+        toast('Cambios guardados. No hay impresora: avisa a cocina a mano.', 'error')
+      }
+
+      onHecho?.(body)
+    } catch (e) {
+      const enDuda = e?.name === 'AbortError' || /failed to fetch|networkerror|load failed/i.test(e?.message || '')
+      toast(enDuda
+        ? 'Sin respuesta del servidor. Vuelve a pulsar guardar TAL CUAL: mandar los mismos cambios dos veces no los aplica dos veces.'
+        : (e.message || 'No se pudieron guardar los cambios'), 'error')
+    } finally {
+      clearTimeout(reloj)
+      enVuelo.current = false
+      setCreando(false)
+    }
+  }
 
   async function crear() {
     if (!listo || enVuelo.current) return
@@ -461,24 +600,47 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
             Pica productos de la carta y aparecerán aquí.
           </div>
         ) : carrito.map((l) => (
-          <div key={l.producto_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 14 }} title={l.nombre}>{l.nombre}</span>
-            <button onClick={() => cambiar(l.producto_id, -1)} style={btnMini}
+          <div key={clave(l)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 14 }} title={l.nombre}>
+              {l.nombre}{l.tamano ? ` (${l.tamano})` : ''}
+              {l.notas && <span style={{ display: 'block', fontSize: 11, color: T.muted }}>! {l.notas}</span>}
+            </span>
+            <button onClick={() => cambiar(clave(l), -1)} style={btnMini}
               aria-label={`Quitar uno de ${l.nombre}`}><Minus size={13} /></button>
             <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{l.cantidad}</span>
-            <button onClick={() => cambiar(l.producto_id, +1)} style={btnMini}
+            <button onClick={() => cambiar(clave(l), +1)} style={btnMini}
               aria-label={`Añadir uno de ${l.nombre}`}><Plus size={13} /></button>
             <span style={{ minWidth: 58, textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
               {eur(l.precio_c * l.cantidad)}
             </span>
             {/* Con doce líneas, bajar una a cero a base de toques es absurdo. */}
-            <button onClick={() => quitar(l.producto_id)} style={{ ...btnMini, borderColor: 'transparent' }}
+            <button onClick={() => quitar(clave(l))} style={{ ...btnMini, borderColor: 'transparent' }}
               aria-label={`Quitar ${l.nombre} de la comanda`}><Trash2 size={13} /></button>
           </div>
         ))}
       </div>
 
       <div style={{ display: 'grid', gap: 10, flexShrink: 0 }}>
+        {editando ? (
+          // Al EDITAR, lo que se elige aqui es reparto o recogida: el cliente ha
+          // decidido venir a por ello, o al reves. Como se paga NO se toca — eso
+          // mueve el pedido de carril economico y el servidor lo tiene prohibido.
+          <div>
+            <label style={etiqueta}>Cómo se entrega</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['reparto', 'A domicilio'], ['recogida', 'Recoge el cliente']].map(([id, txt]) => (
+                <button key={id} onClick={() => setModoActual(id)} style={{
+                  ...btnSecundario, height: 42, flex: 1, fontSize: 13, borderRadius: RADIO,
+                  borderColor: modoActual === id ? T.accent : T.border,
+                  color: modoActual === id ? T.accent : T.text,
+                }}>{txt}</button>
+              ))}
+            </div>
+            <div style={{ ...aviso, color: T.muted }}>
+              Se paga con {({ efectivo: 'efectivo', datafono: 'datáfono', pagado_local: 'pago ya hecho' })[metodo] || metodo} · eso no se cambia aquí
+            </div>
+          </div>
+        ) : (
         <div>
           <label style={etiqueta}>Cómo paga</label>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -495,6 +657,7 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
             ))}
           </div>
         </div>
+        )}
         <div>
           <label style={etiqueta}>Estará listo en</label>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -521,7 +684,8 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
           <span style={{ fontSize: 13, color: T.muted, minWidth: 0, lineHeight: 1.35 }}>
             {esReparto ? 'Comida' : 'Total'}
             {unidades > 0 ? ` · ${unidades} ud.` : ''}
-            {esReparto && <><br />el envío se suma al crear</>}
+            {esReparto && <><br />{editando ? 'el envío se recalcula al guardar' : 'el envío se suma al crear'}</>}
+            {editando && <><br />antes: {eur(cents(pedidoEditar.total))} en total</>}
           </span>
           <span style={{ fontSize: 26, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {eur(subtotal)}
@@ -534,14 +698,16 @@ export default function TpvNuevoPedido({ restaurante, modo, onHecho, onCancelar 
           </div>
         )}
 
-        <button onClick={crear} disabled={!listo || creando} style={{
+        <button onClick={editando ? guardarCambios : crear} disabled={!listo || creando} style={{
           ...btnAccion, height: 56, fontSize: 16, borderRadius: RADIO, width: '100%',
           opacity: (!listo || creando) ? 0.4 : 1, cursor: (!listo || creando) ? 'not-allowed' : 'pointer',
         }}>
           {esReparto
             ? <Bike size={18} style={{ marginRight: 8 }} />
             : <ShoppingBag size={18} style={{ marginRight: 8 }} />}
-          {creando ? 'Creando…' : (esReparto ? 'Crear reparto y buscar repartidor' : 'Crear recogida')}
+          {editando
+            ? (creando ? 'Guardando…' : 'Guardar cambios e imprimir a cocina')
+            : (creando ? 'Creando…' : (esReparto ? 'Crear reparto y buscar repartidor' : 'Crear recogida'))}
         </button>
         <button onClick={onCancelar}
           style={{ ...btnSecundario, height: 44, borderRadius: RADIO, width: '100%', marginTop: 8 }}>

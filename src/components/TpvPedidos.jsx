@@ -23,7 +23,7 @@ import {
 } from '../lib/accionesPedido'
 import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
 import { unlockAudio, startAlarm, stopAlarm } from '../lib/alarm'
-import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell } from 'lucide-react'
+import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
@@ -89,7 +89,7 @@ const FILTROS = [
 
 export default function TpvPedidos({
   establecimientoId, esMovil = false, huecoAbajo = 0, repartoPropio = false,
-  abrirPedidoId = null, onNuevo, onAbrirRepartidores,
+  abrirPedidoId = null, onNuevo, onEditar, recargarToken = 0, onAbrirRepartidores,
 }) {
   // El restaurante entero y la config del TPV, para las acciones y los tickets.
   const { restaurante, tpvConfig } = useRest()
@@ -293,6 +293,16 @@ export default function TpvPedidos({
   // y fuerza el re-fetch del detalle abierto. El realtime también lo haría,
   // pero esperarlo deja la pantalla mintiendo un segundo.
   const refrescar = () => { cargar(); setRefrescoDetalle((n) => n + 1) }
+
+  // Al volver de EDITAR un pedido (el formulario vive fuera, en el modal del
+  // TPV), la lista y el detalle tienen que decir ya lo nuevo. El realtime de
+  // `pedidos` avisa del cambio de importe, pero no de que se haya quitado una
+  // línea: sin esto, el detalle seguiría enseñando el refresco que ya no está.
+  const primerToken = useRef(true)
+  useEffect(() => {
+    if (primerToken.current) { primerToken.current = false; return }
+    refrescar()
+  }, [recargarToken])
 
   // En el KANBAN no hay columna de detalle: tocar una tarjeta selecciona el
   // pedido y cambia a la vista de lista, donde el detalle (con sus acciones)
@@ -544,7 +554,7 @@ export default function TpvPedidos({
             </button>
             <DetallePedido p={detalleVisible} cargando={cargandoDetalle}
               repartoPropio={repartoPropio} restaurante={restaurante}
-              tpvConfig={tpvConfig} onCambiado={refrescar} />
+              tpvConfig={tpvConfig} onCambiado={refrescar} onEditar={onEditar} />
           </div>
         ) : (
           <>
@@ -574,7 +584,7 @@ export default function TpvPedidos({
               }}>
                 <DetallePedido p={detalleVisible} cargando={cargandoDetalle}
                   repartoPropio={repartoPropio} restaurante={restaurante}
-                  tpvConfig={tpvConfig} onCambiado={refrescar} />
+                  tpvConfig={tpvConfig} onCambiado={refrescar} onEditar={onEditar} />
               </div>
             )}
           </>
@@ -906,7 +916,7 @@ function TiraRepartidores({ filas, repartoPropio, abierta, onAlternar, onGestion
 // tiempo, rechazar y cancelar con motivo, avanzar de estado, reimprimir el
 // ticket y sacar la factura con los datos fiscales del cliente. Los candados
 // de concurrencia y el dinero viven en `lib/accionesPedido.js`.
-function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvConfig, onCambiado }) {
+function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvConfig, onCambiado, onEditar }) {
   // 'aceptar' | 'rechazar' | 'cancelar' | 'factura' — el paso intermedio abierto.
   const [paso, setPaso] = useState(null)
   const [minutos, setMinutos] = useState(20)
@@ -1069,7 +1079,7 @@ function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvCon
       </div>
 
       <Acciones p={p} repartoPropio={repartoPropio} restaurante={restaurante}
-        tpvConfig={tpvConfig} onCambiado={onCambiado}
+        tpvConfig={tpvConfig} onCambiado={onCambiado} onEditar={onEditar}
         paso={paso} setPaso={setPaso} minutos={minutos} setMinutos={setMinutos}
         ocupado={ocupado} setOcupado={setOcupado} fact={fact} setFact={setFact} />
     </div>
@@ -1078,7 +1088,7 @@ function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvCon
 
 // ── La botonera de acciones del pedido, según su estado ──────────────────────
 function Acciones({
-  p, repartoPropio, restaurante, tpvConfig, onCambiado,
+  p, repartoPropio, restaurante, tpvConfig, onCambiado, onEditar,
   paso, setPaso, minutos, setMinutos, ocupado, setOcupado, fact, setFact,
 }) {
   const cobraEfectivo = pendienteDeCobro(p)
@@ -1322,6 +1332,17 @@ function Acciones({
   // La fila de secundarios: reimprimir (todo lo aceptado en adelante), factura
   // (solo lo entregado) y cancelar (solo lo vivo, nunca un cerrado).
   const secundarios = []
+  // EDITAR: solo el pedido que has tomado tu por telefono, y solo mientras la
+  // comida no ha salido por la puerta. Una venta del MOSTRADOR no aparece aqui
+  // a proposito: esa ya tiene ticket con numero y se anula con rectificativa.
+  if (onEditar && p.origen_pedido === 'telefonico' && ['preparando', 'listo'].includes(p.estado)) {
+    secundarios.push(
+      <button key="editar" disabled={ocupado} onClick={() => onEditar(p)}
+        style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>
+        <Pencil size={15} style={{ marginRight: 6 }} /> Editar pedido
+      </button>,
+    )
+  }
   if (p.estado !== 'nuevo' && !['cancelado', 'rechazado', 'fallido'].includes(p.estado)) {
     secundarios.push(
       <button key="reimprimir" disabled={ocupado} onClick={pulsarReimprimir} style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>

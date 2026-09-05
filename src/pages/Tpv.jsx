@@ -125,6 +125,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const [modalStock, setModalStock] = useState(false)
   const [stockVista, setStockVista] = useState('existencias')
   const [nuevoPedido, setNuevoPedido] = useState(null)   // 'reparto' | 'recogida'
+  // El pedido telefonico que se esta EDITANDO (con sus items). Reusa el mismo
+  // formulario y el mismo modal que uno nuevo: es la misma conversacion por
+  // telefono, solo que el pedido ya existe.
+  const [pedidoEditar, setPedidoEditar] = useState(null)
+  // Sube uno cada vez que se guarda una edición: es la señal para que la
+  // pestaña Pedidos recargue lista y detalle sin esperar al realtime.
+  const [recargasPedidos, setRecargasPedidos] = useState(0)
   const [ultimaVenta, setUltimaVenta] = useState(null)
   const [impresora, setImpresora] = useState({ configurada: false, viva: null })
   const [modalTickets, setModalTickets] = useState(false)
@@ -981,6 +988,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           repartoPropio={restaurante?.delivery_sin_socio === true}
           abrirPedidoId={pedidoParaAbrir}
           onNuevo={(tipo) => setNuevoPedido(tipo)}
+          onEditar={(p) => setPedidoEditar(p)}
+          recargarToken={recargasPedidos}
           onAbrirRepartidores={() => setPantalla('socios-riders')} />
       ) : (
       // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
@@ -1412,6 +1421,18 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           <TpvNuevoPedido restaurante={restaurante} modo={nuevoPedido}
             onCancelar={() => setNuevoPedido(null)}
             onHecho={() => setNuevoPedido(null)} />
+        </Modal>
+      )}
+
+      {pedidoEditar && (
+        <Modal titulo={'Editar ' + (pedidoEditar.codigo || 'pedido')}
+          onCerrar={() => setPedidoEditar(null)}
+          ancho={esMonitor ? 1240 : 440} altoFijo={esMonitor} cerrarAlFondo={false}>
+          <TpvNuevoPedido restaurante={restaurante}
+            modo={pedidoEditar.modo_entrega === 'delivery' ? 'reparto' : 'recogida'}
+            pedidoEditar={pedidoEditar}
+            onCancelar={() => setPedidoEditar(null)}
+            onHecho={() => { setPedidoEditar(null); setRecargasPedidos((n) => n + 1) }} />
         </Modal>
       )}
 

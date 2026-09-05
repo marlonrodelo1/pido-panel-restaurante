@@ -599,6 +599,49 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
 }
 
 /**
+ * COMANDA DE MODIFICACION: lo que CAMBIA de un pedido que ya esta en la plancha.
+ *
+ * Nunca se reimprime el pedido entero. Si al de la plancha le llega otra vez el
+ * papel completo, hace el pedido dos veces: ya tiene el primero delante. Aqui
+ * sale SOLO el delta, con el signo por delante y bien grande, y un pie que dice
+ * a las claras que esto no es un pedido nuevo.
+ *
+ * `lineas` viene del servidor (no de la pantalla) con { signo, cantidad, nombre,
+ * tamano, notas }: '+' anadido, '-' quitado, '!' cambia la nota.
+ */
+export function generarComandaModificacion(pedido, lineas, restaurante, titulo = '** COCINA **') {
+  const bytes = []
+
+  bytes.push(...init(), ...codepage850(), ...center())
+  bytes.push(...boldOn(), ...doubleSize())
+  bytes.push(...line(titulo))
+  bytes.push(...line('MODIFICACION'))
+  bytes.push(...normalSize(), ...boldOff())
+  if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
+  bytes.push(...boldOn(), ...tallSize())
+  bytes.push(...line(pedido?.codigo || ''))
+  bytes.push(...normalSize(), ...boldOff())
+  bytes.push(...line(formatDate()))
+  bytes.push(...separator('='), ...left())
+
+  for (const l of lineas) {
+    const signo = l.signo === '-' ? 'QUITA' : l.signo === '!' ? 'CAMBIA' : 'ANADE'
+    bytes.push(...boldOn(), ...tallSize())
+    bytes.push(...line(`${signo}  ${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
+    bytes.push(...normalSize(), ...boldOff())
+    if (l.notas) bytes.push(...line('   ! ' + l.notas))
+  }
+
+  bytes.push(...separator('='), ...center())
+  bytes.push(...boldOn())
+  bytes.push(...line('NO ES UN PEDIDO NUEVO'))
+  bytes.push(...boldOff())
+  bytes.push(...line('Cambia el ' + (pedido?.codigo || 'pedido') + ' que ya tienes'))
+  bytes.push(...feed(3), ...cut())
+  return new Uint8Array(bytes)
+}
+
+/**
  * INFORME DEL DIA: lo que se ha vendido hoy por el mostrador.
  *
  * No es un arqueo de caja — eso exige saber con cuanto se abrio y cuanto hay
