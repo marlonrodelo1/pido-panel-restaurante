@@ -457,7 +457,7 @@ export function abrirCajon() {
  * recalcula nada: se imprimen los importes que congelo el servidor al emitir el
  * ticket, que son los que constan en `tpv_tickets`.
  */
-export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null, anula = null, factura = null) {
+export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null, anula = null, factura = null, provisional = false) {
   const bytes = []
   const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
 
@@ -482,7 +482,19 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
   if (restaurante?.telefono) bytes.push(...line('Tel: ' + restaurante.telefono))
 
   bytes.push(...feed(1), ...separator('-'), ...left())
-  bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
+  // Venta cobrada SIN INTERNET: papel provisional, sin número fiscal. El
+  // ticket de verdad lo numera el servidor al sincronizar y queda en
+  // "Tickets del día" por si el cliente lo pide.
+  if (provisional) {
+    bytes.push(...center(), ...boldOn(), ...doubleSize())
+    bytes.push(...line('TICKET PROVISIONAL'))
+    bytes.push(...normalSize())
+    bytes.push(...line('Cobrado sin conexion'))
+    bytes.push(...line('Pendiente de sincronizar'))
+    bytes.push(...boldOff(), ...left(), ...separator('-'))
+  } else {
+    bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
+  }
   // Un ticket con `rectifica_ticket_id` es una ANULACION: importes en negativo
   // y serie propia (la original + R). Tiene que decirlo bien grande, y decir a
   // cual anula — `anula` llega como "A-000012" desde quien imprime.

@@ -28,6 +28,7 @@ import {
   pulsoCajon, getPrinterConfig, savePrinterConfig, comprobarImpresoraActiva, impresoraConfigurada,
 } from '../lib/printService'
 import { crearDestinoDe } from '../lib/destinosImpresion'
+import { encolarVenta, sincronizarCola, ventasPendientes, ventasAtascadas, siguienteNumeroOff } from '../lib/colaVentas'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
@@ -154,6 +155,46 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // lo que se toca cien veces al dia es la carta, no el ticket.
   const [hojaVenta, setHojaVenta] = useState(false)
 
+  // ── MODO SIN INTERNET (fase 1) ─────────────────────────────────────────────
+  // `online` pinta el banner; `colaN` es cuántas ventas cobradas sin conexión
+  // esperan a sincronizarse. La cola se intenta enviar al entrar, al volver la
+  // conexión y cada 60 s — y avisa de lo que sube y de lo que se atasca.
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
+  const [colaN, setColaN] = useState(0)
+  const atascadasAvisadasRef = useRef(0)
+  useEffect(() => {
+    if (!restaurante?.id) return
+    const est = restaurante.id
+    setColaN(ventasPendientes(est))
+    const alta = () => setOnline(true)
+    const baja = () => setOnline(false)
+    const cambioCola = (e) => { if (e?.detail?.est === est) setColaN(e.detail.n) }
+    const intentar = async () => {
+      if (!navigator.onLine || !ventasPendientes(est)) return
+      const r = await sincronizarCola(est)
+      if (r?.enviadas) toast(`Sincronizada${r.enviadas > 1 ? 's' : ''} ${r.enviadas} venta${r.enviadas > 1 ? 's' : ''} cobrada${r.enviadas > 1 ? 's' : ''} sin conexión`, 'success')
+      const atasc = ventasAtascadas(est)
+      if (atasc && atasc !== atascadasAvisadasRef.current) {
+        toast(`${atasc} venta${atasc > 1 ? 's' : ''} cobrada${atasc > 1 ? 's' : ''} sin conexión no se pudo apuntar: avisa a Pidoo (el dinero está en el cajón)`, 'error')
+      }
+      atascadasAvisadasRef.current = atasc
+      setColaN(ventasPendientes(est))
+    }
+    window.addEventListener('online', alta)
+    window.addEventListener('offline', baja)
+    window.addEventListener('online', intentar)
+    window.addEventListener('pidoo:cola-ventas', cambioCola)
+    intentar()
+    const t = setInterval(intentar, 60000)
+    return () => {
+      window.removeEventListener('online', alta)
+      window.removeEventListener('offline', baja)
+      window.removeEventListener('online', intentar)
+      window.removeEventListener('pidoo:cola-ventas', cambioCola)
+      clearInterval(t)
+    }
+  }, [restaurante?.id])
+
   const [avisoFuera, setAvisoFuera] = useState(null)
   const pedidoAvisado = pedidosNuevos?.[0] || null
   // 🔴 Sin `modoApp`. Ese candado dejaba a la app de WINDOWS sin aviso de pedido nuevo:
@@ -263,7 +304,21 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // del día que se abrió la app (la pantalla enseñaba uno y el servidor cobraba
   // otro) y un producto borrado dejaba la venta imposible de cerrar sin matar
   // la app — y con ella, antes, el carrito.
+  // La carta que se pinta, venga de donde venga. `desdeEspejo` avisa de que se
+  // está sirviendo la copia local (modo sin internet).
+  function aplicarCarta({ cats, prods, gru, tam, vin }, desdeEspejo = false) {
+    setCategorias(cats || [])
+    setProductos(prods || [])
+    setCatSel((actual) => actual || cats?.[0]?.id || null)
+    setGrupos(gru || [])
+    setTamanos(tam || [])
+    setVinculos(vin || [])
+    setCargando(false)
+    if (desdeEspejo) toast('Sin conexión: usando la carta guardada en este aparato', 'error')
+  }
+
   async function cargarCarta(avisar = false) {
+    const claveEspejo = `pidoo_tpv_carta_${restaurante.id}`
     const [cats, prods, gru] = await Promise.all([
       supabase.from('categorias').select('id, nombre, orden, impresora_destino')
         .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
@@ -273,27 +328,33 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         .eq('establecimiento_id', restaurante.id),
     ])
     if (cats.error || prods.error || gru.error) {
+      // Sin red, la carta guardada de la última vez: un router caído no puede
+      // dejar el mostrador sin carta.
+      try {
+        const espejo = JSON.parse(localStorage.getItem(claveEspejo) || 'null')
+        if (espejo?.cats?.length) { aplicarCarta(espejo, true); return }
+      } catch { /* espejo roto: se sigue al aviso de siempre */ }
       if (avisar) toast('No se pudo recargar la carta: ' + (cats.error || prods.error || gru.error).message, 'error')
       setCargando(false)
       return
     }
     const listaProd = (prods.data || []).filter((p) => p.disponible !== false)
-    setCategorias(cats.data || [])
-    setProductos(listaProd)
-    setCatSel((actual) => actual || cats.data?.[0]?.id || null)
-    // Los grupos llegan con sus opciones anidadas; no hace falta aplanarlas.
-    setGrupos(gru.data || [])
+    let tam = [], vin = []
     if (listaProd.length) {
       const ids = listaProd.map((p) => p.id)
-      const [tam, vin] = await Promise.all([
+      const [t, v] = await Promise.all([
         supabase.from('producto_tamanos').select('id, producto_id, nombre, precio, precio_local, orden')
           .in('producto_id', ids).order('orden'),
         supabase.from('producto_extras').select('producto_id, grupo_id').in('producto_id', ids),
       ])
-      setTamanos(tam.data || [])
-      setVinculos(vin.data || [])
+      tam = t.data || []
+      vin = v.data || []
     }
-    setCargando(false)
+    const datos = { cats: cats.data || [], prods: listaProd, gru: gru.data || [], tam, vin }
+    aplicarCarta(datos)
+    // El espejo se refresca con cada carga buena: lo que habrá sin internet es
+    // la carta del último día que sí lo hubo.
+    try { localStorage.setItem(claveEspejo, JSON.stringify(datos)) } catch { /* lleno */ }
     if (avisar) toast('Carta recargada', 'success')
   }
   useEffect(() => { if (restaurante?.id) cargarCarta() }, [restaurante?.id])
@@ -644,6 +705,38 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     cobrar('datafono', null)
   }
 
+  // La venta cobrada SIN INTERNET: a la cola local (misma clave de
+  // idempotencia) + ticket PROVISIONAL serie OFF + cajón si es efectivo. El
+  // dinero ya está en el cajón: el servicio no se para por el router.
+  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla) {
+    const numeroOff = siguienteNumeroOff(restaurante.id)
+    encolarVenta(restaurante.id, { payload: cuerpo, numeroOff, total_c: totalPantalla, metodo: metodo_pago })
+
+    const igic = Number(tpvConfig?.igic_pct) || 0
+    const total = totalPantalla / 100
+    const base = igic ? total / (1 + igic / 100) : total
+    const ticket = {
+      serie: 'OFF', numero: numeroOff, total,
+      base_imponible: base, igic_pct: igic, cuota_igic: total - base,
+      metodo_pago, emitido_at: new Date().toISOString(),
+      entregado_efectivo: entregado_c != null ? entregado_c / 100 : null,
+      cambio: entregado_c != null ? Math.max(0, entregado_c - totalPantalla) / 100 : null,
+    }
+    const items = lineasPantalla.map((l) => ({
+      nombre_producto: l.nombre, tamano: l.tamano || null,
+      extras: l.extrasTexto ? String(l.extrasTexto).split(', ').filter(Boolean) : [],
+      precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null,
+    }))
+    imprimirTicketTpv(ticket, { codigo: null }, items, restaurante, {
+      pieTicket: tpvConfig?.pie_ticket, provisional: true,
+      abrirCajonTambien: metodo_pago === 'efectivo' && (tpvConfig?.abrir_cajon ?? true),
+    }).catch(() => {})
+
+    setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
+    setModalPago(false)
+    toast(`Sin conexión: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
+  }
+
   async function cobrar(metodo_pago, entregado_c = null) {
     if (enVueloRef.current) return
     enVueloRef.current = true
@@ -655,28 +748,32 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     const corte = new AbortController()
     const reloj = setTimeout(() => corte.abort(), 30000)
     // El total que VE el camarero en este momento, para poder comparar después
-    // con el que cobró de verdad el servidor.
+    // con el que cobró de verdad el servidor. Y las líneas tal cual están: si
+    // hay que guardar la venta sin conexión, esto es lo que se guarda.
     const totalPantalla = totalCarrito
+    const lineasPantalla = carrito
+    let cuerpo = null
     try {
       if (!idemRef.current) idemRef.current = uuidv4()  // red de seguridad; la pone el efecto del carrito
       const { data: sess } = await supabase.auth.getSession()
       const token = sess?.session?.access_token
+      cuerpo = {
+        establecimiento_id: restaurante.id,
+        metodo_pago,
+        entregado_efectivo: entregado_c != null ? entregado_c / 100 : null,
+        idempotency_key: idemRef.current,
+        // Dos formas de línea, las dos del contrato de tpv-venta: producto de
+        // la carta (ids, el precio lo pone el servidor) o línea LIBRE (aquí
+        // sí viaja el importe, validado 0-500 en los dos lados).
+        lineas: carrito.map((l) => (l.producto_id
+          ? { producto_id: l.producto_id, tamano: l.tamano, tamano_id: l.tamano_id || null, cantidad: l.cantidad, extras: l.extras, notas: l.notas || null }
+          : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
+      }
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/tpv-venta`, {
         method: 'POST',
         signal: corte.signal,
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({
-          establecimiento_id: restaurante.id,
-          metodo_pago,
-          entregado_efectivo: entregado_c != null ? entregado_c / 100 : null,
-          idempotency_key: idemRef.current,
-          // Dos formas de línea, las dos del contrato de tpv-venta: producto de
-          // la carta (ids, el precio lo pone el servidor) o línea LIBRE (aquí
-          // sí viaja el importe, validado 0-500 en los dos lados).
-          lineas: carrito.map((l) => (l.producto_id
-            ? { producto_id: l.producto_id, tamano: l.tamano, tamano_id: l.tamano_id || null, cantidad: l.cantidad, extras: l.extras, notas: l.notas || null }
-            : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
-        }),
+        body: JSON.stringify(cuerpo),
       })
       const body = await resp.json().catch(() => ({}))
       if (!resp.ok || !body?.ok) {
@@ -722,13 +819,21 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         }).catch(() => {})
       }
     } catch (err) {
-      // Un corte o un fallo de red dejan la venta EN DUDA (puede haber entrado).
-      // El consejo correcto es reintentar tal cual: la misma clave hace que el
-      // servidor conteste con la venta ya grabada en vez de cobrarla otra vez.
-      const enDuda = err?.name === 'AbortError' || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
-      toast(enDuda
-        ? 'Sin respuesta del servidor. Vuelve a pulsar cobrar TAL CUAL está la venta: si ya había entrado, no se cobra dos veces.'
-        : (err.message || 'Error al cobrar'), 'error')
+      // FALLO DE RED (sin internet, o el fetch ni salió): la venta NO se
+      // pierde ni se bloquea — va a la COLA LOCAL con su misma clave de
+      // idempotencia y sale un ticket PROVISIONAL. Al volver la conexión se
+      // envía sola; si por lo que fuera ya había entrado, el servidor contesta
+      // `repetida` y no se cobra dos veces.
+      const esRed = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
+      if (esRed && cuerpo) {
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla)
+      } else if (err?.name === 'AbortError') {
+        // El servidor no contestó a tiempo con la red viva: reintentar tal
+        // cual es seguro por la clave de idempotencia.
+        toast('Sin respuesta del servidor. Vuelve a pulsar cobrar TAL CUAL está la venta: si ya había entrado, no se cobra dos veces.', 'error')
+      } else {
+        toast(err.message || 'Error al cobrar', 'error')
+      }
     } finally {
       clearTimeout(reloj)
       enVueloRef.current = false
@@ -853,6 +958,23 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           <Menu size={20} />
         </button>
       </div>
+
+      {/* MODO SIN INTERNET: el mostrador sigue (carta local, comandas por la
+          red del local, ventas a la cola con ticket provisional). El banner
+          dice en qué situación se está, y desaparece cuando todo está al día. */}
+      {(!online || colaN > 0) && (
+        <div style={{
+          padding: '9px 14px', borderRadius: 10, marginBottom: 10,
+          fontSize: 13, fontWeight: 700, lineHeight: 1.4,
+          background: !online ? 'rgba(245,158,11,0.14)' : 'rgba(96,165,250,0.12)',
+          border: `1px solid ${!online ? 'rgba(245,158,11,0.5)' : 'rgba(96,165,250,0.45)'}`,
+          color: !online ? '#F5A623' : '#7EB5F7',
+        }}>
+          {!online
+            ? `Sin conexión · modo local — el mostrador sigue: comandas, efectivo y datáfono. Las ventas se guardan en este aparato${colaN ? ` (${colaN} pendiente${colaN > 1 ? 's' : ''})` : ''} y se apuntarán solas al volver internet.`
+            : `Sincronizando ${colaN} venta${colaN > 1 ? 's' : ''} cobrada${colaN > 1 ? 's' : ''} sin conexión…`}
+        </div>
+      )}
 
       {pestana === 'pedidos' ? (
         <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil} huecoAbajo={huecoAbajo}

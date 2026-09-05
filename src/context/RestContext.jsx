@@ -50,6 +50,25 @@ export function RestProvider({ children }) {
     return () => clearInterval(interval)
   }, [user?.id])
 
+  // MODO SIN INTERNET: con la red caída, supabase-js no lanza — devuelve
+  // { data: null, error } — y la app se quedaba en "Cargando restaurante…"
+  // para siempre. El último restaurante bueno se guarda en un espejo local y,
+  // si al arrancar no hay red, se entra con él: el TPV puede seguir vendiendo.
+  const claveEspejo = (uid) => `pidoo_espejo_restaurante_${uid}`
+
+  function entrarConEspejo(userId) {
+    try {
+      const e = JSON.parse(localStorage.getItem(claveEspejo(userId)) || 'null')
+      if (!e?.restaurante?.id) return false
+      console.warn('[RestContext] Sin conexión: entrando con el espejo local del restaurante')
+      setRestaurante(e.restaurante)
+      setTpvConfig(e.tpvConfig || null)
+      setStockConfig(e.stockConfig || null)
+      establecerContextoImpresion(e.restaurante.id)
+      return true
+    } catch { return false }
+  }
+
   async function fetchRestaurante(userId) {
     setRestauranteNotFound(false)
     try {
@@ -99,10 +118,19 @@ export function RestProvider({ children }) {
         // cobro y la entrada del menu dependen de el. (Y se RELEE al volver la
         // app a primer plano — ver el efecto de abajo: antes, activar el modulo
         // con la tablet abierta exigia matar la app y volver a entrar.)
+        // Cada lectura buena refresca el ESPEJO local: es con lo que se entra
+        // el día que no haya internet.
+        const guardarEspejo = (parcial) => {
+          try {
+            const prev = JSON.parse(localStorage.getItem(claveEspejo(userId)) || '{}')
+            localStorage.setItem(claveEspejo(userId), JSON.stringify({ ...prev, restaurante: data, ...parcial }))
+          } catch { /* lleno */ }
+        }
+        guardarEspejo({})
         supabase.from('tpv_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
-          .then(({ data: cfg }) => setTpvConfig(cfg || null))
+          .then(({ data: cfg, error }) => { if (!error) { setTpvConfig(cfg || null); guardarEspejo({ tpvConfig: cfg || null }) } })
         supabase.from('stock_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
-          .then(({ data: cfg }) => setStockConfig(cfg || null))
+          .then(({ data: cfg, error }) => { if (!error) { setStockConfig(cfg || null); guardarEspejo({ stockConfig: cfg || null }) } })
         // Impresoras de la nube: se fija el establecimiento como contexto de
         // impresión y se precargan (deja espejo local para poder imprimir
         // aunque justo se caiga la red).
@@ -110,6 +138,9 @@ export function RestProvider({ children }) {
         cargarImpresoras(data.id, { fresco: true }).catch(() => {})
         registerWebPush('restaurante', { establecimiento_id: data.id, user_id: userId })
         registerPushNotifications('restaurante', { establecimiento_id: data.id, user_id: userId })
+      } else if (!navigator.onLine && entrarConEspejo(userId)) {
+        // Sin red no se puede saber nada del servidor: se entra con lo último
+        // bueno y el TPV sigue en modo local.
       } else {
         // Cuenta autenticada pero sin establecimiento vinculado: marcar
         // explicitamente "no encontrado" para no quedar en "Cargando..." infinito.
@@ -117,6 +148,7 @@ export function RestProvider({ children }) {
       }
     } catch (err) {
       console.error('[RestContext] Error cargando restaurante:', err)
+      if (!navigator.onLine) entrarConEspejo(userId)
     }
     setLoading(false)
   }

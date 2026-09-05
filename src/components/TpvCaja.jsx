@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { imprimirReporteCaja } from '../lib/printService'
+import { ventasPendientes } from '../lib/colaVentas'
 import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus } from 'lucide-react'
 
 export default function TpvCaja({ establecimientoId, restaurante, vistaInicial = 'resumen', onCerrarModal }) {
@@ -85,6 +86,14 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   async function cerrar() {
     if (importeC == null) { toast('Cuenta el dinero y escribe el total (puede ser 0)', 'error'); return }
+    // El Z cuadra contra lo APUNTADO en el servidor: con ventas cobradas sin
+    // conexión aún en la cola local, cerraría descuadrado a la fuerza (el
+    // dinero está en el cajón pero el servidor no lo sabe todavía).
+    const pendientes = ventasPendientes(establecimientoId)
+    if (pendientes) {
+      toast(`Hay ${pendientes} venta${pendientes > 1 ? 's' : ''} cobrada${pendientes > 1 ? 's' : ''} sin conexión pendiente${pendientes > 1 ? 's' : ''} de apuntar: conecta internet, espera al aviso de sincronizado y cierra entonces`, 'error')
+      return
+    }
     setOcupado(true)
     const { data, error } = await supabase.rpc('tpv_cerrar_caja', {
       p_establecimiento_id: establecimientoId, p_contado: importeC / 100, p_notas: motivo || null,
