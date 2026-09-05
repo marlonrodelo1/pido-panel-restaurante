@@ -112,16 +112,18 @@ function envolver(str, ancho) {
 const COLUMNAS_NORMAL = 48
 const COLUMNAS_GRANDE = 24   // a doble ancho caben la mitad
 
-// Ancho 2 y alto 3, y no es una asimetria caprichosa: son las dos unicas
-// palancas y cuestan cosas distintas. El ANCHO esta en su tope util (a 3x
-// quedarian 16 columnas y no cabria de una pieza el 71 % de la carta), pero el
-// ALTO no gasta ni una columna: subirlo a 3 hace la letra un 50 % mas alta sin
-// partir ni un nombre mas. Lo unico que cuesta es tira de papel.
-// Si alguna termica vieja no admitiera alto 3, ignora el comando y sigue
-// imprimiendo a doble alto: se ve mas pequeño, no se rompe nada.
+// Doble de ancho y doble de alto.
+//
+// Estuvo un rato a alto 3 y Marlon lo vio en el papel: demasiado. El ancho se
+// queda donde esta —es el que hace que se lea de lejos, y ademas esta en su tope
+// util—, y el alto baja un escalon. De paso, cada renglon vuelve a ocupar un
+// tercio menos de tira.
+//
+// Para moverlo en el futuro, es UN numero: size(2, N). Alto 3 lo hace un 50 %
+// mas alto; ancho 1 lo devuelve a la letra estrecha de siempre (48 columnas).
 function bloqueGrande(texto, { negrita = false, sangria = '' } = {}) {
   const bytes = []
-  bytes.push(...(negrita ? boldOn() : []), ...size(2, 3))
+  bytes.push(...(negrita ? boldOn() : []), ...size(2, 2))
   const trozos = envolver(texto, COLUMNAS_GRANDE - sangria.length)
   for (const trozo of trozos) bytes.push(...line(sangria + trozo))
   bytes.push(...normalSize(), ...(negrita ? boldOff() : []))
