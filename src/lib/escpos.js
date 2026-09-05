@@ -51,6 +51,84 @@ function doubleSize() { return [GS, 0x21, 0x11] } // Double width + height
 function normalSize() { return [GS, 0x21, 0x00] }
 function wideSize() { return [GS, 0x21, 0x10] } // Double width only
 function tallSize() { return [GS, 0x21, 0x01] } // Double height only
+
+// Los cuatro de arriba son casos fijos de UN SOLO comando: GS ! n, donde el byte
+// lleva el multiplicador de ancho en el cuarteto alto y el de alto en el bajo
+// (n = (ancho-1)<<4 | (alto-1)). El protocolo llega a 8x8; el techo de 2x2 lo
+// ponia el codigo, no la impresora. Este helper abre ese techo sin tocar los
+// cuatro de siempre — que estan compartidos por los siete generadores del
+// fichero, y cambiarlos alteraria de golpe tickets, informes y cierres.
+function size(ancho = 1, alto = 1) {
+  const w = Math.min(8, Math.max(1, Math.round(ancho))) - 1
+  const h = Math.min(8, Math.max(1, Math.round(alto))) - 1
+  return [GS, 0x21, (w << 4) | h]
+}
+
+// Partir por PALABRAS a un ancho dado.
+//
+// `line()` no envuelve: suelta los bytes y un salto, y quien decide que hacer con
+// lo que sobra es la impresora — unas cortan la linea y otras la parten por la
+// mitad de una palabra. Con letra grande caben la mitad de caracteres, asi que
+// "Croissant de Mechada Especial" deja de caber y esa decision no puede quedar
+// en manos del modelo de termica que tenga cada bar. Se parte aqui, por espacios,
+// y una palabra mas larga que el ancho se trocea (no hay otra).
+function envolver(str, ancho) {
+  const limpio = String(str == null ? '' : str)
+  if (ancho <= 0 || limpio.length <= ancho) return [limpio]
+  const salida = []
+  let actual = ''
+  for (const palabra of limpio.split(/\s+/).filter(Boolean)) {
+    if (!actual) {
+      actual = palabra
+    } else if ((actual + ' ' + palabra).length <= ancho) {
+      actual += ' ' + palabra
+    } else {
+      salida.push(actual)
+      actual = palabra
+    }
+    while (actual.length > ancho) {
+      salida.push(actual.slice(0, ancho))
+      actual = actual.slice(ancho)
+    }
+  }
+  if (actual) salida.push(actual)
+  return salida.length ? salida : ['']
+}
+
+// ── LO QUE LEE LA PLANCHA, DEL TAMANO MAS GRANDE QUE CABE ────────────────────
+//
+// El papel de 80 mm da 576 puntos: 48 columnas con la fuente normal y 24 a doble
+// ancho. Esas son las dos unicas medidas que hay.
+//
+// El ALTO es gratis: no quita ni una columna. El ANCHO es lo unico que se paga, y
+// se paga caro: medido sobre las cartas reales de la plataforma, a 24 columnas se
+// salen 323 de 966 productos — un tercio, con "Croissant de Mechada Especial"
+// entre ellos. Por eso el texto se ENVUELVE aqui por palabras en vez de dejarselo
+// al firmware de cada termica, que unas cortan la linea y otras la parten por la
+// mitad de una palabra.
+//
+// Hasta hoy estas lineas salian a doble ALTO y ancho normal. Ahora van dobles en
+// los dos ejes: es el maximo que cabe sin trocear la carta. Subir a 3x dejaria 16
+// columnas y ningun nombre de plato entraria de una pieza.
+const COLUMNAS_NORMAL = 48
+const COLUMNAS_GRANDE = 24   // a doble ancho caben la mitad
+
+function bloqueGrande(texto, { negrita = false, sangria = '' } = {}) {
+  const bytes = []
+  bytes.push(...(negrita ? boldOn() : []), ...size(2, 2))
+  const trozos = envolver(texto, COLUMNAS_GRANDE - sangria.length)
+  for (const trozo of trozos) bytes.push(...line(sangria + trozo))
+  bytes.push(...normalSize(), ...(negrita ? boldOff() : []))
+  return bytes
+}
+
+// El plato: lo mas grande y en negrita.
+const lineaPlato = (texto) => bloqueGrande(texto, { negrita: true })
+// Los extras y las notas de linea van igual de grandes — una nota que no se lee
+// es un plato devuelto —, pero sin negrita, para que el ojo distinga de un
+// vistazo el plato de su aclaracion.
+const lineaExtras = (texto) => bloqueGrande(texto, { sangria: '+ ' })
+const lineaNota = (texto) => bloqueGrande(texto, { sangria: '! ' })
 function feed(n = 1) { return Array(n).fill(LF) }
 function cut() { return [GS, 0x56, 0x00] } // Full cut
 function partialCut() { return [GS, 0x56, 0x01] }
@@ -161,21 +239,15 @@ export function generarComandaCocina(pedido, items, restaurante, titulo = '** CO
     // El TAMAÑO va en la línea grande: "1x Pizza" a secas cuando el cliente
     // pidió la Familiar era la plancha adivinando.
     const nombreLinea = item.cantidad + 'x ' + item.nombre_producto + (item.tamano ? ' (' + item.tamano + ')' : '')
-    bytes.push(
-      ...tallSize(),
-      ...boldOn(),
-      ...line(nombreLinea),
-      ...normalSize(),
-      ...boldOff(),
-    )
+    bytes.push(...lineaPlato(nombreLinea))
     // Extras if present
     // `extras` es text[]: concatenarlo a pelo imprime "Queso,Bacon" sin espacios
     if (Array.isArray(item.extras) ? item.extras.length : item.extras) {
-      bytes.push(...line('   + ' + (Array.isArray(item.extras) ? item.extras.join(', ') : item.extras)))
+      bytes.push(...lineaExtras(Array.isArray(item.extras) ? item.extras.join(', ') : item.extras))
     }
     // La nota DE LA LÍNEA ("sin cebolla") existe en la BD y no se imprimía: a
     // cocina solo le llegaba la nota general del pedido.
-    if (item.notas) bytes.push(...line('   ! ' + item.notas))
+    if (item.notas) bytes.push(...lineaNota(item.notas))
   }
 
   // Pedido telefónico: sin items detallados — el pedido va en las notas y el
@@ -198,9 +270,9 @@ export function generarComandaCocina(pedido, items, restaurante, titulo = '** CO
       ...boldOn(),
       ...line('NOTAS:'),
       ...boldOff(),
-      ...tallSize(),
-      ...line(pedido.notas),
-      ...normalSize(),
+      // Tan grande como los platos: la nota del pedido ("sin gluten", "llamar al
+      // llegar") es justo lo que no se puede pasar por alto.
+      ...bloqueGrande(pedido.notas),
       ...separator('*'),
     )
   }
@@ -585,11 +657,9 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   bytes.push(...separator('='), ...left())
 
   for (const l of lineas) {
-    bytes.push(...boldOn(), ...tallSize())
-    bytes.push(...line(`${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
-    bytes.push(...normalSize(), ...boldOff())
-    if (l.extrasTexto) bytes.push(...line('   + ' + l.extrasTexto))
-    if (l.notas) bytes.push(...line('   ! ' + l.notas))
+    bytes.push(...lineaPlato(`${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
+    if (l.extrasTexto) bytes.push(...lineaExtras(l.extrasTexto))
+    if (l.notas) bytes.push(...lineaNota(l.notas))
   }
 
   bytes.push(...separator('='))
@@ -618,7 +688,9 @@ export function generarComandaModificacion(pedido, lineas, restaurante, titulo =
   bytes.push(...line('MODIFICACION'))
   bytes.push(...normalSize(), ...boldOff())
   if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
-  bytes.push(...boldOn(), ...tallSize())
+  // El codigo, tan grande como el resto: es por donde el de la plancha empareja
+  // este papel con el que ya tiene delante. Cabe de sobra en las 24 columnas.
+  bytes.push(...boldOn(), ...size(2, 2))
   bytes.push(...line(pedido?.codigo || ''))
   bytes.push(...normalSize(), ...boldOff())
   bytes.push(...line(formatDate()))
@@ -626,10 +698,11 @@ export function generarComandaModificacion(pedido, lineas, restaurante, titulo =
 
   for (const l of lineas) {
     const signo = l.signo === '-' ? 'QUITA' : l.signo === '!' ? 'CAMBIA' : 'ANADE'
-    bytes.push(...boldOn(), ...tallSize())
-    bytes.push(...line(`${signo}  ${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
-    bytes.push(...normalSize(), ...boldOff())
-    if (l.notas) bytes.push(...line('   ! ' + l.notas))
+    // El signo va en su propia linea grande: es lo primero que hay que entender
+    // de este papel, y pegado al nombre se comia media linea de las 24.
+    bytes.push(...lineaPlato(signo))
+    bytes.push(...lineaPlato(`${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
+    if (l.notas) bytes.push(...lineaNota(l.notas))
   }
 
   bytes.push(...separator('='), ...center())
