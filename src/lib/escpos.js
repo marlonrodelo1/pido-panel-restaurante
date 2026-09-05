@@ -113,9 +113,16 @@ function envolver(str, ancho) {
 const COLUMNAS_NORMAL = 48
 const COLUMNAS_GRANDE = 24   // a doble ancho caben la mitad
 
+// Ancho 2 y alto 3, y no es una asimetria caprichosa: son las dos unicas
+// palancas y cuestan cosas distintas. El ANCHO esta en su tope util (a 3x
+// quedarian 16 columnas y no cabria de una pieza el 71 % de la carta), pero el
+// ALTO no gasta ni una columna: subirlo a 3 hace la letra un 50 % mas alta sin
+// partir ni un nombre mas. Lo unico que cuesta es tira de papel.
+// Si alguna termica vieja no admitiera alto 3, ignora el comando y sigue
+// imprimiendo a doble alto: se ve mas pequeño, no se rompe nada.
 function bloqueGrande(texto, { negrita = false, sangria = '' } = {}) {
   const bytes = []
-  bytes.push(...(negrita ? boldOn() : []), ...size(2, 2))
+  bytes.push(...(negrita ? boldOn() : []), ...size(2, 3))
   const trozos = envolver(texto, COLUMNAS_GRANDE - sangria.length)
   for (const trozo of trozos) bytes.push(...line(sangria + trozo))
   bytes.push(...normalSize(), ...(negrita ? boldOff() : []))
@@ -253,11 +260,11 @@ export function generarComandaCocina(pedido, items, restaurante, titulo = '** CO
   // Pedido telefónico: sin items detallados — el pedido va en las notas y el
   // importe acordado por teléfono debe quedar visible para cocina/rider.
   if (pedido.origen_pedido === 'telefonico') {
+    // El importe pactado por telefono es lo que el rider tiene que cobrar en la
+    // puerta: va del mismo tamano que los platos. Cabe partido en dos renglones.
     bytes.push(
-      ...tallSize(), ...boldOn(),
-      ...line('PEDIDO TELEFONICO'),
-      ...line('IMPORTE ACORDADO: ' + Number(pedido.subtotal || 0).toFixed(2) + ' EUR'),
-      ...normalSize(), ...boldOff(),
+      ...lineaPlato('PEDIDO TELEFONICO'),
+      ...lineaPlato('A COBRAR: ' + Number(pedido.subtotal || 0).toFixed(2) + ' EUR'),
     )
   }
 
@@ -663,7 +670,10 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   }
 
   bytes.push(...separator('='))
-  if (nota) { bytes.push(...line('Nota: ' + nota), ...separator('-')) }
+  // La nota del pedido, igual de grande que en la comanda de Pidoo: en el mismo
+  // papel salia pequena solo aqui, y es exactamente lo que no se puede pasar por
+  // alto ("sin gluten", "para llevar").
+  if (nota) { bytes.push(...bloqueGrande(nota), ...separator('-')) }
   bytes.push(...feed(3), ...cut())
   return new Uint8Array(bytes)
 }
