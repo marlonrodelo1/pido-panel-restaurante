@@ -102,14 +102,13 @@ function envolver(str, ancho) {
 //
 // El ALTO es gratis: no quita ni una columna. El ANCHO es lo unico que se paga, y
 // se paga caro: medido sobre las cartas reales de la plataforma, a 24 columnas se
-// salen 323 de 966 productos — un tercio, con "Croissant de Mechada Especial"
-// entre ellos. Por eso el texto se ENVUELVE aqui por palabras en vez de dejarselo
-// al firmware de cada termica, que unas cortan la linea y otras la parten por la
-// mitad de una palabra.
+// sale cerca de un TERCIO de los 966 productos, con "Croissant de Mechada
+// Especial" entre ellos, y a 16 columnas (ancho 3) se saldria el 71 %. Por eso el
+// texto se ENVUELVE aqui por palabras en vez de dejarselo al firmware de cada
+// termica, que unas cortan la linea y otras la parten por la mitad de una palabra.
 //
-// Hasta hoy estas lineas salian a doble ALTO y ancho normal. Ahora van dobles en
-// los dos ejes: es el maximo que cabe sin trocear la carta. Subir a 3x dejaria 16
-// columnas y ningun nombre de plato entraria de una pieza.
+// Hasta hoy estas lineas salian a doble ALTO y ancho normal. El tamaño de ahora
+// esta justo debajo, en `bloqueGrande`.
 const COLUMNAS_NORMAL = 48
 const COLUMNAS_GRANDE = 24   // a doble ancho caben la mitad
 
