@@ -11,6 +11,7 @@
 // "cuadrado" sin serlo.
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { VIAS } from '../lib/jornada'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { imprimirReporteCaja } from '../lib/printService'
@@ -330,13 +331,28 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
       <div style={{ background: T.surface2, borderRadius: 12, padding: 14, display: 'grid', gap: 8 }}>
         <Fila etiqueta="Fondo inicial" valor={eur(cents(estado.fondo_inicial))} />
-        <Fila etiqueta="Ventas en efectivo" valor={eur(cents(estado.ventas_efectivo))} />
+        <Fila etiqueta="Cobrado en mano (efectivo)" valor={eur(cents(estado.ventas_efectivo))} />
+        {/* De qué puerta viene cada euro del cajón. Antes esta caja solo sabía
+            del mostrador y el efectivo de los repartos aparecía como sobrante
+            cada noche; ahora que cuenta todo, hay que poder verlo desglosado o
+            no hay manera de fiarse del número. */}
+        {estado.por_via && Object.entries(estado.por_via)
+          .filter(([, v]) => Number(v.efectivo) > 0)
+          .map(([clave, v]) => (
+            <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.muted, paddingLeft: 10 }}>
+              <span>· {VIAS[clave] || clave} ({v.pedidos})</span>
+              <span>{eur(cents(v.efectivo))}</span>
+            </div>
+          ))}
         <Fila etiqueta="Entradas" valor={eur(cents(estado.entradas))} />
         <Fila etiqueta="Salidas" valor={'-' + eur(cents(estado.salidas))} />
         <div style={{ height: 1, background: T.border, margin: '4px 0' }} />
         <Fila etiqueta="Debería haber en el cajón" valor={eur(esperado)} fuerte />
-        <div style={{ fontSize: 11, color: T.muted }}>
-          Lo cobrado con datáfono ({eur(cents(estado.ventas_datafono))}) no está aquí: no pasa por el cajón.
+        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5 }}>
+          Vendido en este turno: <strong style={{ color: T.text }}>{eur(cents(estado.venta_total))}</strong>.
+          De eso, no está en el cajón lo del datáfono ({eur(cents(estado.ventas_datafono))}),
+          que va al banco, ni lo pagado con tarjeta en la app ({eur(cents(estado.ventas_online))}),
+          que llega por Stripe en la liquidación del lunes.
         </div>
       </div>
 

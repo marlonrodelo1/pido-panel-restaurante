@@ -28,6 +28,7 @@ import {
   pulsoCajon, getPrinterConfig, savePrinterConfig, comprobarImpresoraActiva, impresoraConfigurada,
 } from '../lib/printService'
 import { crearDestinoDe } from '../lib/destinosImpresion'
+import { resumenJornada, inicioJornada } from '../lib/jornada'
 import { encolarVenta, sincronizarCola, ventasPendientes, ventasAtascadas, siguienteNumeroOff } from '../lib/colaVentas'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
@@ -645,41 +646,55 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (informandoRef.current) return
     informandoRef.current = true
     try {
-    // Desde las 5 de la mañana, igual que la pantalla de Pedidos: este informe
-    // se imprime al CERRAR, a la 1 o a las 2 de la madrugada, y cortar a
-    // medianoche dejaba fuera todo el servicio de la noche — y al día siguiente
-    // esos tickets ya eran "ayer", así que no salían en ningún informe nunca.
-    const desde = new Date()
-    if (desde.getHours() < 5) desde.setDate(desde.getDate() - 1)
-    desde.setHours(5, 0, 0, 0)
-    const { data, error } = await supabase.from('tpv_tickets')
-      .select('serie, numero, total, base_imponible, cuota_igic, metodo_pago')
-      .eq('establecimiento_id', restaurante.id)
-      .gte('emitido_at', desde.toISOString())
-      .order('emitido_at')
-      // Tope explícito y AVISADO: sin él, PostgREST cortaría por max-rows y el
-      // informe sumaría de menos sin ninguna señal.
-      .limit(2000)
-    if (error) { toast('No se pudo leer el día: ' + error.message, 'error'); return }
-    const t = data || []
-    if (!t.length) { toast('Hoy todavía no se ha cobrado nada'); return }
+    // 🔴 ANTES ESTE INFORME MENTÍA, y por eso Marlon vio 73 € un día que vendió
+    // 193: leía solo `tpv_tickets`, y esa tabla POR DISEÑO solo puede tener
+    // ventas de mostrador (`tpv_emitir_ticket` lanza PD195 con cualquier otro
+    // origen). Los 83,10 € del teléfono y los 37 de la app no llegan a existir
+    // como ticket, así que no había forma de que salieran.
+    //
+    // Ahora la venta sale de `lib/jornada.js`, que mira TODAS las vías, y los
+    // tickets se siguen leyendo pero solo para la parte fiscal (base, IGIC y el
+    // rango de numeración), que es lo único para lo que sirven.
+    const desde = inicioJornada()
+    const [dia, { data: dataTk, error: errTk }] = await Promise.all([
+      resumenJornada(restaurante.id, desde),
+      supabase.from('tpv_tickets')
+        .select('serie, numero, total, base_imponible, cuota_igic, metodo_pago')
+        .eq('establecimiento_id', restaurante.id)
+        .gte('emitido_at', desde.toISOString())
+        .order('emitido_at')
+        .limit(2000),
+    ])
+    if (!dia) { toast('No se pudo leer la venta del día. Revisa la conexión.', 'error'); return }
+    if (errTk) { toast('No se pudieron leer los tickets: ' + errTk.message, 'error'); return }
+    const t = dataTk || []
+    if (!dia.pedidos && !t.length) { toast('Hoy todavía no se ha cobrado nada'); return }
+
     const suma = (f) => t.reduce((s, x) => s + Number(f(x) || 0), 0)
     const resumen = {
+      // La venta, por todas las puertas.
+      total: dia.total,
+      pedidos: dia.pedidos,
+      comida: dia.comida,
+      envios: dia.envios,
+      propinas: dia.propinas,
+      porVia: dia.porVia,
+      // Dónde está ese dinero. `efectivo` es lo que tiene que haber en el cajón.
+      efectivo: dia.efectivo,
+      datafono: dia.datafono,
+      online: dia.online,
+      // La parte fiscal, que solo existe para el mostrador.
       tickets: t.length,
-      articulos: t.length,
-      efectivo: t.filter((x) => x.metodo_pago === 'efectivo').reduce((s, x) => s + Number(x.total || 0), 0),
-      datafono: t.filter((x) => x.metodo_pago === 'datafono').reduce((s, x) => s + Number(x.total || 0), 0),
-      total: suma((x) => x.total),
       base: suma((x) => x.base_imponible),
       igic: suma((x) => x.cuota_igic),
-      primero: `${t[0].serie}-${t[0].numero}`,
-      ultimo: `${t[t.length - 1].serie}-${t[t.length - 1].numero}`,
+      primero: t.length ? `${t[0].serie}-${t[0].numero}` : null,
+      ultimo: t.length ? `${t[t.length - 1].serie}-${t[t.length - 1].numero}` : null,
     }
-    if (t.length >= 2000) toast('Hay más de 2000 tickets hoy: el informe puede quedarse corto', 'error')
+    if (dia.truncado || t.length >= 2000) toast('Hoy hay más de 2000 apuntes: el informe puede quedarse corto', 'error')
     const ok = await imprimirInformeDiaTpv(resumen, restaurante)
     toast(ok
-      ? `Informe impreso · ${t.length} tickets · ${eur(cents(resumen.total))}`
-      : `Hoy: ${t.length} tickets, ${eur(cents(resumen.total))} (la impresora no responde)`,
+      ? `Informe impreso · ${dia.pedidos} pedidos · ${eur(cents(dia.total))}`
+      : `Hoy: ${dia.pedidos} pedidos, ${eur(cents(dia.total))} (la impresora no responde)`,
       ok ? 'success' : 'error')
     } finally {
       informandoRef.current = false
@@ -1644,7 +1659,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             nota="Cierra la caja e imprime el cierre del día"
             onClick={() => { setMenu(false); setCajaVista('cierre'); setModalCaja(true) }} />
           <OpcionMenu icono={<Printer size={19} color={T.accent} />} texto="Informe del día"
-            nota="Todo lo vendido hoy, haya habido caja o no"
+            nota="Mostrador, teléfono, app y web, todo junto"
             onClick={async () => { setMenu(false); await informeDelDia() }} />
 
           {/* El almacen SOLO si Pidoo le ha dado de alta el modulo. Aqui va lo del

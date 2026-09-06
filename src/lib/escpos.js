@@ -744,29 +744,50 @@ export function generarInformeDiaTpv(resumen, restaurante) {
   bytes.push(...line(formatDate()))
   bytes.push(...separator('='), ...left())
 
-  bytes.push(...twoColumns('Tickets', String(resumen.tickets || 0)))
-  bytes.push(...twoColumns('Articulos', String(resumen.articulos || 0)))
-  bytes.push(...separator('-'))
-  bytes.push(...twoColumns('Efectivo', eur(resumen.efectivo)))
-  bytes.push(...twoColumns('Datafono', eur(resumen.datafono)))
-  bytes.push(...separator('='))
-  bytes.push(...boldOn(), ...tallSize())
-  bytes.push(...twoColumns('TOTAL', eur(resumen.total)))
-  bytes.push(...normalSize(), ...boldOff())
-
-  if (resumen.base != null) {
-    bytes.push(...separator('-'))
-    bytes.push(...twoColumns('Base imponible', eur(resumen.base)))
-    bytes.push(...twoColumns('IGIC', eur(resumen.igic)))
+  // POR DONDE HA ENTRADO. Antes este papel solo sabia del mostrador y por eso
+  // decia 73 EUR un dia de 193: el telefono y la app no dejan ticket.
+  if (resumen.porVia && Object.keys(resumen.porVia).length) {
+    bytes.push(...boldOn(), ...line('POR DONDE HA ENTRADO'), ...boldOff())
+    for (const v of Object.values(resumen.porVia)) {
+      bytes.push(...twoColumns(v.etiqueta + ' (' + v.pedidos + ')', eur(v.total)))
+    }
+    bytes.push(...separator('='))
   }
 
-  if (resumen.primero && resumen.ultimo) {
-    bytes.push(...separator('-'))
-    bytes.push(...line('Del ticket ' + resumen.primero + ' al ' + resumen.ultimo))
+  bytes.push(...boldOn(), ...tallSize())
+  bytes.push(...twoColumns('VENDIDO HOY', eur(resumen.total)))
+  bytes.push(...normalSize(), ...boldOff())
+  bytes.push(...twoColumns('Pedidos', String(resumen.pedidos || 0)))
+  if (resumen.envios) bytes.push(...twoColumns('  de eso, envios', eur(resumen.envios)))
+  if (resumen.propinas) bytes.push(...twoColumns('  de eso, propinas', eur(resumen.propinas)))
+
+  // DONDE ESTA ESE DINERO. Es la mitad que faltaba para poder cuadrar: la venta
+  // del dia y lo que hay en el cajon NO son la misma cifra, y creerlo hace que
+  // siempre parezca que falta dinero.
+  bytes.push(...separator('-'))
+  bytes.push(...boldOn(), ...line('DONDE ESTA ESE DINERO'), ...boldOff())
+  bytes.push(...twoColumns('En el cajon (efectivo)', eur(resumen.efectivo)))
+  bytes.push(...twoColumns('Al banco (datafono)', eur(resumen.datafono)))
+  bytes.push(...twoColumns('Por Stripe (tarjeta)', eur(resumen.online)))
+
+  // La parte fiscal SOLO existe para el mostrador: son los unicos con ticket
+  // numerado. Se rotula asi para que nadie la confunda con la venta del dia.
+  if (resumen.tickets) {
+    bytes.push(...separator('='))
+    bytes.push(...boldOn(), ...line('TICKETS DEL MOSTRADOR'), ...boldOff())
+    bytes.push(...twoColumns('Tickets emitidos', String(resumen.tickets)))
+    if (resumen.base != null) {
+      bytes.push(...twoColumns('Base imponible', eur(resumen.base)))
+      bytes.push(...twoColumns('IGIC', eur(resumen.igic)))
+    }
+    if (resumen.primero && resumen.ultimo) {
+      bytes.push(...line('Del ' + resumen.primero + ' al ' + resumen.ultimo))
+    }
   }
 
   bytes.push(...feed(1), ...center())
-  bytes.push(...line('No es un arqueo de caja'))
+  bytes.push(...line('No es un arqueo de caja:'))
+  bytes.push(...line('esto es lo vendido, no lo contado'))
   bytes.push(...feed(3), ...cut())
   return new Uint8Array(bytes)
 }
@@ -796,12 +817,20 @@ export function generarReporteCaja(d, restaurante, tipo = 'X') {
   if (d.abierta_at) bytes.push(...line('Caja abierta: ' + formatDate(d.abierta_at)))
   bytes.push(...separator('='), ...left())
 
-  bytes.push(...boldOn(), ...line('VENTAS'), ...boldOff())
-  bytes.push(...twoColumns('Tickets', String(d.tickets || 0)))
-  bytes.push(...twoColumns('Efectivo', eur(d.ventas_efectivo)))
-  bytes.push(...twoColumns('Tarjeta', eur(d.ventas_datafono)))
+  bytes.push(...boldOn(), ...line('VENTAS DEL TURNO'), ...boldOff())
+  bytes.push(...twoColumns('Pedidos cobrados', String(d.tickets || 0)))
+  bytes.push(...twoColumns('Efectivo (al cajon)', eur(d.ventas_efectivo)))
+  bytes.push(...twoColumns('Datafono (al banco)', eur(d.ventas_datafono)))
+  // La tarjeta de la app no existia en este papel, y es la mitad de lo que
+  // descuadraba: es venta, pero ni pasa por el cajon ni por el datafono.
+  if (Number(d.ventas_online || 0) > 0) {
+    bytes.push(...twoColumns('Tarjeta app (Stripe)', eur(d.ventas_online)))
+  }
   bytes.push(...boldOn())
-  bytes.push(...twoColumns('Total vendido', eur(Number(d.ventas_efectivo || 0) + Number(d.ventas_datafono || 0))))
+  bytes.push(...twoColumns('Total vendido', eur(
+    d.venta_total != null
+      ? d.venta_total
+      : Number(d.ventas_efectivo || 0) + Number(d.ventas_datafono || 0) + Number(d.ventas_online || 0))))
   bytes.push(...boldOff())
 
   if (d.base != null) {
