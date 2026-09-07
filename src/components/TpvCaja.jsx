@@ -81,8 +81,12 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     })
     setOcupado(false)
     if (error) { errorCaja(error); return }
-    toast('Caja abierta con ' + eur(importeC), 'success')
+    toast('Turno abierto con ' + eur(importeC) + ' en el cajón', 'success')
     limpiar(); setVista('resumen'); cargar()
+    // 🔴 Y AL MOSTRADOR. Antes se quedaba en esta ventana, con el botón gordo de
+    // "Cerrar caja" delante: acabas de abrir el turno y lo que te invita a hacer
+    // la pantalla es cerrarlo. Lo que toca después de abrir es vender.
+    onCerrarModal?.()
   }
 
   async function mover(tipo) {
@@ -525,12 +529,18 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
         Cierres anteriores
       </button>
 
-      <button onClick={() => { limpiar(); setVista('cierre') }} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
-        <Lock size={17} style={{ marginRight: 8 }} /> Cerrar caja
-      </button>
+      {/* El botón grande es SEGUIR VENDIENDO, no cerrar. Cerrar la caja se hace
+          una vez al día; entrar aquí a mirar cuánto hay, veinte. Con el naranja
+          en "Cerrar caja" la pantalla estaba invitando a cerrar el turno cada
+          vez que alguien miraba la caja. */}
       {onCerrarModal && (
-        <button onClick={onCerrarModal} style={{ ...btnSecundario, height: 44 }}>Seguir vendiendo</button>
+        <button onClick={onCerrarModal} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
+          Seguir vendiendo
+        </button>
       )}
+      <button onClick={() => { limpiar(); setVista('cierre') }} style={{ ...btnSecundario, height: 46 }}>
+        <Lock size={16} style={{ marginRight: 8 }} /> Cerrar caja y turno
+      </button>
     </div>
   )
 }
