@@ -16,13 +16,12 @@
 // teclado, cada tecla entra por la derecha —1, 0, 0, 0, 0 son 100,00 €— y no hay
 // nada que interpretar: el estado ES el número de céntimos. Rediseño pedido por
 // Marlon a partir de las pantallas de Last.app.
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { VIAS } from '../lib/jornada'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { imprimirReporteCaja, pulsoCajon } from '../lib/printService'
-import { useEsMonitor } from '../lib/tamanoPantalla'
 import { ventasPendientes } from '../lib/colaVentas'
 import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus, Copy, Inbox } from 'lucide-react'
 
@@ -37,7 +36,25 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
   const [confirmando, setConfirmando] = useState(false)
   const [ultimoCierre, setUltimoCierre] = useState(null)
   const [cerrada, setCerrada] = useState(null)       // la caja recién cerrada, para el resumen
-  const esMonitor = useEsMonitor()
+  // 🔴 SE MIDE EL RECUADRO, NO LA VENTANA (7 sep 2026). Estaba con
+  // `useEsMonitor()`, que mira el ancho de la PANTALLA: con el PC del local a
+  // 1280 px y esta caja dentro de un modal de 440, se pintaban dos columnas en
+  // 440 px y el teclado salia montado encima del resumen. Marlon lo vio y mando
+  // la foto. Es la misma leccion del 2 de septiembre con la pantalla del TPV:
+  // lo que manda es el hueco que tiene ESTE componente.
+  const cajaRef = useRef(null)
+  const [ancho, setAncho] = useState(0)
+  useEffect(() => {
+    const el = cajaRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([e]) => setAncho(e.contentRect.width))
+    ro.observe(el)
+    setAncho(el.getBoundingClientRect().width)
+    return () => ro.disconnect()
+  }, [])
+  // 720 px: por debajo de eso, el resumen y el teclado no caben uno al lado del
+  // otro sin que el teclado quede impracticable con el dedo.
+  const dosColumnas = ancho >= 720
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: establecimientoId })
@@ -169,6 +186,9 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     setCierres(data || [])
   }
 
+  // El div medido envuelve TODAS las vistas: por eso el cuerpo se arma aparte y
+  // se devuelve al final envuelto en `cajaRef`.
+  const cuerpo = (() => {
   if (cargando) {
     return <div style={{ padding: 24, textAlign: 'center', color: T.muted }}>Leyendo la caja…</div>
   }
@@ -426,7 +446,7 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
     return (
       <>
-        {esMonitor
+        {dosColumnas
           ? <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 20 }}>{resumen}{panel}</div>
           : <div style={{ display: 'grid', gap: 14 }}>{resumen}{panel}</div>}
 
@@ -543,6 +563,9 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
       </button>
     </div>
   )
+  })()
+
+  return <div ref={cajaRef}>{cuerpo}</div>
 }
 
 // ── Piezas ───────────────────────────────────────────────────────────────────

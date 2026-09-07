@@ -1521,8 +1521,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         </Modal>
       )}
 
+      {/* Ancho de verdad en el PC del local: el cierre pone el resumen y el
+          teclado uno al lado del otro, como el TPV que ya usa Marlon. En tablet
+          y teléfono sigue estrecho y la caja se apila sola — lo decide ella
+          midiendo SU hueco, no la ventana. */}
       {modalCaja && (
-        <Modal titulo="Caja del mostrador" onCerrar={() => setModalCaja(false)}>
+        <Modal titulo="Caja del mostrador" onCerrar={() => setModalCaja(false)}
+          ancho={esMonitor ? 940 : 440}>
           <TpvCaja establecimientoId={restaurante.id} restaurante={restaurante}
             vistaInicial={cajaVista} onCerrarModal={() => setModalCaja(false)} />
         </Modal>
