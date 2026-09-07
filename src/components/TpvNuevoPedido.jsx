@@ -482,6 +482,66 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
 
   // ── Las tres piezas ───────────────────────────────────────────────────────
 
+  // CÓMO PAGA Y CUÁNDO ESTARÁ, con los datos del cliente y no al final.
+  //
+  // Estaba en la tercera columna, debajo de la comanda. Marlon lo pidió aquí: al
+  // teléfono te lo dicen mientras cantan el pedido —«te lo pago con tarjeta al
+  // repartidor»— no cuando ya has picado todo, y tener que cruzar la pantalla
+  // para eso rompe el orden de la conversación.
+  const bloquePago = (
+      <div style={{ display: 'grid', gap: 10, flexShrink: 0 }}>
+        {editando ? (
+          // Al EDITAR, lo que se elige aqui es reparto o recogida: el cliente ha
+          // decidido venir a por ello, o al reves. Como se paga NO se toca — eso
+          // mueve el pedido de carril economico y el servidor lo tiene prohibido.
+          <div>
+            <label style={etiqueta}>Cómo se entrega</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['reparto', 'A domicilio'], ['recogida', 'Recoge el cliente']].map(([id, txt]) => (
+                <button key={id} onClick={() => setModoActual(id)} style={{
+                  ...btnSecundario, height: 42, flex: 1, fontSize: 13, borderRadius: RADIO,
+                  borderColor: modoActual === id ? T.accent : T.border,
+                  color: modoActual === id ? T.accent : T.text,
+                }}>{txt}</button>
+              ))}
+            </div>
+            <div style={{ ...aviso, color: T.muted }}>
+              Se paga con {({ efectivo: 'efectivo', datafono: 'datáfono', pagado_local: 'pago ya hecho' })[metodo] || metodo} · eso no se cambia aquí
+            </div>
+          </div>
+        ) : (
+        <div>
+          <label style={etiqueta}>Cómo paga</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[
+              ['efectivo', 'Efectivo al entregar'],
+              ['datafono', 'Datáfono al entregar'],
+              ['pagado_local', 'Ya pagado'],
+            ].map(([id, txt]) => (
+              <button key={id} onClick={() => setMetodo(id)} style={{
+                ...btnSecundario, height: 42, fontSize: 13, borderRadius: RADIO,
+                borderColor: metodo === id ? T.accent : T.border,
+                color: metodo === id ? T.accent : T.text,
+              }}>{txt}</button>
+            ))}
+          </div>
+        </div>
+        )}
+        <div>
+          <label style={etiqueta}>Estará listo en</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[10, 15, 20, 30, 45].map((m) => (
+              <button key={m} onClick={() => setMinutos(m)} style={{
+                ...btnSecundario, height: 42, flex: 1, fontSize: 14, borderRadius: RADIO,
+                borderColor: minutos === m ? T.accent : T.border,
+                color: minutos === m ? T.accent : T.text,
+              }}>{m} min</button>
+            ))}
+          </div>
+        </div>
+      </div>
+  )
+
   const bloqueCliente = (
     <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
       <div>
@@ -529,6 +589,8 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
         <input value={notas} onChange={(e) => setNotas(e.target.value)}
           placeholder="Sin cebolla, portal azul…" maxLength={200} style={inputOscuro} />
       </div>
+
+      {bloquePago}
     </div>
   )
 
@@ -641,58 +703,6 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             )}
           </div>
         ))}
-      </div>
-
-      <div style={{ display: 'grid', gap: 10, flexShrink: 0 }}>
-        {editando ? (
-          // Al EDITAR, lo que se elige aqui es reparto o recogida: el cliente ha
-          // decidido venir a por ello, o al reves. Como se paga NO se toca — eso
-          // mueve el pedido de carril economico y el servidor lo tiene prohibido.
-          <div>
-            <label style={etiqueta}>Cómo se entrega</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[['reparto', 'A domicilio'], ['recogida', 'Recoge el cliente']].map(([id, txt]) => (
-                <button key={id} onClick={() => setModoActual(id)} style={{
-                  ...btnSecundario, height: 42, flex: 1, fontSize: 13, borderRadius: RADIO,
-                  borderColor: modoActual === id ? T.accent : T.border,
-                  color: modoActual === id ? T.accent : T.text,
-                }}>{txt}</button>
-              ))}
-            </div>
-            <div style={{ ...aviso, color: T.muted }}>
-              Se paga con {({ efectivo: 'efectivo', datafono: 'datáfono', pagado_local: 'pago ya hecho' })[metodo] || metodo} · eso no se cambia aquí
-            </div>
-          </div>
-        ) : (
-        <div>
-          <label style={etiqueta}>Cómo paga</label>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {[
-              ['efectivo', 'Efectivo al entregar'],
-              ['datafono', 'Datáfono al entregar'],
-              ['pagado_local', 'Ya pagado'],
-            ].map(([id, txt]) => (
-              <button key={id} onClick={() => setMetodo(id)} style={{
-                ...btnSecundario, height: 42, fontSize: 13, borderRadius: RADIO,
-                borderColor: metodo === id ? T.accent : T.border,
-                color: metodo === id ? T.accent : T.text,
-              }}>{txt}</button>
-            ))}
-          </div>
-        </div>
-        )}
-        <div>
-          <label style={etiqueta}>Estará listo en</label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[10, 15, 20, 30, 45].map((m) => (
-              <button key={m} onClick={() => setMinutos(m)} style={{
-                ...btnSecundario, height: 42, flex: 1, fontSize: 14, borderRadius: RADIO,
-                borderColor: minutos === m ? T.accent : T.border,
-                color: minutos === m ? T.accent : T.text,
-              }}>{m} min</button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div style={{ flexShrink: 0, borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
