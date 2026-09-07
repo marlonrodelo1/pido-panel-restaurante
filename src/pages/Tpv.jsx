@@ -18,7 +18,7 @@
 //     panel: sobre negro el terracota se queda en 3,7:1 y no llega a AA.
 //   - Sobre el naranja el texto va OSCURO. Blanco sobre #FF6B2C da 2,84:1 y no pasa;
 //     #1A1815 encima da 6,24:1.
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { usePedidoAlert } from '../context/PedidoAlertContext'
@@ -118,6 +118,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const [menu, setMenu] = useState(false)
   const [pestana, setPestana] = useState('mostrador')
   const [modalCaja, setModalCaja] = useState(false)
+  // EL TURNO ES LA PUERTA DEL MOSTRADOR (7 sep 2026). Marlon: "cerre la
+  // aplicacion y la abri, y no se si el turno esta abierto o cerrado, no se
+  // nada". Sin turno abierto no se pinta la carta: se pinta la pantalla de
+  // abrir turno. La pestaña Pedidos NO se bloquea a proposito — un pedido que
+  // entra por la app a las once no puede quedarse sin atender porque nadie haya
+  // abierto el turno todavia.
+  const [turno, setTurno] = useState(null)       // el jsonb de tpv_estado_caja
+  const [turnoLeido, setTurnoLeido] = useState(false)
+  // Salida de emergencia: si un dia la caja falla, se sigue cobrando. Vive solo
+  // en esta pantalla, asi que al recargar la app vuelve a pedir el turno.
+  const [sinTurno, setSinTurno] = useState(false)
   const [cajaVista, setCajaVista] = useState('resumen')
   // Con `modoApp`, el TPV es la aplicacion entera y las demas pantallas se abren
   // ENCIMA en esta capa. No se sustituye el TPV: si se desmontara, el carrito a
@@ -236,6 +247,25 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // cliente esperando el cambio. Si falla no pasa nada: se reintenta sola la proxima
   // vez (desde el 31 ago los fallos ya NO se guardan).
   useEffect(() => { prepararLogo(restaurante?.logo_url) }, [restaurante?.logo_url])
+
+  // ── El turno ──────────────────────────────────────────────────────────────
+  // Se lee al entrar y cada vez que se cierra el modal de la caja (que es donde
+  // se abre y se cierra), y ademas al volver a la app: en una tablet que ha
+  // estado en segundo plano toda la noche, el turno de ayer ya no vale.
+  const leerTurno = useCallback(async () => {
+    if (!restaurante?.id) return
+    const { data } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: restaurante.id })
+    setTurno(data || null)
+    setTurnoLeido(true)
+  }, [restaurante?.id])
+
+  useEffect(() => { leerTurno() }, [leerTurno])
+  useEffect(() => { if (!modalCaja) leerTurno() }, [modalCaja, leerTurno])
+  useEffect(() => {
+    const alVolver = () => { if (document.visibilityState === 'visible') leerTurno() }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [leerTurno])
 
   // ── La venta a medias SOBREVIVE ───────────────────────────────────────────
   // El carrito y su clave de idempotencia se guardan en localStorage por
@@ -998,6 +1028,38 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         </div>
       )}
 
+      {/* EL TURNO, SIEMPRE A LA VISTA. Marlon abrio la app y no sabia si estaba
+          abierto o cerrado, ni de cuando, ni de quien. Ahora lo dice la cabecera
+          sin tener que entrar a ningun sitio, y se toca para ir a la caja. */}
+      {turno?.abierta && (
+        <div onClick={() => { setCajaVista('resumen'); setModalCaja(true) }} style={{
+          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+          padding: '7px 12px', borderRadius: 10, marginBottom: 10,
+          background: 'rgba(143,196,107,0.10)', border: '1px solid rgba(143,196,107,0.35)',
+          fontSize: 12, color: T.muted, lineHeight: 1.4, flexWrap: 'wrap',
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: T.ok, flexShrink: 0 }} />
+          <strong style={{ color: T.text }}>Turno abierto</strong>
+          <span>
+            desde {new Date(turno.abierta_at).toLocaleString('es-ES', {
+              weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+            })}
+            {turno.abierta_por_nombre ? ` · ${turno.abierta_por_nombre}` : ''}
+          </span>
+          <span style={{ marginLeft: 'auto', color: T.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            En el cajón {eur(cents(turno.esperado))}
+          </span>
+        </div>
+      )}
+      {sinTurno && !turno?.abierta && (
+        <div style={{
+          padding: '9px 14px', borderRadius: 10, marginBottom: 10, fontSize: 13, fontWeight: 700,
+          background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.5)', color: '#F5A623',
+        }}>
+          Vendiendo SIN turno abierto: nada de esto entrará en el arqueo de esta noche.
+        </div>
+      )}
+
       {pestana === 'pedidos' ? (
         <TpvPedidos establecimientoId={restaurante.id} esMovil={esMovil} huecoAbajo={huecoAbajo}
           repartoPropio={restaurante?.delivery_sin_socio === true}
@@ -1006,6 +1068,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           onEditar={(p) => setPedidoEditar(p)}
           recargarToken={recargasPedidos}
           onAbrirRepartidores={() => setPantalla('socios-riders')} />
+      ) : (turnoLeido && !turno?.abierta && !sinTurno) ? (
+        // LA PUERTA. Sin turno abierto no se pinta la carta: no tendria sentido
+        // cobrar en una barra cuyo dinero no va a cuadrar con nada esta noche.
+        <PuertaTurno
+          restaurante={restaurante}
+          onAbrirCaja={() => { setCajaVista('resumen'); setModalCaja(true) }}
+          onSaltar={() => setSinTurno(true)}
+          onVerPedidos={() => setPestana('pedidos')} />
       ) : (
       // En MONITOR las dos columnas ocupan el alto de la pantalla y cada una se
       // desplaza por su cuenta: la carta puede tener 160 productos y la venta cuatro
@@ -1690,6 +1760,65 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           </div>
         </Drawer>
       )}
+    </div>
+  )
+}
+
+// ── LA PUERTA DEL TURNO ─────────────────────────────────────────────────────
+//
+// Lo primero que se ve al entrar al mostrador si no hay turno abierto. Antes se
+// entraba directo a la carta y se podia cobrar sin caja: al abrir la app no
+// habia forma de saber si el turno estaba abierto, ni de cuando, ni de quien.
+//
+// La pestaña Pedidos NO pasa por aqui a proposito: los pedidos que entran por la
+// app tienen que poder atenderse aunque nadie haya abierto turno todavia.
+function PuertaTurno({ restaurante, onAbrirCaja, onSaltar, onVerPedidos }) {
+  const hoy = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  })
+  return (
+    <div style={{
+      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24, minHeight: 0,
+    }}>
+      <div style={{ maxWidth: 420, width: '100%', display: 'grid', gap: 16, textAlign: 'center' }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 18, margin: '0 auto',
+          background: 'rgba(255,107,44,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Lock size={28} color={T.accent} />
+        </div>
+
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>No hay ningún turno abierto</div>
+          <div style={{ fontSize: 14, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
+            {restaurante?.nombre ? restaurante.nombre + ' · ' : ''}{hoy}
+          </div>
+        </div>
+
+        <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+          Abre el turno con el dinero que dejas en el cajón para dar cambio. Todo
+          lo que cobres a partir de ahí — barra, teléfono y app — entra en el
+          arqueo de esta noche.
+        </div>
+
+        <button onClick={onAbrirCaja} style={{ ...btnAccion, height: 58, fontSize: 17 }}>
+          <Wallet size={19} style={{ marginRight: 8 }} /> Iniciar turno
+        </button>
+
+        <button onClick={onVerPedidos} style={{ ...btnSecundario, height: 46 }}>
+          Ver los pedidos que han entrado
+        </button>
+
+        {/* La salida de emergencia. Pequeña y con la letra clara: si algo falla
+            con la caja, el bar tiene que poder seguir cobrando. */}
+        <button onClick={onSaltar} style={{
+          background: 'none', border: 'none', color: T.muted, fontSize: 12,
+          textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', padding: 8,
+        }}>
+          Vender sin abrir turno (no entrará en el arqueo)
+        </button>
+      </div>
     </div>
   )
 }
