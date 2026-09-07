@@ -49,6 +49,27 @@ export const VIAS = {
   mesa: 'Mesa (QR)',
 }
 
+// Como se llama cada forma de pago en pantalla y en el papel.
+export const PAGOS = {
+  efectivo: 'Efectivo',
+  datafono: 'Datáfono',
+  tarjeta: 'Tarjeta (Stripe)',
+  pagado_local: 'Ya pagado',
+}
+
+// El rotulo de una linea del desglose: "App Pidoo · domicilio · Tarjeta".
+// Marlon lo pidio asi de explicito: "pedido pagado por datafono en delivery,
+// pedidos en efectivo de delivery, pedido de recogida en tarjeta..." — el cruce
+// entero, para que al cuadrar no haya que deducir nada.
+export function etiquetaLinea({ origen, modo, pago }) {
+  const via = VIAS[origen] || origen
+  const entrega = modo === 'delivery' ? 'domicilio' : 'recogida'
+  // En el mostrador no se dice "recogida": no hay reparto que valga, se cobra
+  // y se lleva. Decirlo solo añade ruido a un papel que se lee de un vistazo.
+  const dónde = origen === 'tpv' ? '' : ' · ' + entrega
+  return via + dónde + ' · ' + (PAGOS[pago] || pago)
+}
+
 // Donde acaba el dinero de cada forma de pago. Es lo que decide si cuenta o no
 // para el arqueo del cajon.
 export const DESTINO_PAGO = {
@@ -70,7 +91,9 @@ export const DESTINO_PAGO = {
  */
 export async function resumenJornada(establecimientoId, desde = inicioJornada()) {
   const { data, error } = await supabase.from('pedidos')
-    .select('total, subtotal, coste_envio, propina, metodo_pago, origen_pedido')
+    // `modo_entrega` hace falta para el cruce: sin él, un reparto a domicilio se
+    // contaría como recogida y el desglose mentiría en la mitad de las líneas.
+    .select('total, subtotal, coste_envio, propina, metodo_pago, origen_pedido, modo_entrega')
     .eq('establecimiento_id', establecimientoId)
     .eq('estado', 'entregado')
     .is('reembolsado_at', null)
@@ -95,6 +118,20 @@ export async function resumenJornada(establecimientoId, desde = inicioJornada())
     }
   }
 
+  // EL CRUCE puerta x domicilio/recogida x forma de pago, que es lo que se mira
+  // al cuadrar. Mismo criterio y mismo orden que el de la caja, para que el
+  // informe del dia y el cierre se puedan comparar linea a linea.
+  const cruce = new Map()
+  for (const p of filas) {
+    const modo = p.modo_entrega === 'delivery' ? 'delivery' : 'recogida'
+    const k = `${p.origen_pedido}|${modo}|${p.metodo_pago}`
+    const prev = cruce.get(k)
+    if (prev) { prev.pedidos += 1; prev.total += Number(p.total || 0) }
+    else cruce.set(k, { origen: p.origen_pedido, modo, pago: p.metodo_pago, pedidos: 1, total: Number(p.total || 0) })
+  }
+  const desglose = [...cruce.values()].sort((a, b) =>
+    (a.origen + a.modo + a.pago).localeCompare(b.origen + b.modo + b.pago))
+
   const efectivo = sumaSi((p) => DESTINO_PAGO[p.metodo_pago] === 'cajon')
   const datafono = sumaSi((p) => DESTINO_PAGO[p.metodo_pago] === 'banco')
   const online = sumaSi((p) => DESTINO_PAGO[p.metodo_pago] === 'stripe')
@@ -110,6 +147,7 @@ export async function resumenJornada(establecimientoId, desde = inicioJornada())
     datafono,          // esto se va al banco
     online,            // esto llega por Stripe en el corte del lunes
     porVia,
+    desglose,
     truncado: filas.length >= 2000,
   }
 }

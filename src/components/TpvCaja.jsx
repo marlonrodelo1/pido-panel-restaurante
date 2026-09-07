@@ -18,7 +18,7 @@
 // Marlon a partir de las pantallas de Last.app.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { VIAS } from '../lib/jornada'
+import { VIAS, etiquetaLinea } from '../lib/jornada'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { imprimirReporteCaja, pulsoCajon } from '../lib/printService'
@@ -522,6 +522,31 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
           que llega por Stripe en la liquidación del lunes.
         </div>
       </div>
+
+      {/* TODO LO VENDIDO EN EL TURNO, línea a línea. Marlon: "pedido pagado por
+          datáfono en delivery, pedidos en efectivo de delivery, pedido de
+          recogida en tarjeta, mostrador... eso debe estar bien especificado, para
+          que las cuentas me sean claras". Arriba está lo que hay en el CAJÓN;
+          esto es la venta entera, cobre quien la cobre. */}
+      {estado.desglose?.length > 0 && (
+        <div style={{ background: T.surface2, borderRadius: 12, padding: 14, display: 'grid', gap: 7 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.muted, textTransform: 'uppercase' }}>
+            Todo lo vendido en este turno
+          </div>
+          {estado.desglose.map((d, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
+              <span style={{ color: T.muted, minWidth: 0 }}>
+                {etiquetaLinea(d)} <span style={{ opacity: 0.7 }}>({d.pedidos})</span>
+              </span>
+              <span style={{ fontWeight: 700, color: T.text, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                {eur(cents(d.total))}
+              </span>
+            </div>
+          ))}
+          <div style={{ height: 1, background: T.border, margin: '2px 0' }} />
+          <Fila etiqueta="Total vendido" valor={eur(cents(estado.venta_total))} fuerte />
+        </div>
+      )}
 
       <button onClick={async () => {
         // El X es el papel del cambio de turno: se imprime con una lectura

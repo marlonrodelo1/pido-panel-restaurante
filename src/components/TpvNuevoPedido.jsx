@@ -496,7 +496,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
           // mueve el pedido de carril economico y el servidor lo tiene prohibido.
           <div>
             <label style={etiqueta}>Cómo se entrega</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6 }}>
               {[['reparto', 'A domicilio'], ['recogida', 'Recoge el cliente']].map(([id, txt]) => (
                 <button key={id} onClick={() => setModoActual(id)} style={{
                   ...btnSecundario, height: 42, flex: 1, fontSize: 13, borderRadius: RADIO,
@@ -529,10 +529,14 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
         )}
         <div>
           <label style={etiqueta}>Estará listo en</label>
-          <div style={{ display: 'flex', gap: 6 }}>
+          {/* REJILLA, no fila. En la columna de la izquierda (300 px) los cinco
+              botones en una sola fila no caben y el «45 min» se salia por el
+              borde — Marlon mando la foto. Con auto-fit se reparten en las filas
+              que hagan falta segun el hueco que haya. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 6 }}>
             {[10, 15, 20, 30, 45].map((m) => (
               <button key={m} onClick={() => setMinutos(m)} style={{
-                ...btnSecundario, height: 42, flex: 1, fontSize: 14, borderRadius: RADIO,
+                ...btnSecundario, height: 42, fontSize: 14, borderRadius: RADIO,
                 borderColor: minutos === m ? T.accent : T.border,
                 color: minutos === m ? T.accent : T.text,
               }}>{m} min</button>

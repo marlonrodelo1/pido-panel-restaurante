@@ -709,6 +709,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       envios: dia.envios,
       propinas: dia.propinas,
       porVia: dia.porVia,
+      desglose: dia.desglose,
       // Dónde está ese dinero. `efectivo` es lo que tiene que haber en el cajón.
       efectivo: dia.efectivo,
       datafono: dia.datafono,

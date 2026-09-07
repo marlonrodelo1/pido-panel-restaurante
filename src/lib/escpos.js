@@ -746,7 +746,11 @@ export function generarInformeDiaTpv(resumen, restaurante) {
 
   // POR DONDE HA ENTRADO. Antes este papel solo sabia del mostrador y por eso
   // decia 73 EUR un dia de 193: el telefono y la app no dejan ticket.
-  if (resumen.porVia && Object.keys(resumen.porVia).length) {
+  if (resumen.desglose && resumen.desglose.length) {
+    bytes.push(...boldOn(), ...line('POR DONDE HA ENTRADO'), ...boldOff())
+    bytes.push(...lineasDesglose(resumen.desglose))
+    bytes.push(...separator('='))
+  } else if (resumen.porVia && Object.keys(resumen.porVia).length) {
     bytes.push(...boldOn(), ...line('POR DONDE HA ENTRADO'), ...boldOff())
     for (const v of Object.values(resumen.porVia)) {
       bytes.push(...twoColumns(v.etiqueta + ' (' + v.pedidos + ')', eur(v.total)))
@@ -802,6 +806,31 @@ function nombreVia(clave) {
   })[clave] || clave
 }
 
+function nombrePago(clave) {
+  return ({
+    efectivo: 'Efectivo', datafono: 'Datafono',
+    tarjeta: 'Tarjeta/Stripe', pagado_local: 'Ya pagado',
+  })[clave] || clave
+}
+
+// Una linea del desglose cruzado, tal como Marlon lo pidio: por donde entro, si
+// fue a domicilio o lo recogieron, y con que se pago. En 48 columnas no cabe
+// todo en un renglon, asi que la via va arriba y el detalle debajo, sangrado.
+function lineasDesglose(desglose) {
+  const bytes = []
+  let viaActual = null
+  for (const d of desglose) {
+    if (d.origen !== viaActual) {
+      viaActual = d.origen
+      bytes.push(...boldOn(), ...line(nombreVia(d.origen)), ...boldOff())
+    }
+    const entrega = d.origen === 'tpv' ? '' : (d.modo === 'delivery' ? 'domicilio ' : 'recogida ')
+    const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
+    bytes.push(...twoColumns('  ' + entrega + nombrePago(d.pago) + ' (' + d.pedidos + ')', eur(d.total)))
+  }
+  return bytes
+}
+
 /**
  * INFORME DE CAJA. Dos tipos, y la diferencia importa:
  *
@@ -848,7 +877,12 @@ export function generarReporteCaja(d, restaurante, tipo = 'X') {
 
   // POR DONDE HA ENTRADO. Solo lo sabe el informe X (lo trae `tpv_estado_caja`);
   // en un Z reimpreso de hace tres dias no esta guardado, y entonces no se pinta.
-  if (d.por_via && Object.keys(d.por_via).length) {
+  if (d.desglose && d.desglose.length) {
+    bytes.push(...separator('-'))
+    bytes.push(...boldOn(), ...line('POR DONDE HA ENTRADO'), ...boldOff())
+    bytes.push(...lineasDesglose(d.desglose))
+  } else if (d.por_via && Object.keys(d.por_via).length) {
+    // Cierres viejos, de antes del desglose cruzado: al menos la puerta.
     bytes.push(...separator('-'))
     bytes.push(...boldOn(), ...line('POR DONDE HA ENTRADO'), ...boldOff())
     for (const [clave, v] of Object.entries(d.por_via)) {
