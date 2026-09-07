@@ -9,23 +9,35 @@
 // Las cuentas NO se hacen aquí: se piden al servidor (`tpv_estado_caja`,
 // `tpv_cerrar_caja`). Si se hicieran en la tablet, un cierre podría guardarse
 // "cuadrado" sin serlo.
+//
+// 🔴 EL IMPORTE SE TECLEA EN CÉNTIMOS, COMO UNA CAJA REGISTRADORA (6 sep 2026).
+// Antes había un `<input>` de texto y un parser (`aCents`) que tenía que adivinar
+// si "1.250,00" eran mil doscientos cincuenta o uno con veinticinco. Con el
+// teclado, cada tecla entra por la derecha —1, 0, 0, 0, 0 son 100,00 €— y no hay
+// nada que interpretar: el estado ES el número de céntimos. Rediseño pedido por
+// Marlon a partir de las pantallas de Last.app.
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { VIAS } from '../lib/jornada'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
-import { imprimirReporteCaja } from '../lib/printService'
+import { imprimirReporteCaja, pulsoCajon } from '../lib/printService'
+import { useEsMonitor } from '../lib/tamanoPantalla'
 import { ventasPendientes } from '../lib/colaVentas'
-import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus } from 'lucide-react'
+import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus, Copy, Inbox } from 'lucide-react'
 
 export default function TpvCaja({ establecimientoId, restaurante, vistaInicial = 'resumen', onCerrarModal }) {
   const [estado, setEstado] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [ocupado, setOcupado] = useState(false)
-  const [vista, setVista] = useState(vistaInicial)   // resumen | entrada | salida | cierre | historial
-  const [importe, setImporte] = useState('')
+  const [vista, setVista] = useState(vistaInicial)   // resumen | entrada | salida | cierre | historial | cerrada
+  const [importeC, setImporteC] = useState(0)        // SIEMPRE céntimos
   const [motivo, setMotivo] = useState('')
   const [contando, setContando] = useState(false)    // arqueo por denominaciones abierto
+  const [confirmando, setConfirmando] = useState(false)
+  const [ultimoCierre, setUltimoCierre] = useState(null)
+  const [cerrada, setCerrada] = useState(null)       // la caja recién cerrada, para el resumen
+  const esMonitor = useEsMonitor()
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: establecimientoId })
@@ -36,21 +48,18 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   useEffect(() => { cargar() }, [cargar])
 
-  // 🔴 El parser de antes hacía `replace(',', '.')` — SOLO la primera coma — y
-  // "1.250,00" (un sábado normal) se convertía en NaN: la pantalla decía
-  // "Sobran NaN €" y el servidor rechazaba el cierre con un error críptico.
-  // Este entiende lo que se teclea de verdad: "50", "50,5", "1.250,00", "70.5".
-  // Devuelve CÉNTIMOS, o null si aquello no es un importe.
-  function aCents(str) {
-    let t = String(str || '').trim()
-    if (!t) return null
-    if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.')       // coma = decimal, puntos = miles
-    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '')      // "1.250" sin coma = miles
-    const num = parseFloat(t)
-    if (!Number.isFinite(num) || num < 0) return null
-    return Math.round(num * 100)
-  }
-  const importeC = aCents(importe)
+  // El último cierre, para el botón "Copiar último cierre". En un bar el fondo de
+  // hoy suele ser lo que quedó ayer, y teclearlo cada mañana es justo donde se
+  // cuela un error de un dígito.
+  useEffect(() => {
+    supabase.from('tpv_cajas')
+      .select('contado_final, cerrada_at').eq('establecimiento_id', establecimientoId)
+      .not('cerrada_at', 'is', null)
+      .order('cerrada_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setUltimoCierre(data || null))
+  }, [establecimientoId])
+
+  const limpiar = () => { setImporteC(0); setMotivo(''); setContando(false) }
 
   // La RPC ya habla claro ("Ya tienes una caja abierta…"); lo único que llegaba
   // crudo era el 23505 del índice único cuando dos aparatos abren a la vez.
@@ -60,8 +69,12 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     cargar()   // la pantalla se pone al día en vez de quedarse mintiendo
   }
 
+  async function abrirCajon() {
+    const ok = await pulsoCajon()
+    if (!ok) toast('El cajón no responde (¿está conectado a la impresora?)', 'error')
+  }
+
   async function abrir() {
-    if (importeC == null) { toast('Escribe el fondo con el que abres (puede ser 0)', 'error'); return }
     setOcupado(true)
     const { error } = await supabase.rpc('tpv_abrir_caja', {
       p_establecimiento_id: establecimientoId, p_fondo: importeC / 100,
@@ -69,11 +82,11 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     setOcupado(false)
     if (error) { errorCaja(error); return }
     toast('Caja abierta con ' + eur(importeC), 'success')
-    setImporte(''); setVista('resumen'); cargar()
+    limpiar(); setVista('resumen'); cargar()
   }
 
   async function mover(tipo) {
-    if (importeC == null || importeC <= 0) { toast('Ese importe no vale. Escribe cuánto, por ejemplo 20,00', 'error'); return }
+    if (importeC <= 0) { toast('Escribe cuánto, por ejemplo 20,00', 'error'); return }
     setOcupado(true)
     const { error } = await supabase.rpc('tpv_movimiento_caja', {
       p_establecimiento_id: establecimientoId, p_tipo: tipo,
@@ -82,11 +95,11 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     setOcupado(false)
     if (error) { errorCaja(error); return }
     toast(`${tipo === 'entrada' ? 'Entrada' : 'Salida'} de ${eur(importeC)} apuntada`, 'success')
-    setImporte(''); setMotivo(''); setVista('resumen'); cargar()
+    limpiar(); setVista('resumen'); cargar()
   }
 
   async function cerrar() {
-    if (importeC == null) { toast('Cuenta el dinero y escribe el total (puede ser 0)', 'error'); return }
+    setConfirmando(false)
     // El Z cuadra contra lo APUNTADO en el servidor: con ventas cobradas sin
     // conexión aún en la cola local, cerraría descuadrado a la fuerza (el
     // dinero está en el cajón pero el servidor no lo sabe todavía).
@@ -107,12 +120,17 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
       d === 0 ? 'success' : 'error')
     // El Z sale solo al cerrar: es el papel que se guarda del día. Si la térmica
     // falla, la caja YA está cerrada — antes eso se tragaba en silencio y no
-    // había forma de volver a sacarlo. Ahora avisa, y abajo queda el botón de
-    // reimprimir el último cierre.
+    // había forma de volver a sacarlo. Ahora avisa, y en el resumen queda el
+    // botón de reimprimirlo.
     imprimirReporteCaja(data, restaurante, 'Z')
       .then((ok) => { if (!ok) toast('La caja está cerrada, pero el Z no se imprimió. Puedes reimprimirlo desde aquí.', 'error') })
       .catch(() => toast('La caja está cerrada, pero el Z no se imprimió. Puedes reimprimirlo desde aquí.', 'error'))
-    setImporte(''); setMotivo(''); setVista('resumen'); cargar()
+    // Antes de esto, cerrar solo dejaba un toast de tres segundos: el resumen de
+    // lo que acababa de pasar se perdía. Ahora queda en pantalla hasta que se
+    // cierra a propósito.
+    setCerrada(data)
+    setUltimoCierre({ contado_final: data?.contado_final, cerrada_at: data?.cerrada_at })
+    limpiar(); setVista('cerrada'); cargar()
   }
 
   // Reimprime el Z de una caja cerrada cualquiera: sirve si la impresora falló
@@ -147,11 +165,59 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     setCierres(data || [])
   }
 
-  if (cargando) return <div style={{ padding: 20, textAlign: 'center', color: T.muted }}>Mirando la caja…</div>
+  if (cargando) {
+    return <div style={{ padding: 24, textAlign: 'center', color: T.muted }}>Leyendo la caja…</div>
+  }
 
-  // ── Sin caja abierta ──────────────────────────────────────────────────────
-  // (el historial de cierres se puede mirar igual, con la caja cerrada)
-  if (!estado?.abierta && vista !== 'historial') {
+  // ── Resumen de la caja que se acaba de cerrar ─────────────────────────────
+  if (vista === 'cerrada' && cerrada) {
+    const d = cents(cerrada.descuadre)
+    return (
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div>
+          <strong style={{ fontSize: 17, color: T.text }}>Caja cerrada</strong>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
+            Del {fechaHora(cerrada.abierta_at)} al {fechaHora(cerrada.cerrada_at)}
+          </div>
+        </div>
+
+        <div style={{
+          padding: 16, borderRadius: 14, textAlign: 'center',
+          background: d === 0 ? 'rgba(143,196,107,0.14)' : 'rgba(255,122,107,0.12)',
+        }}>
+          <div style={{ fontSize: 12, color: T.muted }}>Diferencia del recuento</div>
+          <div style={{ fontSize: 30, fontWeight: 800, marginTop: 4, color: d === 0 ? T.ok : T.danger }}>
+            {d === 0 ? '0,00 €' : (d > 0 ? '+' : '−') + eur(Math.abs(d))}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
+            {d === 0 ? 'Cuadra' : d > 0 ? 'Sobra dinero en el cajón' : 'Falta dinero en el cajón'}
+          </div>
+        </div>
+
+        <div style={{ background: T.surface2, borderRadius: 12, padding: 14, display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <span style={{ flex: 1 }} />
+            <span style={{ width: 90, textAlign: 'right' }}>Teórico</span>
+            <span style={{ width: 90, textAlign: 'right' }}>Real</span>
+          </div>
+          <FilaTres etiqueta="Efectivo" teorico={eur(cents(cerrada.esperado))} real={eur(cents(cerrada.contado_final))} />
+          <div style={{ height: 1, background: T.border }} />
+          <Fila etiqueta="Vendido en el turno" valor={eur(cents(cerrada.venta_total))} />
+          <Fila etiqueta="Fondo con el que se abrió" valor={eur(cents(cerrada.fondo_inicial))} />
+        </div>
+
+        <button onClick={() => imprimirZDe(cerrada)} style={{ ...btnSecundario, height: 46 }}>
+          <Printer size={16} style={{ marginRight: 6 }} /> Imprimir el reporte Z
+        </button>
+        <button onClick={() => { setCerrada(null); setVista('resumen') }} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
+          Continuar
+        </button>
+      </div>
+    )
+  }
+
+  // ── Sin caja abierta: el comienzo del turno ───────────────────────────────
+  if (!estado?.abierta) {
     return (
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: T.muted, fontSize: 14 }}>
@@ -162,23 +228,40 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
           Puedes vender sin abrir caja, pero esas ventas no entrarán en ningún arqueo.
           Ábrela con el dinero que dejas para dar cambio.
         </div>
-        <div>
-          <label style={etiqueta}>Fondo inicial</label>
-          <input value={importe} onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
-            placeholder="50,00" inputMode="decimal" style={inputOscuro} />
-        </div>
+
+        <Pestanas contando={contando} setContando={setContando} />
+        <Display valor={importeC} etiqueta="Fondo inicial" />
+        {contando
+          ? <ContadorDenominaciones onTotal={setImporteC} />
+          : <Teclado onCambio={setImporteC} valor={importeC} />}
+
+        <button onClick={abrirCajon} style={{ ...btnSecundario, height: 46 }}>
+          <Inbox size={16} style={{ marginRight: 6 }} /> Abrir cajón
+        </button>
         {/* Sin importe escrito no se puede abrir: quien venía buscando el
             informe X o el Z aterrizaba aquí y un toque abría una caja a 0 €
             sin querer — y deshacerla obligaba a un cierre entero con Z falso. */}
-        <button onClick={abrir} disabled={ocupado || importeC == null}
-          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC == null) ? 0.4 : 1 }}>
+        <button onClick={abrir} disabled={ocupado || importeC <= 0}
+          style={{ ...btnAccion, height: 54, fontSize: 17, opacity: (ocupado || importeC <= 0) ? 0.4 : 1 }}>
           <Wallet size={18} style={{ marginRight: 8 }} />
-          {ocupado ? 'Abriendo…' : 'Abrir caja'}
+          {ocupado ? 'Abriendo…' : 'Comenzar'}
         </button>
-        <button onClick={reimprimirUltimoZ} style={{ ...btnSecundario, height: 44 }}>
-          <Printer size={15} style={{ marginRight: 6 }} /> Reimprimir el último cierre Z
-        </button>
-        <button onClick={abrirHistorial} style={{ ...btnSecundario, height: 44 }}>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={reimprimirUltimoZ} style={{ ...btnSecundario, flex: 1, height: 44 }}>
+            <Printer size={15} style={{ marginRight: 6 }} /> Último Z
+          </button>
+          {/* El fondo de hoy suele ser lo que quedó ayer. Teclearlo otra vez es
+              regalar una oportunidad de equivocarse en un dígito. */}
+          {ultimoCierre?.contado_final != null && (
+            <button onClick={() => { setContando(false); setImporteC(cents(ultimoCierre.contado_final)) }}
+              style={{ ...btnSecundario, flex: 1, height: 44 }}>
+              <Copy size={15} style={{ marginRight: 6 }} />
+              Copiar cierre: {eur(cents(ultimoCierre.contado_final))}
+            </button>
+          )}
+        </div>
+        <button onClick={abrirHistorial} style={{ ...btnSecundario, height: 42 }}>
           Cierres anteriores
         </button>
       </div>
@@ -225,8 +308,7 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
             </div>
           )
         })}
-        <button onClick={() => setVista(estado?.abierta ? 'resumen' : 'resumen')}
-          style={{ ...btnSecundario, height: 44 }}>Volver</button>
+        <button onClick={() => setVista('resumen')} style={{ ...btnSecundario, height: 44 }}>Volver</button>
       </div>
     )
   }
@@ -241,22 +323,19 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
         <strong style={{ fontSize: 15, color: T.text }}>
           {esEntrada ? 'Meter dinero en la caja' : 'Sacar dinero de la caja'}
         </strong>
-        <div>
-          <label style={etiqueta}>Importe</label>
-          <input value={importe} onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
-            placeholder="20,00" inputMode="decimal" autoFocus style={inputOscuro} />
-        </div>
+        <Display valor={importeC} etiqueta="Importe" />
+        <Teclado onCambio={setImporteC} valor={importeC} />
         <div>
           <label style={etiqueta}>Motivo</label>
           <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
             placeholder={esEntrada ? 'Cambio de la caja fuerte' : 'Pago al proveedor'}
             maxLength={80} style={inputOscuro} />
         </div>
-        <button onClick={() => mover(vista)} disabled={ocupado || importeC == null || importeC <= 0}
-          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC == null || importeC <= 0) ? 0.4 : 1 }}>
+        <button onClick={() => mover(vista)} disabled={ocupado || importeC <= 0}
+          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC <= 0) ? 0.4 : 1 }}>
           {ocupado ? 'Guardando…' : `Apuntar ${esEntrada ? 'entrada' : 'salida'}`}
         </button>
-        <button onClick={() => { setVista('resumen'); setImporte(''); setMotivo('') }}
+        <button onClick={() => { setVista('resumen'); limpiar() }}
           style={{ ...btnSecundario, height: 44 }}>Volver</button>
       </div>
     )
@@ -264,60 +343,124 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   // ── Cierre ────────────────────────────────────────────────────────────────
   if (vista === 'cierre') {
-    // `importeC` es null si lo tecleado no es un importe: la vista previa se
-    // esconde en vez de pintar "Sobran NaN €".
-    const descuadre = importeC == null ? null : importeC - esperado
-    return (
-      <div style={{ display: 'grid', gap: 12 }}>
-        <strong style={{ fontSize: 15, color: T.text }}>Cerrar la caja</strong>
-        <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>
-          Cuenta el dinero que hay en el cajón y escríbelo. Cuenta primero y mira
-          después lo que debería haber: si no, cuadra siempre y no sirve de nada.
-        </div>
+    const tecleado = importeC > 0 || contando
+    const descuadre = importeC - esperado
+
+    // Izquierda: el resumen del turno. Mientras no se ha tecleado nada solo se
+    // ve el teórico; en cuanto entra un número aparecen real y diferencia, que
+    // es lo que se mira de verdad al cuadrar.
+    const resumen = (
+      <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
         <div>
-          <label style={etiqueta}>Dinero contado</label>
-          <input value={importe} onChange={(e) => { setImporte(e.target.value.replace(/[^\d.,]/g, '')); setContando(false) }}
-            placeholder="0,00" inputMode="decimal" autoFocus={!contando} readOnly={contando}
-            style={{ ...inputOscuro, ...(contando ? { opacity: 0.85 } : null) }} />
+          <strong style={{ fontSize: 16, color: T.text }}>{restaurante?.nombre || 'Caja'}</strong>
+          <div style={{ fontSize: 12, color: T.muted }}>Resumen del turno</div>
         </div>
 
-        {/* Contar por billetes y monedas: teclear el total de una calculadora
-            aparte es justo donde se cuela el error que el descuadre quiere
-            cazar. La suma rellena el campo de arriba sola. */}
-        <button onClick={() => setContando((v) => !v)} style={{ ...btnSecundario, height: 42 }}>
-          <Calculator size={15} style={{ marginRight: 6 }} />
-          {contando ? 'Escribir el total a mano' : 'Contar por billetes y monedas'}
-        </button>
-        {contando && (
-          <ContadorDenominaciones onTotal={(c) => setImporte((c / 100).toFixed(2).replace('.', ','))} />
-        )}
+        <div style={{
+          borderRadius: 14, padding: 16,
+          background: !tecleado ? T.surface2
+            : descuadre === 0 ? 'rgba(143,196,107,0.14)' : 'rgba(255,122,107,0.12)',
+          display: 'grid', gap: 6,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <strong style={{ fontSize: 15, color: T.text }}>Efectivo</strong>
+            <span style={{ fontSize: 12, color: T.muted }}>
+              Teórico <strong style={{ fontSize: 16, color: T.text, marginLeft: 6 }}>{eur(esperado)}</strong>
+            </span>
+          </div>
+          {tecleado && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 12, color: T.muted }}>
+                Real <strong style={{ fontSize: 16, color: T.text, marginLeft: 6 }}>{eur(importeC)}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'baseline', fontSize: 12, color: T.muted }}>
+                Diferencia
+                <strong style={{
+                  fontSize: 20, marginLeft: 8, fontVariantNumeric: 'tabular-nums',
+                  color: descuadre === 0 ? T.ok : T.danger,
+                }}>
+                  {descuadre === 0 ? '0,00 €' : (descuadre > 0 ? '+' : '−') + eur(Math.abs(descuadre))}
+                </strong>
+              </div>
+            </>
+          )}
+        </div>
 
-        {descuadre != null && (
+        <div>
+          <label style={etiqueta}>Añadir comentario</label>
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Se rompió un billete, propina…" maxLength={120} style={inputOscuro} />
+        </div>
+
+        <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+          Cuenta primero el dinero y mira después lo que debería haber: si lo haces
+          al revés, cuadra siempre y no sirve de nada.
+        </div>
+      </div>
+    )
+
+    // Derecha: el teclado.
+    const panel = (
+      <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+        <Pestanas contando={contando} setContando={setContando} />
+        <Display valor={importeC} etiqueta="Dinero contado" />
+        {contando
+          ? <ContadorDenominaciones onTotal={setImporteC} />
+          : <Teclado onCambio={setImporteC} valor={importeC} />}
+        <button onClick={abrirCajon} style={{ ...btnSecundario, height: 46 }}>
+          <Inbox size={16} style={{ marginRight: 6 }} /> Abrir cajón
+        </button>
+        <button onClick={() => setConfirmando(true)} disabled={ocupado || !tecleado}
+          style={{ ...btnAccion, height: 54, fontSize: 17, opacity: (ocupado || !tecleado) ? 0.4 : 1 }}>
+          <Lock size={17} style={{ marginRight: 8 }} />
+          {ocupado ? 'Cerrando…' : 'Finalizar'}
+        </button>
+        <button onClick={() => { setVista('resumen'); limpiar() }}
+          style={{ ...btnSecundario, height: 44 }}>Volver</button>
+      </div>
+    )
+
+    return (
+      <>
+        {esMonitor
+          ? <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 20 }}>{resumen}{panel}</div>
+          : <div style={{ display: 'grid', gap: 14 }}>{resumen}{panel}</div>}
+
+        {/* Antes de guardar, lo que se va a declarar. Un cierre no se deshace:
+            se corrige con otro cierre, y el descuadre ya queda escrito. */}
+        {confirmando && (
           <div style={{
-            padding: 14, borderRadius: 12, textAlign: 'center',
-            background: descuadre === 0 ? 'rgba(143,196,107,0.14)' : 'rgba(255,122,107,0.12)',
-          }}>
-            <div style={{ fontSize: 12, color: T.muted }}>Debería haber {eur(esperado)}</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: descuadre === 0 ? T.ok : T.danger, marginTop: 4 }}>
-              {descuadre === 0 ? 'Cuadra' : `${descuadre > 0 ? 'Sobran' : 'Faltan'} ${eur(Math.abs(descuadre))}`}
+            position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }} onClick={() => setConfirmando(false)}>
+            <div onClick={(e) => e.stopPropagation()} style={{
+              background: T.surface, borderRadius: 16, padding: 22, maxWidth: 420, width: '100%',
+              border: `1px solid ${T.border}`, textAlign: 'center', display: 'grid', gap: 14,
+            }}>
+              <strong style={{ fontSize: 16, color: T.text }}>
+                La caja se cerrará con estas cantidades
+              </strong>
+              <div style={{ fontSize: 15, color: T.text }}>
+                Efectivo contado: <strong>{eur(importeC)}</strong>
+              </div>
+              <div style={{ fontSize: 13, color: descuadre === 0 ? T.ok : T.danger }}>
+                {descuadre === 0
+                  ? 'Cuadra con lo que debería haber.'
+                  : `${descuadre > 0 ? 'Sobran' : 'Faltan'} ${eur(Math.abs(descuadre))} respecto a los ${eur(esperado)} que debería haber.`}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setConfirmando(false)} style={{ ...btnSecundario, flex: 1, height: 48 }}>
+                  Cancelar
+                </button>
+                <button onClick={cerrar} disabled={ocupado}
+                  style={{ ...btnAccion, flex: 1, height: 48, opacity: ocupado ? 0.5 : 1 }}>
+                  {ocupado ? 'Cerrando…' : 'Finalizar'}
+                </button>
+              </div>
             </div>
           </div>
         )}
-
-        <div>
-          <label style={etiqueta}>Nota (opcional)</label>
-          <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
-            placeholder="Se rompió un billete, propina..." maxLength={120} style={inputOscuro} />
-        </div>
-
-        <button onClick={cerrar} disabled={ocupado || importeC == null}
-          style={{ ...btnAccion, height: 52, fontSize: 16, opacity: (ocupado || importeC == null) ? 0.4 : 1 }}>
-          <Lock size={17} style={{ marginRight: 8 }} />
-          {ocupado ? 'Cerrando…' : 'Cerrar caja'}
-        </button>
-        <button onClick={() => { setVista('resumen'); setImporte(''); setMotivo('') }}
-          style={{ ...btnSecundario, height: 44 }}>Volver</button>
-      </div>
+      </>
     )
   }
 
@@ -326,7 +469,7 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ fontSize: 12, color: T.muted }}>
         Abierta {new Date(estado.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-        {' · '}{estado.tickets} ticket{estado.tickets === 1 ? '' : 's'}
+        {' · '}{estado.pedidos ?? estado.tickets} pedido{(estado.pedidos ?? estado.tickets) === 1 ? '' : 's'} cobrado{(estado.pedidos ?? estado.tickets) === 1 ? '' : 's'}
       </div>
 
       <div style={{ background: T.surface2, borderRadius: 12, padding: 14, display: 'grid', gap: 8 }}>
@@ -370,10 +513,10 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
       </button>
 
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => setVista('entrada')} style={{ ...btnSecundario, flex: 1, height: 46 }}>
+        <button onClick={() => { limpiar(); setVista('entrada') }} style={{ ...btnSecundario, flex: 1, height: 46 }}>
           <ArrowDownLeft size={16} style={{ marginRight: 6 }} /> Entrada
         </button>
-        <button onClick={() => setVista('salida')} style={{ ...btnSecundario, flex: 1, height: 46 }}>
+        <button onClick={() => { limpiar(); setVista('salida') }} style={{ ...btnSecundario, flex: 1, height: 46 }}>
           <ArrowUpRight size={16} style={{ marginRight: 6 }} /> Salida
         </button>
       </div>
@@ -382,12 +525,82 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
         Cierres anteriores
       </button>
 
-      <button onClick={() => setVista('cierre')} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
+      <button onClick={() => { limpiar(); setVista('cierre') }} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
         <Lock size={17} style={{ marginRight: 8 }} /> Cerrar caja
       </button>
       {onCerrarModal && (
         <button onClick={onCerrarModal} style={{ ...btnSecundario, height: 44 }}>Seguir vendiendo</button>
       )}
+    </div>
+  )
+}
+
+// ── Piezas ───────────────────────────────────────────────────────────────────
+
+function fechaHora(iso) {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString('es-ES', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    })
+  } catch { return '—' }
+}
+
+// El importe, en grande. Es el número que se mira mientras se teclea.
+function Display({ valor, etiqueta: e }) {
+  return (
+    <div style={{
+      background: T.surface2, borderRadius: 12, padding: '14px 16px',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10,
+    }}>
+      <span style={{ fontSize: 12, color: T.muted }}>{e}</span>
+      <strong style={{ fontSize: 30, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
+        {eur(valor)}
+      </strong>
+    </div>
+  )
+}
+
+function Pestanas({ contando, setContando }) {
+  const base = { flex: 1, height: 44, borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, border: 'none' }
+  return (
+    <div style={{ display: 'flex', gap: 6, background: T.surface2, padding: 4, borderRadius: 12 }}>
+      <button onClick={() => setContando(false)} style={{
+        ...base, background: contando ? 'transparent' : T.accent,
+        color: contando ? T.muted : '#fff', fontWeight: contando ? 500 : 700,
+      }}>Total</button>
+      <button onClick={() => setContando(true)} style={{
+        ...base, background: contando ? T.accent : 'transparent',
+        color: contando ? '#fff' : T.muted, fontWeight: contando ? 700 : 500,
+      }}>
+        <Calculator size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+        Billetes y monedas
+      </button>
+    </div>
+  )
+}
+
+// Teclado de caja registradora: los dígitos entran por la DERECHA, en céntimos.
+// Teclear 1-0-0-0-0 son 100,00 €. Así no hay comas, ni puntos, ni un parser que
+// tenga que adivinar si "1.250" son mil doscientos cincuenta o uno con veinticinco.
+function Teclado({ valor, onCambio }) {
+  const pulsar = (d) => onCambio(Math.min(valor * 10 + d, 10000000))   // tope 100.000 €
+  const borrar = () => onCambio(Math.floor(valor / 10))
+  const limpiar = () => onCambio(0)
+
+  const tecla = {
+    height: 62, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+    fontSize: 22, fontWeight: 700, color: T.text,
+    border: `1px solid ${T.border}`, background: T.surface,
+  }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+      {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((d) => (
+        <button key={d} onClick={() => pulsar(d)} style={tecla}>{d}</button>
+      ))}
+      <button onClick={borrar} style={{ ...tecla, fontSize: 18, color: T.muted }} aria-label="Borrar un dígito">←</button>
+      <button onClick={() => pulsar(0)} style={tecla}>0</button>
+      <button onClick={limpiar} style={{ ...tecla, fontSize: 16, color: T.muted }} aria-label="Borrar todo">C</button>
     </div>
   )
 }
@@ -404,13 +617,23 @@ function Fila({ etiqueta: e, valor, fuerte }) {
   )
 }
 
+function FilaTres({ etiqueta: e, teorico, real }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline' }}>
+      <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.text }}>{e}</span>
+      <span style={{ width: 90, textAlign: 'right', fontSize: 14, color: T.muted, fontVariantNumeric: 'tabular-nums' }}>{teorico}</span>
+      <span style={{ width: 90, textAlign: 'right', fontSize: 14, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>{real}</span>
+    </div>
+  )
+}
+
 const etiqueta = {
   display: 'block', fontSize: 12, fontWeight: 600, color: T.muted, marginBottom: 6,
 }
 
 // ── Arqueo por denominaciones ────────────────────────────────────────────────
 // Contar los billetes y monedas AQUÍ, no en una calculadora aparte: la suma
-// rellena el campo de contado sola y no hay número que transcribir mal.
+// rellena el importe sola y no hay número que transcribir mal.
 const DENOMS = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1]
 
 function ContadorDenominaciones({ onTotal }) {

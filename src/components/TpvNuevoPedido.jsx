@@ -60,6 +60,8 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
   const [catActiva, setCatActiva] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [carrito, setCarrito] = useState([])
+  // Que linea tiene el campo de nota abierto (su clave), o null.
+  const [notaAbierta, setNotaAbierta] = useState(null)
 
   const [telefono, setTelefono] = useState('')
   const [nombre, setNombre] = useState('')
@@ -248,6 +250,9 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
 
   const quitar = (k) => setCarrito((prev) => prev.filter((l) => clave(l) !== k))
 
+  const ponerNota = (k, texto) => setCarrito((prev) => prev
+    .map((l) => (clave(l) === k ? { ...l, notas: texto.slice(0, 200) || null } : l)))
+
   const subtotal = carrito.reduce((s, l) => s + l.precio_c * l.cantidad, 0)
   const unidades = carrito.reduce((s, l) => s + l.cantidad, 0)
 
@@ -399,7 +404,9 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             direccion: esReparto ? direccion : null,
             lat: esReparto ? coords?.lat : null, lng: esReparto ? coords?.lng : null,
           },
-          lineas: carrito.map((l) => ({ producto_id: l.producto_id, cantidad: l.cantidad })),
+          // La nota de cada plato viaja con su linea: la edge ya la guardaba,
+          // pero esta pantalla nunca se la mandaba.
+          lineas: carrito.map((l) => ({ producto_id: l.producto_id, cantidad: l.cantidad, notas: l.notas || null })),
         }),
       })
       const body = await resp.json().catch(() => ({}))
@@ -600,22 +607,38 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             Pica productos de la carta y aparecerán aquí.
           </div>
         ) : carrito.map((l) => (
-          <div key={clave(l)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 14 }} title={l.nombre}>
-              {l.nombre}{l.tamano ? ` (${l.tamano})` : ''}
-              {l.notas && <span style={{ display: 'block', fontSize: 11, color: T.muted }}>! {l.notas}</span>}
-            </span>
-            <button onClick={() => cambiar(clave(l), -1)} style={btnMini}
-              aria-label={`Quitar uno de ${l.nombre}`}><Minus size={13} /></button>
-            <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{l.cantidad}</span>
-            <button onClick={() => cambiar(clave(l), +1)} style={btnMini}
-              aria-label={`Añadir uno de ${l.nombre}`}><Plus size={13} /></button>
-            <span style={{ minWidth: 58, textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
-              {eur(l.precio_c * l.cantidad)}
-            </span>
-            {/* Con doce líneas, bajar una a cero a base de toques es absurdo. */}
-            <button onClick={() => quitar(clave(l))} style={{ ...btnMini, borderColor: 'transparent' }}
-              aria-label={`Quitar ${l.nombre} de la comanda`}><Trash2 size={13} /></button>
+          <div key={clave(l)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 14 }} title={l.nombre}>
+                {l.nombre}{l.tamano ? ` (${l.tamano})` : ''}
+              </span>
+              {/* LA NOTA DE ESTE PLATO ("sin cebolla"). Al teléfono te lo dicen
+                  mientras cantan el pedido, plato por plato, y hasta hoy solo
+                  había una nota para el pedido entero: la cocina no sabía a cuál
+                  de las tres hamburguesas le quitaba la cebolla. */}
+              <button onClick={() => setNotaAbierta({ k: clave(l), nombre: l.nombre, texto: l.notas || '' })}
+                style={{ ...btnMini, borderColor: l.notas ? T.accent : T.border, color: l.notas ? T.accent : T.text }}
+                title={l.notas || 'Poner una nota a este producto'}
+                aria-label={`Nota para ${l.nombre}`}><StickyNote size={13} /></button>
+              <button onClick={() => cambiar(clave(l), -1)} style={btnMini}
+                aria-label={`Quitar uno de ${l.nombre}`}><Minus size={13} /></button>
+              <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{l.cantidad}</span>
+              <button onClick={() => cambiar(clave(l), +1)} style={btnMini}
+                aria-label={`Añadir uno de ${l.nombre}`}><Plus size={13} /></button>
+              <span style={{ minWidth: 58, textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
+                {eur(l.precio_c * l.cantidad)}
+              </span>
+              {/* Con doce líneas, bajar una a cero a base de toques es absurdo. */}
+              <button onClick={() => quitar(clave(l))} style={{ ...btnMini, borderColor: 'transparent' }}
+                aria-label={`Quitar ${l.nombre} de la comanda`}><Trash2 size={13} /></button>
+            </div>
+
+            {l.notas && (
+              <div onClick={() => setNotaAbierta({ k: clave(l), nombre: l.nombre, texto: l.notas })}
+                style={{ fontSize: 12, color: T.accent, cursor: 'pointer', paddingBottom: 6, paddingLeft: 2 }}>
+                ! {l.notas}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -719,6 +742,21 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
 
   // ── Montaje ───────────────────────────────────────────────────────────────
 
+  // 🔴 EL MODAL DE LA NOTA VA FUERA DEL `map` DEL CARRITO, y no es un capricho.
+  // La primera versión era un `<input>` en línea debajo de cada plato: al teclear
+  // se re-renderizaba la lista entera, el input se remontaba, perdía el foco y la
+  // nota se quedaba vacía (comprobado — el pedido de prueba llegó con `notas`
+  // NULL). Aquí el campo vive en su propio componente, con su estado, y solo
+  // toca el carrito al guardar.
+  const modalNota = notaAbierta && (
+    <ModalNota
+      nombre={notaAbierta.nombre}
+      inicial={notaAbierta.texto}
+      onCerrar={() => setNotaAbierta(null)}
+      onGuardar={(txt) => { ponerNota(notaAbierta.k, txt); setNotaAbierta(null) }}
+    />
+  )
+
   // Teléfono y tablet: apilado, exactamente el mismo orden de siempre.
   if (!esMonitor) {
     return (
@@ -726,6 +764,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
         {bloqueCliente}
         {bloqueCarta}
         {bloqueComanda}
+        {modalNota}
       </div>
     )
   }
@@ -738,6 +777,50 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       <Columna titulo="Quién pide">{bloqueCliente}</Columna>
       <Columna titulo="Qué pide">{bloqueCarta}</Columna>
       <Columna titulo="La comanda" sinBorde>{bloqueComanda}</Columna>
+      {modalNota}
+    </div>
+  )
+}
+
+// La nota de UN plato ("sin cebolla"). Estado propio: mientras se escribe no se
+// toca el carrito, así que la lista no se re-renderiza y el campo no pierde el
+// foco a la primera letra.
+function ModalNota({ nombre, inicial, onCerrar, onGuardar }) {
+  const [txt, setTxt] = useState(inicial || '')
+  return (
+    <div onClick={onCerrar} style={{
+      position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: T.surface, borderRadius: 16, padding: 20, width: '100%', maxWidth: 420,
+        border: `1px solid ${T.border}`, display: 'grid', gap: 12,
+      }}>
+        <div>
+          <strong style={{ fontSize: 15, color: T.text }}>Nota para cocina</strong>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 2 }}>{nombre}</div>
+        </div>
+        <input value={txt} autoFocus maxLength={200}
+          onChange={(e) => setTxt(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') onGuardar(txt.trim()) }}
+          placeholder="Sin cebolla, poco hecha, sin sal…"
+          style={{ ...inputOscuro, height: 52, fontSize: 16 }} />
+        <div style={{ fontSize: 12, color: T.muted }}>
+          Sale en la comanda, debajo del plato y del mismo tamaño.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {inicial ? (
+            <button onClick={() => onGuardar('')} style={{ ...btnSecundario, flex: 1, height: 48 }}>
+              Quitar nota
+            </button>
+          ) : (
+            <button onClick={onCerrar} style={{ ...btnSecundario, flex: 1, height: 48 }}>Cancelar</button>
+          )}
+          <button onClick={() => onGuardar(txt.trim())} style={{ ...btnAccion, flex: 1, height: 48 }}>
+            Guardar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

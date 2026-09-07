@@ -792,6 +792,16 @@ export function generarInformeDiaTpv(resumen, restaurante) {
   return new Uint8Array(bytes)
 }
 
+// Como se llama cada puerta en el papel. Mismo criterio que `lib/jornada.js`,
+// pero aqui suelto: escpos no importa nada del resto de la app a proposito, para
+// poder generar bytes sin arrastrar medio panel.
+function nombreVia(clave) {
+  return ({
+    tpv: 'Mostrador', telefonico: 'Telefono', pido: 'App Pidoo',
+    tienda_publica: 'Web del local', mesa: 'Mesa (QR)',
+  })[clave] || clave
+}
+
 /**
  * INFORME DE CAJA. Dos tipos, y la diferencia importa:
  *
@@ -817,21 +827,42 @@ export function generarReporteCaja(d, restaurante, tipo = 'X') {
   if (d.abierta_at) bytes.push(...line('Caja abierta: ' + formatDate(d.abierta_at)))
   bytes.push(...separator('='), ...left())
 
+  // ── VENTAS ────────────────────────────────────────────────────────────────
+  // El orden es el del papel que Marlon ya lee en su otro TPV: bruto, lo que se
+  // descuenta, lo que queda de verdad, y las propinas aparte porque no son venta
+  // del bar.
+  const total = Number(d.venta_total != null
+    ? d.venta_total
+    : Number(d.ventas_efectivo || 0) + Number(d.ventas_datafono || 0) + Number(d.ventas_online || 0))
+  const descuentos = Number(d.descuentos || 0)
+  const propinas = Number(d.propinas || 0)
+
   bytes.push(...boldOn(), ...line('VENTAS DEL TURNO'), ...boldOff())
   bytes.push(...twoColumns('Pedidos cobrados', String(d.tickets || 0)))
+  bytes.push(...twoColumns('Ventas brutas', eur(total + descuentos)))
+  bytes.push(...twoColumns('(-) Descuentos', '-' + eur(descuentos)))
+  bytes.push(...boldOn())
+  bytes.push(...twoColumns('Ventas netas', eur(total)))
+  bytes.push(...boldOff())
+  if (propinas > 0) bytes.push(...twoColumns('(+) Propinas', eur(propinas)))
+
+  // POR DONDE HA ENTRADO. Solo lo sabe el informe X (lo trae `tpv_estado_caja`);
+  // en un Z reimpreso de hace tres dias no esta guardado, y entonces no se pinta.
+  if (d.por_via && Object.keys(d.por_via).length) {
+    bytes.push(...separator('-'))
+    bytes.push(...boldOn(), ...line('POR DONDE HA ENTRADO'), ...boldOff())
+    for (const [clave, v] of Object.entries(d.por_via)) {
+      bytes.push(...twoColumns(nombreVia(clave) + ' (' + v.pedidos + ')', eur(v.total)))
+    }
+  }
+
+  bytes.push(...separator('-'))
+  bytes.push(...boldOn(), ...line('COMO SE HA COBRADO'), ...boldOff())
   bytes.push(...twoColumns('Efectivo (al cajon)', eur(d.ventas_efectivo)))
   bytes.push(...twoColumns('Datafono (al banco)', eur(d.ventas_datafono)))
   // La tarjeta de la app no existia en este papel, y es la mitad de lo que
   // descuadraba: es venta, pero ni pasa por el cajon ni por el datafono.
-  if (Number(d.ventas_online || 0) > 0) {
-    bytes.push(...twoColumns('Tarjeta app (Stripe)', eur(d.ventas_online)))
-  }
-  bytes.push(...boldOn())
-  bytes.push(...twoColumns('Total vendido', eur(
-    d.venta_total != null
-      ? d.venta_total
-      : Number(d.ventas_efectivo || 0) + Number(d.ventas_datafono || 0) + Number(d.ventas_online || 0))))
-  bytes.push(...boldOff())
+  bytes.push(...twoColumns('Tarjeta app (Stripe)', eur(d.ventas_online)))
 
   if (d.base != null) {
     bytes.push(...separator('-'))
@@ -840,9 +871,9 @@ export function generarReporteCaja(d, restaurante, tipo = 'X') {
   }
 
   bytes.push(...separator('-'))
-  bytes.push(...boldOn(), ...line('CAJON'), ...boldOff())
-  bytes.push(...twoColumns('Fondo inicial', eur(d.fondo_inicial)))
-  bytes.push(...twoColumns('+ Ventas en efectivo', eur(d.ventas_efectivo)))
+  bytes.push(...boldOn(), ...line('FLUJO DE CAJA'), ...boldOff())
+  bytes.push(...twoColumns('Fondo de apertura', eur(d.fondo_inicial)))
+  bytes.push(...twoColumns('+ Cobrado en mano', eur(d.ventas_efectivo)))
   bytes.push(...twoColumns('+ Entradas', eur(d.entradas)))
   bytes.push(...twoColumns('- Salidas', eur(d.salidas)))
   bytes.push(...separator('='))
