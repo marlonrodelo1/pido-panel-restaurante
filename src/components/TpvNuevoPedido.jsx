@@ -119,14 +119,15 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     let vivo = true
     Promise.all([
       supabase.from('productos')
-        .select('id, nombre, precio, categoria_id, disponible')
+        .select('id, nombre, precio, categoria_id, disponible, agotado_por_stock')
         .eq('establecimiento_id', restaurante.id).order('orden'),
       supabase.from('categorias')
         .select('id, nombre, orden')
         .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
     ]).then(([prods, cats]) => {
       if (!vivo) return
-      setProductos((prods.data || []).filter((p) => p.disponible !== false))
+      // Igual que el mostrador: lo agotado por stock se sigue vendiendo en el TPV.
+      setProductos((prods.data || []).filter((p) => p.disponible !== false || p.agotado_por_stock))
       setCategorias(cats.data || [])
     })
     return () => { vivo = false }

@@ -360,7 +360,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     const [cats, prods, gru] = await Promise.all([
       supabase.from('categorias').select('id, nombre, orden, impresora_destino')
         .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
-      supabase.from('productos').select('id, nombre, precio, precio_local, categoria_id, disponible, orden, imagen_url')
+      supabase.from('productos').select('id, nombre, precio, precio_local, categoria_id, disponible, agotado_por_stock, orden, imagen_url')
         .eq('establecimiento_id', restaurante.id).order('orden'),
       supabase.from('grupos_extras').select('id, nombre, tipo, max_selecciones, extras_opciones(id, nombre, precio, orden)')
         .eq('establecimiento_id', restaurante.id),
@@ -376,7 +376,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       setCargando(false)
       return
     }
-    const listaProd = (prods.data || []).filter((p) => p.disponible !== false)
+    // La barra nunca se frena: lo que apagó el ALMACÉN (stock a cero o negativo)
+    // se sigue vendiendo aquí. Solo se esconde lo que apagó el dueño a mano.
+    const listaProd = (prods.data || []).filter((p) => p.disponible !== false || p.agotado_por_stock)
     let tam = [], vin = []
     if (listaProd.length) {
       const ids = listaProd.map((p) => p.id)
