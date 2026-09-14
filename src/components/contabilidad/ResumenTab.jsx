@@ -21,6 +21,9 @@ import { eur, resumenNegocio, puntoEquilibrio } from '../../lib/stock'
 function fmt(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+function fechaLarga(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })
+}
 // Nada de toISOString(): recorta en UTC y a medianoche canaria caería en el día
 // anterior. El lunes abre la semana, como el corte de Pidoo.
 function rango(periodo) {
@@ -90,6 +93,13 @@ export default function ResumenTab({ estId, onIrA }) {
         <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Echando cuentas…</div>
       ) : (
         <>
+          {/* La contabilidad puede empezar un día concreto (`stock_config.contabilidad_desde`):
+              lo anterior no suma en ningún periodo. Se dice arriba para que nadie lo busque. */}
+          {datos?.contabilidad_desde && (
+            <div style={{ ...ds.muted, fontSize: type.xs, marginBottom: 12 }}>
+              Contando desde el {fechaLarga(datos.contabilidad_desde)}: lo anterior no suma aquí.
+            </div>
+          )}
           <MetaMes estId={estId} />
 
           <div className="ds-cards" style={{ display: 'grid', gap: 12, marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
@@ -234,6 +244,10 @@ function MetaMes({ estId }) {
   if (!d) return null
 
   const fijos = Number(d.fijos_mes)
+  // Si la contabilidad empezó a mitad de mes, la meta es la parte proporcional de los fijos.
+  const fijosCompletos = Number(d.fijos_mes_completo ?? d.fijos_mes)
+  const desdeMitad = !!d.desde && Number(String(d.desde).slice(8, 10)) > 1
+  const desdeTxt = d.desde ? fechaLarga(d.desde) : ''
   const vendido = Number(d.vendido_mes)
   const neto = Number(d.neto_mes)
   const costeVendido = Number(d.coste_vendido_mes || 0)
@@ -270,7 +284,14 @@ function MetaMes({ estId }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Target size={16} color={colors.primary} />
           <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text }}>
-            La meta del mes: {eur(fijos)} de ganancia (tus fijos)
+            {desdeMitad
+              ? `La meta desde el ${desdeTxt}: ${eur(fijos)} de ganancia`
+              : `La meta del mes: ${eur(fijos)} de ganancia (tus fijos)`}
+            {desdeMitad && fijosCompletos > fijos && (
+              <span style={{ ...ds.muted, fontSize: type.xs, fontWeight: 500, marginLeft: 6 }}>
+                (la parte de los días que quedan; el mes entero son {eur(fijosCompletos)})
+              </span>
+            )}
           </div>
         </div>
         <div style={{ fontSize: type.sm, fontWeight: 800, color }}>
@@ -285,7 +306,7 @@ function MetaMes({ estId }) {
       </div>
 
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: type.sm, color: colors.textDim }}>
-        <span>Vendido este mes: <strong style={{ color: colors.text }}>{eur(vendido)}</strong> brutos ({d.pedidos_mes} pedidos)</span>
+        <span>{desdeMitad ? `Vendido desde el ${desdeTxt}` : 'Vendido este mes'}: <strong style={{ color: colors.text }}>{eur(vendido)}</strong> brutos ({d.pedidos_mes} pedidos)</span>
         <span>→ ganancia: <strong style={{ color: colors.text }}>{eur(ganancia)}</strong> <span style={{ color: colors.textMute }}>({gananciaEtiqueta})</span></span>
         {!cubierta && vendido > 0 && ganancia > 0 && (
           <span style={{ color: colors.textMute }}>
