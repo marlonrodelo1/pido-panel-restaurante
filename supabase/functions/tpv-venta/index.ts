@@ -1,4 +1,5 @@
-// tpv-venta v8 (3-sep-2026) — v8: los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
+// tpv-venta v9 (14-sep-2026) — v9: PARA LLEVAR. `para_llevar: true` se guarda en el pedido AL INSERTARLO (antes que las lineas: el almacen lo lee en ese momento) y la venta gasta empaques como un reparto o una recogida. Precio de barra, 0 % y ticket fiscal, igual.
+// v8 (3-sep-2026) — los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
 // v7 (3-sep-2026) — el RESTAURANTE cobra una venta en su MOSTRADOR.
 //
 // v7: (1) el tamano se casa por `tamano_id` cuando la tablet lo manda (el
@@ -38,7 +39,7 @@
 //
 // Body: { establecimiento_id, lineas: [{producto_id?, nombre?, cantidad, tamano?,
 //         precio_unitario?, notas?}], metodo_pago: 'efectivo'|'datafono',
-//         entregado_efectivo?, idempotency_key }
+//         entregado_efectivo?, idempotency_key, para_llevar? }
 // verify_jwt=true. Candado adicional en codigo: dueno del establecimiento, alguien
 // de su equipo (`establecimiento_usuarios`), admin/superadmin, o service role.
 
@@ -109,6 +110,11 @@ Deno.serve(async (req) => {
     entregado_efectivo = n
   }
 
+  // v9: PARA LLEVAR. Solo `true` de verdad cuenta: sin el campo (tablets que aun
+  // no lo mandan, ventas encoladas sin internet de antes) la venta es para comer
+  // aqui, como hasta hoy.
+  const para_llevar = body?.para_llevar === true
+
   // ── La venta ya grabada con esta clave, con la MISMA forma que una nueva ──
   //
   // `esperas` cubre la carrera del doble envio simultaneo: el pedido del otro
@@ -118,7 +124,7 @@ Deno.serve(async (req) => {
     for (let i = 0; i <= esperas; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 700))
       const { data } = await sb.from('tpv_tickets')
-        .select('*, pedidos(id, codigo, subtotal, total, metodo_pago, created_at)')
+        .select('*, pedidos(id, codigo, subtotal, total, metodo_pago, created_at, para_llevar)')
         .eq('idempotency_key', idempotency_key).maybeSingle()
       if (data) { yaEmitido = data; break }
     }
@@ -353,6 +359,10 @@ Deno.serve(async (req) => {
     canal: 'pido',
     origen_pedido: 'tpv',
     modo_entrega: 'recogida',
+    // v9: va EN EL INSERT, no despues. El almacen descuenta al insertar las
+    // lineas y en ese momento lee el pedido: un UPDATE posterior ya no gastaria
+    // la caja ni el papel de aluminio.
+    para_llevar,
     estado: 'entregado',        // se cobra y se entrega en el acto
     metodo_pago,
     subtotal: 0,                // lo recalculan los triggers al insertar las lineas
@@ -375,7 +385,7 @@ Deno.serve(async (req) => {
       // Su pedido existe pero su ticket aun no: se responde con el pedido, la
       // pantalla ya sabe pintar una venta sin numero de ticket.
       const { data: pedRep } = await sb.from('pedidos')
-        .select('id, codigo, subtotal, total, metodo_pago, created_at')
+        .select('id, codigo, subtotal, total, metodo_pago, created_at, para_llevar')
         .eq('idempotency_key', idempotency_key).maybeSingle()
       if (pedRep) {
         const { data: itemsRep } = await sb.from('pedido_items')
@@ -403,7 +413,7 @@ Deno.serve(async (req) => {
 
   // ── Importes definitivos, ya puestos por el servidor ──
   const { data: pedidoFinal } = await sb.from('pedidos')
-    .select('id, codigo, subtotal, total, metodo_pago, created_at')
+    .select('id, codigo, subtotal, total, metodo_pago, created_at, para_llevar')
     .eq('id', pedido.id).single()
 
   if (entregado_efectivo != null && entregado_efectivo < Number(pedidoFinal?.total || 0)) {

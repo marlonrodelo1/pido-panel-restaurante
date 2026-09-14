@@ -72,7 +72,9 @@ export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, 
     }
     if (!pedidoId) return { pedido: null, items: [], anula }
     const [{ data: pedido }, { data: items }] = await Promise.all([
-      supabase.from('pedidos').select('id, codigo, subtotal, total, metodo_pago, created_at').eq('id', pedidoId).maybeSingle(),
+      // `*` y no la lista de columnas: así trae `para_llevar` (el ticket imprime
+      // «PARA LLEVAR») sin romperse si la columna aún no existiera.
+      supabase.from('pedidos').select('*').eq('id', pedidoId).maybeSingle(),
       supabase.from('pedido_items').select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas').eq('pedido_id', pedidoId),
     ])
     return { pedido, items: items || [], anula }

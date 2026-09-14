@@ -88,6 +88,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const [catSel, setCatSel] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [carrito, setCarrito] = useState([])
+  // PARA LLEVAR (14 sep 2026): la venta del mostrador se sirve para llevar y
+  // gasta empaques del almacén (caja, papel, envase) como un reparto. Vive con
+  // la venta: se guarda con ella, se aparca con ella y vuelve a «para comer
+  // aquí» al cobrarla, vaciarla, aparcarla o quitarle la última línea.
+  const [paraLlevar, setParaLlevar] = useState(false)
   const [configurando, setConfigurando] = useState(null)
 
   const [cobrando, setCobrando] = useState(false)
@@ -258,6 +263,21 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // con él: cobrar un carrito distinto es otra venta.
   const idemRef = useRef(null)
   const firmaRef = useRef(null)
+  // Venta recién leída del respaldo y aún sin pintar. 🔴 Sin esta marca, el
+  // efecto de guardado corría primero con el carrito todavía vacío, veía la
+  // firma restaurada, la daba por venta cerrada y borraba clave y respaldo: la
+  // venta volvía con una clave NUEVA, y un cobro que sí había entrado antes del
+  // cuelgue se podía cobrar dos veces al reintentar (visto en revisión, 14 sep).
+  const restaurandoRef = useRef(false)
+  // 🔴 Con un cobro EN VUELO la venta no se toca. Con tarjeta no hay modal que
+  // tape el carrito: un «+» durante una red colgada cambiaba la firma, el
+  // reintento salía con OTRA clave y, si el primer intento sí había entrado, se
+  // cobraba dos veces (visto en revisión, 14 sep; venía de antes).
+  const bloqueadaPorCobro = () => {
+    if (!enVueloRef.current) return false
+    toast('Espera a que termine el cobro para cambiar la venta', 'error')
+    return true
+  }
   const enVueloRef = useRef(false)
   const comandandoRef = useRef(false)   // candado de "Comandar" (doble toque)
   // …y su cara visible: sin esto, mientras la impresora tardaba el botón se
@@ -283,6 +303,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       if (Array.isArray(v?.lineas) && v.lineas.length) {
         idemRef.current = v.clave || null
         firmaRef.current = v.firma || null
+        restaurandoRef.current = true
+        setParaLlevar(!!v.para_llevar)
         setCarrito(v.lineas)
       }
     } catch { /* respaldo roto: se empieza de cero */ }
@@ -293,6 +315,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (!carrito.length) {
       // Venta cerrada o vaciada. El pase inicial (sin firma todavía) no toca
       // nada: si borrase aquí, pisaría lo que la hidratación acaba de leer.
+      // Tampoco mientras la venta restaurada está de camino (ver `restaurandoRef`).
+      if (restaurandoRef.current) return
       if (firmaRef.current != null) {
         idemRef.current = null
         firmaRef.current = null
@@ -303,15 +327,22 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     }
     // La nota entra en la firma: cambiarla convierte la venta en OTRA venta a
     // efectos de idempotencia (las líneas libres llevan su importe en la clave).
+    restaurandoRef.current = false
+    // «Para llevar» NO entra en la firma, a propósito: si un cobro se cuelga y
+    // luego se enciende, la clave tiene que seguir siendo la misma. Si el primer
+    // intento sí entró, el servidor devuelve esa venta en vez de cobrar otra;
+    // lo peor que pasa es que se quede sin gastar el empaque, nunca un doble cobro.
     const firma = JSON.stringify(carrito.map((l) => [l.clave, l.cantidad, l.notas || '']))
     if (!idemRef.current || firmaRef.current !== firma) {
       idemRef.current = uuidv4()
       firmaRef.current = firma
     }
     try {
-      localStorage.setItem(claveVenta, JSON.stringify({ clave: idemRef.current, firma, lineas: carrito }))
+      localStorage.setItem(claveVenta, JSON.stringify({
+        clave: idemRef.current, firma, lineas: carrito, para_llevar: paraLlevar,
+      }))
     } catch { /* storage lleno: la venta sigue, solo pierde el respaldo */ }
-  }, [carrito, claveVenta])
+  }, [carrito, claveVenta, paraLlevar])
 
   // La carta, en una función REUTILIZABLE: se llama al entrar, desde el menú
   // ("Recargar la carta") y al volver de la capa de Carta. Una tablet de
@@ -399,6 +430,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   }
 
   function aparcarVenta(nombre) {
+    if (bloqueadaPorCobro()) return
     if (!carrito.length) return
     if (aparcadas.length >= 12) { toast('Ya hay 12 ventas aparcadas: recupera o borra alguna', 'error'); return }
     const etiqueta = (nombre || '').trim()
@@ -406,14 +438,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     guardarAparcadas([...aparcadas, {
       id: uuidv4(), nombre: etiqueta, lineas: carrito,
       clave: idemRef.current, firma: firmaRef.current, ronda: rondaRef.current,
-      creada: Date.now(),
+      para_llevar: paraLlevar, creada: Date.now(),
     }])
     setCarrito([])   // el efecto del carrito limpia refs y el respaldo activo
+    setParaLlevar(false)
     setAparcandoNombre(null)
     toast(`Venta aparcada: ${etiqueta}`, 'success')
   }
 
   function recuperarVenta(id) {
+    if (bloqueadaPorCobro()) return
     const ficha = aparcadas.find((a) => a.id === id)
     if (!ficha) return
     let lista = aparcadas.filter((a) => a.id !== id)
@@ -424,7 +458,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         id: uuidv4(),
         nombre: `Sin nombre ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`,
         lineas: carrito, clave: idemRef.current, firma: firmaRef.current, ronda: rondaRef.current,
-        creada: Date.now(),
+        para_llevar: paraLlevar, creada: Date.now(),
       }]
     }
     guardarAparcadas(lista)
@@ -433,6 +467,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     idemRef.current = ficha.clave || null
     firmaRef.current = ficha.firma || null
     rondaRef.current = ficha.ronda || 0
+    setParaLlevar(!!ficha.para_llevar)
     setCarrito(Array.isArray(ficha.lineas) ? ficha.lineas : [])
     setModalAparcadas(false)
     toast(`Recuperada: ${ficha.nombre}`, 'success')
@@ -556,6 +591,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const totalUnidades = carrito.reduce((s, l) => s + l.cantidad, 0)
 
   function anadir(producto, tam = null, extrasElegidos = []) {
+    if (bloqueadaPorCobro()) return
     // La clave lleva la firma de tamaño y extras: dos cafés iguales se agrupan, pero
     // uno con bacon y otro sin él son dos líneas distintas.
     const firma = [producto.id, tam?.nombre || '', ...extrasElegidos.map((o) => o.id).sort()].join('|')
@@ -590,6 +626,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // donde escribirla. Cambiar la nota devuelve la línea a "sin comandar":
   // cocina tiene que enterarse.
   function guardarNotaLinea(clave, texto) {
+    if (bloqueadaPorCobro()) return
     const t = (texto || '').trim().slice(0, 200) || null
     setCarrito((prev) => prev.map((l) => (l.clave === clave
       ? { ...l, notas: t, comandada: t === l.notas ? l.comandada : false }
@@ -602,6 +639,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // el mostrador nunca la ofreció. Aquí SÍ manda el importe tecleado (0-500 €),
   // que es exactamente lo que la edge valida.
   function anadirLibre(nombre, importeTexto) {
+    if (bloqueadaPorCobro()) return
     const limpio = String(importeTexto || '').replace(/[^\d.,]/g, '')
     const num = parseFloat(limpio.includes(',') ? limpio.replace(/\./g, '').replace(',', '.') : limpio)
     if (!Number.isFinite(num) || num <= 0 || num > 500) {
@@ -633,11 +671,19 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
   // Al añadir unidades a algo que ya se mandó a cocina, la línea vuelve a contar
   // como pendiente: si no, el segundo café de la ronda no llegaría nunca.
-  const cambiarCantidad = (clave, delta) => setCarrito((prev) => prev
-    .map((l) => (l.clave === clave
-      ? { ...l, cantidad: l.cantidad + delta, comandada: delta > 0 ? false : l.comandada }
-      : l))
-    .filter((l) => l.cantidad > 0))
+  const cambiarCantidad = (clave, delta) => {
+    if (bloqueadaPorCobro()) return
+    // Si con este «−» la venta se queda vacía, «Para llevar» se apaga: si no, el
+    // siguiente cliente (que come aquí) saldría cobrado para llevar y gastando
+    // cajas.
+    const queda = carrito.some((l) => l.clave !== clave || l.cantidad + delta > 0)
+    if (!queda) setParaLlevar(false)
+    setCarrito((prev) => prev
+      .map((l) => (l.clave === clave
+        ? { ...l, cantidad: l.cantidad + delta, comandada: delta > 0 ? false : l.comandada }
+        : l))
+      .filter((l) => l.cantidad > 0))
+  }
 
   const sinComandar = carrito.filter((l) => !l.comandada)
 
@@ -661,7 +707,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // (configurado en la nube; las líneas libres, a la de cocina). El helper
       // resuelve también el camino clásico cocina/barra de este aparato.
       const destinoDe = await crearDestinoDe(restaurante.id)
-      const ok = await imprimirComandaTpv(sinComandar, restaurante, { numero: rondaRef.current + 1 }, destinoDe)
+      // «PARA LLEVAR» sale grande al pie de la comanda: cocina lo empaqueta.
+      const ok = await imprimirComandaTpv(sinComandar, restaurante,
+        { numero: rondaRef.current + 1, nota: paraLlevar ? 'PARA LLEVAR' : null }, destinoDe)
       if (!ok) { toast('La impresora no responde: la comanda no ha salido', 'error'); return }
       rondaRef.current += 1
       setCarrito((prev) => prev.map((l) => (claves.has(l.clave) ? { ...l, comandada: true } : l)))
@@ -735,6 +783,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   }
 
   async function vaciar() {
+    if (bloqueadaPorCobro()) return
     // Si parte ya se mandó a cocina, vaciar deja platos hechos que nadie va a
     // cobrar: se pregunta ANTES de borrar. El aviso de antes salía DESPUÉS de
     // haber borrado, cuando ya no servía para nada.
@@ -743,6 +792,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       if (!seguro) return
     }
     setCarrito([])
+    setParaLlevar(false)
   }
 
   // La clave de idempotencia YA vive en `idemRef`, atada a la firma del carrito
@@ -782,12 +832,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       extras: l.extrasTexto ? String(l.extrasTexto).split(', ').filter(Boolean) : [],
       precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null,
     }))
-    imprimirTicketTpv(ticket, { codigo: null }, items, restaurante, {
+    imprimirTicketTpv(ticket, { codigo: null, para_llevar: paraLlevar }, items, restaurante, {
       pieTicket: tpvConfig?.pie_ticket, provisional: true,
       abrirCajonTambien: metodo_pago === 'efectivo' && (tpvConfig?.abrir_cajon ?? true),
     }).catch(() => {})
 
     setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
+    setParaLlevar(false)
     setModalPago(false)
     toast(`Sin conexión: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
   }
@@ -817,6 +868,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         metodo_pago,
         entregado_efectivo: entregado_c != null ? entregado_c / 100 : null,
         idempotency_key: idemRef.current,
+        // Para llevar: el servidor lo guarda al crear el pedido y el almacén
+        // gasta los empaques. La cola sin internet reenvía este mismo cuerpo.
+        para_llevar: paraLlevar,
         // Dos formas de línea, las dos del contrato de tpv-venta: producto de
         // la carta (ids, el precio lo pone el servidor) o línea LIBRE (aquí
         // sí viaja el importe, validado 0-500 en los dos lados).
@@ -846,6 +900,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // A partir de aquí LA VENTA YA ESTÁ COBRADA Y GRABADA.
       setUltimaVenta(body)
       setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
+      setParaLlevar(false)
       setModalPago(false)
       if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
       else toast(`Cobrado ${eur(cents(body.pedido?.total))}${body.repetida ? ' (ya estaba cobrado)' : ''}`, 'success')
@@ -1298,7 +1353,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
             <strong style={{ fontSize: 15, color: T.text }}>Venta en curso</strong>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* `flexWrap`: con «Aparcadas», «Aparcar», «Para llevar», «Libre» y
+                «Vaciar» a la vez, la fila no cabe en la columna estrecha. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {aparcadas.length > 0 && (
                 <button onClick={() => setModalAparcadas(true)} style={{
                   border: 'none', background: 'none', cursor: 'pointer', color: T.accent,
@@ -1315,6 +1372,30 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
                   <Bookmark size={14} /> Aparcar
                 </button>
               )}
+              {/* PARA LLEVAR (14 sep 2026): la venta gasta empaques como un
+                  reparto. Encendido va en naranja con borde, y sale en la
+                  comanda y en el ticket. No se toca mientras se cobra: el
+                  servidor ya ha recibido la venta tal cual estaba. */}
+              <button onClick={() => {
+                const nuevo = !paraLlevar
+                setParaLlevar(nuevo)
+                // Lo ya comandado salió sin la etiqueta (o con ella): cocina no
+                // se entera sola. Reenviar la comanda duplicaría la comida.
+                if (carrito.some((l) => l.comandada)) {
+                  toast(nuevo
+                    ? 'Cocina ya tiene la comanda: avísales de que es PARA LLEVAR'
+                    : 'Cocina la tiene como PARA LLEVAR: avísales de que es para comer aquí', 'error')
+                }
+              }} disabled={cobrando}
+                aria-pressed={paraLlevar} title="Para llevar: gasta las cajas y el papel del almacén"
+                style={{
+                  border: `1px solid ${paraLlevar ? T.accent : 'transparent'}`, borderRadius: 8,
+                  padding: '3px 7px', background: 'none', cursor: cobrando ? 'not-allowed' : 'pointer',
+                  color: paraLlevar ? T.accent : T.muted, fontWeight: paraLlevar ? 700 : 400,
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit',
+                }}>
+                <ShoppingBag size={14} /> Para llevar
+              </button>
               <button onClick={() => setModalLibre(true)} style={{
                 border: 'none', background: 'none', cursor: 'pointer', color: T.muted,
                 display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit',

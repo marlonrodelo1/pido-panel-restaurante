@@ -575,6 +575,9 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
   } else {
     bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
   }
+  // Venta del mostrador PARA LLEVAR (14 sep 2026): que el cliente y quien
+  // entrega lo vean en el papel. `pedido` ya llega a todos los que imprimen.
+  if (pedido?.para_llevar) bytes.push(...boldOn(), ...line('PARA LLEVAR'), ...boldOff())
   // Un ticket con `rectifica_ticket_id` es una ANULACION: importes en negativo
   // y serie propia (la original + R). Tiene que decirlo bien grande, y decir a
   // cual anula — `anula` llega como "A-000012" desde quien imprime.
