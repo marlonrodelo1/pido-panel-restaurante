@@ -76,6 +76,9 @@ export default function ResumenTab({ estId, onIrA }) {
   // el local. «Te quedó» no descuenta el género (las compras cuentan el día que se pagan).
   const g = datos?.ganancia || {}
   const ganancia = Number(g.total || 0)
+  // Lo que queda de verdad: ganancia − fijos repartidos por días − gastos sueltos del periodo.
+  const b = datos?.beneficio || {}
+  const beneficio = Number(b.total || 0)
 
   return (
     <div>
@@ -120,6 +123,11 @@ export default function ResumenTab({ estId, onIrA }) {
               tono={ganancia > 0 ? 'sage' : ganancia < 0 ? 'danger' : null}
               pie="Comida − género − reparto"
             />
+            <Grande
+              label="Beneficio" valor={eur(beneficio)}
+              tono={beneficio > 0 ? 'sage' : beneficio < 0 ? 'danger' : null}
+              pie="Ganancia − gastos fijos y sueltos"
+            />
           </div>
 
           {datos?.ganancia && (
@@ -128,6 +136,13 @@ export default function ResumenTab({ estId, onIrA }) {
               {' '}− reparto que asumes {eur(g.reparto)} = <strong>{eur(ganancia)}</strong>.
               {Number(g.genero_estimado) > 0 && ` ${eur(g.genero_estimado)} del género se ha calculado con la receta de hoy (ventas de antes de contar el inventario).`}
               {Number(g.vendido_sin_coste) > 0 && ` Ojo: ${eur(g.vendido_sin_coste)} vendidos no tienen receta y cuentan sin coste.`}
+            </div>
+          )}
+          {datos?.beneficio && (
+            <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 4, lineHeight: 1.5 }}>
+              Beneficio: ganancia {eur(b.ganancia)} − gastos fijos de {b.dias === 1 ? '1 día' : `${b.dias || 0} días`} {eur(b.fijos_periodo)}
+              {' '}− gastos sueltos {eur(b.gastos_sueltos)} = <strong>{eur(beneficio)}</strong>.
+              {' '}Los fijos ({eur(b.fijos_mes)} al mes) se reparten por días para que ningún día cargue con el alquiler o los sueldos enteros.
             </div>
           )}
 
