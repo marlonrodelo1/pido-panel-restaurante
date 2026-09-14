@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { CircleHelp, Target } from 'lucide-react'
-import { colors, ds, radius, type } from '../../lib/uiStyles'
+import { colors, ds, type } from '../../lib/uiStyles'
 import { toast } from '../../App'
 import { eur, resumenNegocio, puntoEquilibrio } from '../../lib/stock'
 
@@ -24,10 +24,20 @@ function fmt(d) {
 function fechaLarga(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })
 }
-// Nada de toISOString(): recorta en UTC y a medianoche canaria caería en el día
-// anterior. El lunes abre la semana, como el corte de Pidoo.
+// HOY es el día de Canarias, el mismo que usa la base de datos: con el reloj del navegador,
+// un móvil en hora peninsular pediría entre las 23:00 y las 24:00 el día (o el mes) siguiente
+// y las tarjetas dejarían de cuadrar con la meta. Nada de toISOString(): recorta en UTC.
+// El lunes abre la semana, como el corte de Pidoo.
+function hoyCanarias() {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'Atlantic/Canary', year: 'numeric', month: 'numeric', day: 'numeric' })
+      .formatToParts(new Date())
+      .map(x => [x.type, x.value])
+  )
+  return new Date(Number(p.year), Number(p.month) - 1, Number(p.day))
+}
 function rango(periodo) {
-  const hoy = new Date()
+  const hoy = hoyCanarias()
   if (periodo === 'hoy') return { desde: fmt(hoy), hasta: fmt(hoy) }
   if (periodo === 'semana') {
     const d = new Date(hoy)
@@ -107,7 +117,7 @@ export default function ResumenTab({ estId, onIrA }) {
               Contando desde el {fechaLarga(datos.contabilidad_desde)}: lo anterior no suma aquí.
             </div>
           )}
-          <MetaMes estId={estId} />
+          <MetaMes estId={estId} recarga={periodo} />
 
           <div className="ds-cards" style={{ display: 'grid', gap: 12, marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             <Grande label="Entró" valor={eur(v.neto)}
@@ -256,43 +266,68 @@ export default function ResumenTab({ estId, onIrA }) {
   )
 }
 
-// LA META DEL MES, como la pidió Marlon: los fijos son la meta, y lo que la llena
-// no es lo vendido sino LO QUE LA VENTA DEJA — la ganancia según escandallo (lo
-// vendido neto menos el género y menos el reparto del socio). En rojo mientras falte,
-// en verde cuando los fijos estén cubiertos y empiece el beneficio. El género es el
-// coste real del almacén; lo vendido antes de tener receta se valora con la receta de
-// hoy y se dice cuánto es estimado. Lo que no tiene receta cuenta sin coste, avisando.
-function MetaMes({ estId }) {
+// LA META DEL MES: los fijos del mes (desde que empezó la contabilidad) más los gastos
+// sueltos ya pagados. Lo que la llena no es lo vendido sino LO QUE LA VENTA DEJA: la
+// ganancia (comida neta − género − reparto del socio). En rojo mientras falte, en verde
+// cuando esté cubierta.
+//
+// Todo lo que ya pasó lo calcula `stock_punto_equilibrio` con `stock_resumen_negocio`, el
+// mismo cálculo que las tarjetas Ganancia y Beneficio de «Este mes», así que cuadra siempre:
+//   te faltan = fijos de los días que quedan − beneficio del mes
+// y el último día del mes lo que sobre de la meta ES el beneficio del mes.
+function MetaMes({ estId, recarga }) {
   const [d, setD] = useState(null)
+  const [error, setError] = useState(false)
 
+  // Se recarga con cada cambio de periodo, a la vez que las tarjetas: si no, tras una venta
+  // nueva la meta se quedaba vieja y ya no cuadraba con el Beneficio de «Este mes».
   useEffect(() => {
     if (!estId) return
     let vivo = true
     puntoEquilibrio(estId)
-      .then(r => { if (vivo) setD(r) })
-      .catch(() => { if (vivo) setD(false) })
+      .then(r => { if (vivo) { setD(r); setError(false) } })
+      .catch(() => { if (vivo) setError(true) })
     return () => { vivo = false }
-  }, [estId])
+  }, [estId, recarga])
 
-  if (!d) return null
+  if (!d) {
+    return error ? (
+      <div style={{ ...ds.muted, fontSize: type.xs }}>No se ha podido cargar la meta del mes. Recarga la página.</div>
+    ) : null
+  }
 
   const fijos = Number(d.fijos_mes)
-  // Si la contabilidad empezó a mitad de mes, la meta es la parte proporcional de los fijos.
   const fijosCompletos = Number(d.fijos_mes_completo ?? d.fijos_mes)
-  const desdeMitad = !!d.desde && Number(String(d.desde).slice(8, 10)) > 1
-  const desdeTxt = d.desde ? fechaLarga(d.desde) : ''
+  const sueltos = Number(d.gastos_sueltos_mes || 0)
+  const meta = Number(d.meta_mes ?? fijos)
+  const diaDesde = d.desde ? Number(String(d.desde).slice(8, 10)) : 1
+  const periodoTxt = !d.fin_mes || diaDesde <= 1
+    ? 'del mes'
+    : d.desde === d.fin_mes ? `del ${fechaLarga(d.fin_mes)}` : `del ${diaDesde} al ${fechaLarga(d.fin_mes)}`
   const vendido = Number(d.vendido_mes)
-  const neto = Number(d.neto_mes)
-  const costeVendido = Number(d.coste_vendido_mes || 0)
-  const costeEstimado = Number(d.coste_estimado_mes || 0)
   const sinCoste = Number(d.vendido_sin_coste_mes || 0)
-  const repartoNeto = Number(d.reparto_neto_mes || 0)
+  // Con un servidor anterior (sin `ganancia_mes`) se calcula aquí como antes.
+  const ganancia = d.ganancia_mes != null
+    ? Number(d.ganancia_mes)
+    : Number(d.neto_mes) - Number(d.coste_vendido_mes || 0) - Number(d.reparto_neto_mes || 0)
+  const margen = vendido > 0 ? ganancia / vendido : 0
+  const beneficio = d.beneficio_mes != null ? Number(d.beneficio_mes) : null
+  const fijosQuedan = Number(d.fijos_quedan || 0)
+  const diasQuedan = Number(d.dias_quedan || 0)
+  // La preposición va dentro: «fijos del día que queda», nunca «fijos de el día».
+  const diasTxt = diasQuedan === 1 ? 'del día que queda' : `de los ${diasQuedan} días que quedan`
+  const faltan = d.faltan != null ? Number(d.faltan) : Math.round((meta - ganancia) * 100) / 100
 
-  // La ganancia del mes = lo que entró (sin comisión) − el género − el reparto del socio.
-  const ganancia = neto - costeVendido - repartoNeto
-  const gananciaEtiqueta = 'comida neta − género − reparto'
+  if (!Number.isFinite(meta) || !Number.isFinite(ganancia)) return null
 
-  if (fijos <= 0) {
+  // La contabilidad empieza en un mes que aún no ha llegado: no hay meta todavía.
+  if (meta <= 0 && fijosCompletos > 0) {
+    return d.desde ? (
+      <div style={{ ...ds.muted, fontSize: type.xs }}>La meta empieza a contar el {fechaLarga(d.desde)}.</div>
+    ) : null
+  }
+
+  if (meta <= 0) {
     return (
       <div style={{ ...ds.card, padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -307,9 +342,27 @@ function MetaMes({ estId }) {
     )
   }
 
-  const pct = Math.max(0, Math.min(ganancia / fijos, 1))
-  const cubierta = ganancia >= fijos
+  const cubierta = faltan <= 0
+  const pct = Math.max(0, Math.min(ganancia / meta, 1))
   const color = cubierta ? colors.sage : colors.danger
+  const tonoBeneficio = beneficio > 0 ? colors.sage : beneficio < 0 ? colors.danger : colors.text
+
+  // La cuenta que une la meta con la tarjeta Beneficio («Este mes»), corta y siempre exacta:
+  // te faltan = fijos de los días que quedan − beneficio del mes.
+  let cuadre = null
+  if (beneficio != null) {
+    if (diasQuedan === 0) {
+      cuadre = cubierta
+        ? 'Último día: lo que sobra es tu beneficio del mes.'
+        : 'Último día: lo que falta es lo que llevas en negativo este mes.'
+    } else if (cubierta) {
+      cuadre = `Tu beneficio (${eur(beneficio)}) ya paga los fijos ${diasTxt} (${eur(fijosQuedan)}).`
+    } else if (beneficio < 0) {
+      cuadre = `Son ${eur(fijosQuedan)} de fijos ${diasTxt} + ${eur(-beneficio)} que llevas en negativo.`
+    } else {
+      cuadre = `Son ${eur(fijosQuedan)} de fijos ${diasTxt} − ${eur(beneficio)} de beneficio.`
+    }
+  }
 
   return (
     <div style={{ ...ds.card, padding: 18 }}>
@@ -317,20 +370,14 @@ function MetaMes({ estId }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Target size={16} color={colors.primary} />
           <div style={{ fontSize: type.base, fontWeight: 700, color: colors.text }}>
-            {desdeMitad
-              ? `La meta desde el ${desdeTxt}: ${eur(fijos)} de ganancia`
-              : `La meta del mes: ${eur(fijos)} de ganancia (tus fijos)`}
-            {desdeMitad && fijosCompletos > fijos && (
-              <span style={{ ...ds.muted, fontSize: type.xs, fontWeight: 500, marginLeft: 6 }}>
-                (la parte de los días que quedan; el mes entero son {eur(fijosCompletos)})
-              </span>
-            )}
+            La meta del mes: {eur(meta)}
+            <span style={{ ...ds.muted, fontSize: type.xs, fontWeight: 500, marginLeft: 6 }}>
+              (tus fijos {periodoTxt}{sueltos > 0 ? ` + ${eur(sueltos)} de gastos sueltos` : ''})
+            </span>
           </div>
         </div>
         <div style={{ fontSize: type.sm, fontWeight: 800, color }}>
-          {cubierta
-            ? `Meta cubierta · +${eur(ganancia - fijos)} de beneficio`
-            : `Te faltan ${eur(fijos - ganancia)}`}
+          {cubierta ? `Meta cubierta · sobran ${eur(-faltan)}` : `Te faltan ${eur(faltan)}`}
         </div>
       </div>
 
@@ -339,19 +386,21 @@ function MetaMes({ estId }) {
       </div>
 
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: type.sm, color: colors.textDim }}>
-        <span>{desdeMitad ? `Vendido desde el ${desdeTxt}` : 'Vendido este mes'}: <strong style={{ color: colors.text }}>{eur(vendido)}</strong> brutos ({d.pedidos_mes} pedidos)</span>
-        <span>→ ganancia: <strong style={{ color: colors.text }}>{eur(ganancia)}</strong> <span style={{ color: colors.textMute }}>({gananciaEtiqueta})</span></span>
-        {!cubierta && vendido > 0 && ganancia > 0 && (
+        <span>Ganancia del mes: <strong style={{ color: colors.text }}>{eur(ganancia)}</strong></span>
+        {beneficio != null && (
+          <span>Beneficio del mes: <strong style={{ color: tonoBeneficio }}>{eur(beneficio)}</strong></span>
+        )}
+        {/* Con un margen ridículo (primeros días, un reparto caro) la división da cifras absurdas. */}
+        {!cubierta && margen >= 0.15 && (
           <span style={{ color: colors.textMute }}>
-            ≈ te queda por vender {eur((fijos - ganancia) / (ganancia / vendido))} brutos
+            ≈ te faltan {eur(faltan / margen)} en ventas
           </span>
         )}
       </div>
 
-      <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
-        Comida neta {eur(neto)} − género {eur(costeVendido)} − reparto del socio {eur(repartoNeto)} = {eur(ganancia)}.
-        {costeEstimado > 0 && ` De ese género, ${eur(costeEstimado)} es de ventas de antes de tener las recetas y se ha calculado con la receta de hoy.`}
-      </div>
+      {cuadre && (
+        <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>{cuadre}</div>
+      )}
       {sinCoste > 0 && (
         <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 4, lineHeight: 1.5 }}>
           ⚠️ {eur(sinCoste)} vendidos no tienen receta (platos sin receta o importes libres del TPV):
