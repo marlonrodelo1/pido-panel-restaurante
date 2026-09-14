@@ -103,8 +103,8 @@ export async function construirInformeVentasPDF({
     startY: y,
     head: [['Comisión de Pidoo (estimada)', 'Importe']],
     body: [
-      ['Base comisionable (comida, sin pedidos por teléfono)', fmtPlano(resumen.baseComisionable) + ' EUR'],
-      [`Comisión ${config.pct}%`, fmtPlano(resumen.comisionPct) + ' EUR'],
+      ['Base comisionable (comida de app y tienda; sin teléfono, mostrador ni mesa)', fmtPlano(resumen.baseComisionable) + ' EUR'],
+      [config.exento ? 'Sin comisión (local propio)' : `Comisión ${config.pct}%`, fmtPlano(resumen.comisionPct) + ' EUR'],
       [`Pedidos por teléfono (${resumen.nTelefonicos} x ${fmtPlano(config.feeTelefonico)} EUR)`, fmtPlano(resumen.comisionTel) + ' EUR'],
       ['TOTAL COMISIÓN', fmtPlano(resumen.comision) + ' EUR'],
       ['Comida menos comisión', fmtPlano(resumen.neto) + ' EUR'],

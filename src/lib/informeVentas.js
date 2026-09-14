@@ -5,8 +5,10 @@
 //   · Solo cuentan los pedidos 'entregado' o 'recogido'.
 //   · La fecha con la que un pedido entra en el periodo es
 //     entregado_at → recogido_at → created_at.
-//   · Comisión = % global sobre los subtotales NO telefónicos
+//   · Comisión = % sobre los subtotales que no son de teléfono, mostrador ni mesa
+//                (el % congelado del pedido si lo tiene; si no, el global)
 //                + tarifa fija por cada pedido telefónico.
+//   · Local exento (`establecimientos.exento_comision`): 0 por todo.
 //   · El % se aplica al subtotal BRUTO (antes de descuentos), igual que en BD.
 // Si cambia esa función en Supabase, hay que revisar este archivo.
 
@@ -25,6 +27,8 @@ export const LABEL_ORIGEN = {
   pido: 'App Pidoo',
   tienda_publica: 'Tu tienda (enlace propio)',
   telefonico: 'Teléfono',
+  tpv: 'Mostrador (TPV)',
+  mesa: 'Mesa (QR)',
 }
 
 // ─── Fechas (hora LOCAL del navegador = hora del restaurante) ──────────────
@@ -73,7 +77,7 @@ export function slugify(txt, fallback = 'restaurante') {
 }
 
 // ─── Cálculo ───────────────────────────────────────────────────────────────
-export function calcularResumen(pedidos, config = { pct: 10, feeTelefonico: 1 }) {
+export function calcularResumen(pedidos, config = { pct: 10, feeTelefonico: 1, exento: false }) {
   // Ordenados por hora de ENTREGA, que es con la que entran en el periodo: si
   // un pedido cruza la medianoche, por created_at saldría descolocado.
   const porEntrega = (a, b) => fechaEfectiva(a) - fechaEfectiva(b)
@@ -88,10 +92,15 @@ export function calcularResumen(pedidos, config = { pct: 10, feeTelefonico: 1 })
   const descuentos = suma(ventas, p => p.descuento)
   const facturado = suma(ventas, p => p.total)
 
-  const baseComisionable = suma(ventas, p => p.origen_pedido === 'telefonico' ? 0 : p.subtotal)
+  // Mismo criterio que `calcular_liquidacion_restaurante` y que Contabilidad.
+  const sinPct = (p) => ['telefonico', 'tpv', 'mesa'].includes(p.origen_pedido)
+  const pctDe = (p) => (p.comision_pidoo_pct_override != null
+    ? Number(p.comision_pidoo_pct_override) : (Number(config.pct) || 0))
+  const baseComisionable = config.exento ? 0 : suma(ventas, p => sinPct(p) ? 0 : p.subtotal)
   const nTelefonicos = ventas.filter(p => p.origen_pedido === 'telefonico').length
-  const comisionPct = baseComisionable * ((Number(config.pct) || 0) / 100)
-  const comisionTel = nTelefonicos * (Number(config.feeTelefonico) || 0)
+  const comisionPct = config.exento ? 0
+    : ventas.reduce((a, p) => a + (sinPct(p) ? 0 : (Number(p.subtotal) || 0) * pctDe(p) / 100), 0)
+  const comisionTel = config.exento ? 0 : nTelefonicos * (Number(config.feeTelefonico) || 0)
   const comision = comisionPct + comisionTel
 
   const agrupar = (campo, porDefecto) => {

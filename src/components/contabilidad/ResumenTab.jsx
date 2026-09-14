@@ -64,7 +64,10 @@ export default function ResumenTab({ estId, onIrA }) {
   }, [estId, periodo])
 
   const v = datos?.ventas || {}
-  const salio = Number(datos?.compras?.total || 0) + Number(datos?.gastos?.total || 0)
+  // El reparto es un gasto de cada pedido: lo que se le paga al socio menos el envío y la
+  // propina que ya pagó el cliente (ver `stock_resumen_negocio`).
+  const reparto = datos?.reparto || {}
+  const salio = Number(datos?.compras?.total || 0) + Number(datos?.gastos?.total || 0) + Number(reparto.neto || 0)
   const resultado = Number(datos?.resultado || 0)
 
   return (
@@ -92,7 +95,7 @@ export default function ResumenTab({ estId, onIrA }) {
           <div className="ds-cards" style={{ display: 'grid', gap: 12, marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             <Grande label="Entró" valor={eur(v.neto)}
               pie={`${v.pedidos === 1 ? '1 pedido' : `${v.pedidos || 0} pedidos`}, comisión ya descontada`} />
-            <Grande label="Salió" valor={eur(salio)} pie="Compras contabilizadas + gastos" />
+            <Grande label="Salió" valor={eur(salio)} pie="Compras + gastos + reparto" />
             <Grande
               label="Te quedó" valor={eur(resultado)}
               tono={resultado > 0 ? 'sage' : resultado < 0 ? 'danger' : null}
@@ -128,8 +131,12 @@ export default function ResumenTab({ estId, onIrA }) {
                 </div>
               )}
               <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 10, lineHeight: 1.5 }}>
+                Cobrado en total, con envíos y propinas: <strong>{eur(v.cobrado_total)}</strong>.
+                Tiene que coincidir con la suma de tus cierres de caja (Z) del periodo.
+              </div>
+              <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 6, lineHeight: 1.5 }}>
                 Cuenta lo que pasa por Pidoo: mostrador (TPV), app, tienda, mesa y teléfono.
-                El envío y la propina no son tuyos (van al reparto) y no se cuentan.
+                Aquí va la comida; el envío y la propina se descuentan en el reparto.
                 Lo que se cobre fuera del TPV, aquí no existe.
               </div>
             </div>
@@ -172,7 +179,20 @@ export default function ResumenTab({ estId, onIrA }) {
                   ))}
                 </>
               )}
+              {Number(reparto.repartos) > 0 && (
+                <>
+                  <Linea label={`Reparto del socio (${reparto.repartos} repartos)`} valor={eur(reparto.neto)} />
+                  <Sub label="Le pagas al socio" valor={eur(reparto.pagado_socio)} />
+                  <Sub label="Envíos y propinas que pagó el cliente"
+                    valor={'− ' + eur(Number(reparto.envios_cliente || 0) + Number(reparto.propinas_cliente || 0))} />
+                </>
+              )}
               <Linea label="Total" valor={eur(salio)} fuerte />
+              {(datos?.gastos?.fuera_resultado || []).map((g, i) => (
+                <div key={'fuera' + i} style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
+                  {g.categoria} de {eur(g.importe)}: apuntado, pero no cuenta como gasto (es dinero que se recupera).
+                </div>
+              ))}
               {Number(datos?.merma?.total) > 0 && (
                 <div style={{
                   display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 10,
@@ -195,10 +215,10 @@ export default function ResumenTab({ estId, onIrA }) {
 
 // LA META DEL MES, como la pidió Marlon: los fijos son la meta, y lo que la llena
 // no es lo vendido sino LO QUE LA VENTA DEJA — la ganancia según escandallo (lo
-// vendido neto menos lo que el almacén descontó de género). En rojo mientras falte,
-// en verde cuando los fijos estén cubiertos y empiece el beneficio. Los platos sin
-// receta cuentan como si dejaran todo (no se les conoce coste): se dice en la letra
-// pequeña, no se disimula.
+// vendido neto menos el género y menos el reparto del socio). En rojo mientras falte,
+// en verde cuando los fijos estén cubiertos y empiece el beneficio. El género es el
+// coste real del almacén; lo vendido antes de tener receta se valora con la receta de
+// hoy y se dice cuánto es estimado. Lo que no tiene receta cuenta sin coste, avisando.
 function MetaMes({ estId }) {
   const [d, setD] = useState(null)
 
@@ -216,18 +236,14 @@ function MetaMes({ estId }) {
   const fijos = Number(d.fijos_mes)
   const vendido = Number(d.vendido_mes)
   const neto = Number(d.neto_mes)
-  const costeVendido = Number(d.coste_vendido_mes)
-  const margenTeorico = d.margen_teorico != null ? Number(d.margen_teorico) : null
-  const sinReceta = d.platos - d.platos_con_receta
+  const costeVendido = Number(d.coste_vendido_mes || 0)
+  const costeEstimado = Number(d.coste_estimado_mes || 0)
+  const sinCoste = Number(d.vendido_sin_coste_mes || 0)
+  const repartoNeto = Number(d.reparto_neto_mes || 0)
 
-  // La ganancia del mes: real si el motor valoró consumo; estimada por el margen
-  // teórico si todavía no; y si no hay ni recetas, el neto tal cual (100%), avisando.
-  const ganancia = costeVendido > 0 ? neto - costeVendido
-    : margenTeorico != null ? neto * margenTeorico
-    : neto
-  const gananciaEtiqueta = costeVendido > 0 ? 'real (según tus recetas)'
-    : margenTeorico != null ? `estimada con el margen teórico del ${Math.round(margenTeorico * 100)}%`
-    : 'sin descontar el género (aún no hay recetas)'
+  // La ganancia del mes = lo que entró (sin comisión) − el género − el reparto del socio.
+  const ganancia = neto - costeVendido - repartoNeto
+  const gananciaEtiqueta = 'comida neta − género − reparto'
 
   if (fijos <= 0) {
     return (
@@ -271,17 +287,21 @@ function MetaMes({ estId }) {
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: type.sm, color: colors.textDim }}>
         <span>Vendido este mes: <strong style={{ color: colors.text }}>{eur(vendido)}</strong> brutos ({d.pedidos_mes} pedidos)</span>
         <span>→ ganancia: <strong style={{ color: colors.text }}>{eur(ganancia)}</strong> <span style={{ color: colors.textMute }}>({gananciaEtiqueta})</span></span>
-        {!cubierta && margenTeorico > 0 && (
+        {!cubierta && vendido > 0 && ganancia > 0 && (
           <span style={{ color: colors.textMute }}>
-            ≈ te queda por vender {eur((fijos - ganancia) / (costeVendido > 0 && neto > 0 ? (neto - costeVendido) / neto : margenTeorico))} brutos
+            ≈ te queda por vender {eur((fijos - ganancia) / (ganancia / vendido))} brutos
           </span>
         )}
       </div>
 
-      {sinReceta > 0 && (
-        <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
-          ⚠️ {sinReceta} de {d.platos} platos siguen sin receta: sus ventas cuentan como
-          si dejaran todo el importe. Cada receta que escribas afina esta barra.
+      <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
+        Comida neta {eur(neto)} − género {eur(costeVendido)} − reparto del socio {eur(repartoNeto)} = {eur(ganancia)}.
+        {costeEstimado > 0 && ` De ese género, ${eur(costeEstimado)} es de ventas de antes de tener las recetas y se ha calculado con la receta de hoy.`}
+      </div>
+      {sinCoste > 0 && (
+        <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 4, lineHeight: 1.5 }}>
+          ⚠️ {eur(sinCoste)} vendidos no tienen receta (platos sin receta o importes libres del TPV):
+          cuentan como si no costaran nada.
         </div>
       )}
     </div>

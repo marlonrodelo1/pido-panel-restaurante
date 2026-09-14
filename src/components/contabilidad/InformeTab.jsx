@@ -67,8 +67,13 @@ export default function InformeTab({ estId, nombreRestaurante }) {
     filas.push(['Fecha', 'Categoria', 'Concepto', 'Importe'])
     for (const g of (datos.gastos || [])) filas.push([g.fecha, g.categoria, g.concepto || '', num(g.importe)])
     filas.push(['TOTAL', '', '', num(t.gastos)])
+    for (const g of (datos.gastos_fuera_resultado || [])) {
+      filas.push([g.fecha, g.categoria, `${g.concepto || ''} (no es gasto: no suma)`, num(g.importe)])
+    }
     filas.push([])
-    filas.push(['RESULTADO (neto - compras - gastos)', '', '', num(t.resultado)])
+    filas.push(['REPARTO DEL SOCIO (pagado al socio - envios y propinas del cliente)', '', '', num(t.reparto_socio)])
+    filas.push([])
+    filas.push(['RESULTADO (neto - compras - gastos - reparto)', '', '', num(t.resultado)])
 
     const csv = '﻿' + filas.map(f => f.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
@@ -107,6 +112,7 @@ export default function InformeTab({ estId, nombreRestaurante }) {
             <Dato label="Comisión Pidoo" valor={'− ' + eur(t.comision)} />
             <Dato label="Compras" valor={'− ' + eur(t.compras)} />
             <Dato label="Gastos" valor={'− ' + eur(t.gastos)} />
+            <Dato label="Reparto (socio)" valor={'− ' + eur(t.reparto_socio)} />
             <Dato label="Resultado" valor={eur(t.resultado)} tono={t.resultado > 0 ? 'sage' : t.resultado < 0 ? 'danger' : null} />
           </div>
 
@@ -160,6 +166,11 @@ export default function InformeTab({ estId, nombreRestaurante }) {
                     <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{eur(g.importe)}</span>
                   </div>
                 ))}
+              {(datos.gastos_fuera_resultado || []).map((g, i) => (
+                <div key={'fuera' + i} style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
+                  {g.categoria} de {eur(g.importe)}: apuntado, pero no cuenta como gasto (se recupera).
+                </div>
+              ))}
             </Bloque>
           </div>
         </>

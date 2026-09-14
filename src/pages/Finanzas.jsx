@@ -26,7 +26,7 @@ const RANGOS = [
   { id: 'custom', label: 'Elegir fechas' },
 ]
 
-const COLS = 'id, codigo, estado, metodo_pago, modo_entrega, origen_pedido, socio_id, subtotal, coste_envio, propina, descuento, total, promo_titulo, created_at, entregado_at, recogido_at'
+const COLS = 'id, codigo, estado, metodo_pago, modo_entrega, origen_pedido, socio_id, subtotal, coste_envio, propina, descuento, total, promo_titulo, created_at, entregado_at, recogido_at, comision_pidoo_pct_override'
 
 export default function Finanzas() {
   const { restaurante } = useRest()
@@ -125,7 +125,9 @@ export default function Finanzas() {
 
   useEffect(() => { cargar() }, [cargar])
 
-  const resumen = useMemo(() => calcularResumen(pedidos, config), [pedidos, config])
+  // El local propio no paga comisión (`exento_comision`), igual que en la liquidación.
+  const exento = !!restaurante?.exento_comision
+  const resumen = useMemo(() => calcularResumen(pedidos, { ...config, exento }), [pedidos, config, exento])
   const productos = useMemo(() => agruparProductos(items), [items])
   const udsPorPedido = useMemo(() => contarUdsPorPedido(items), [items])
   const periodo = useMemo(() => tituloPeriodo(desde, hasta), [desde, hasta])
@@ -135,7 +137,7 @@ export default function Finanzas() {
     setGenerando(true)
     try {
       const { doc, filename } = await construirInformeVentasPDF({
-        restaurante, resumen, productos, udsPorPedido, config, desde, hasta,
+        restaurante, resumen, productos, udsPorPedido, config: { ...config, exento }, desde, hasta,
       })
       doc.save(filename)
     } catch (e) {
@@ -301,7 +303,7 @@ export default function Finanzas() {
                   sub={`${v.n} pedido${v.n === 1 ? '' : 's'}`} valor={fmt(v.importe)} />
               ))}
               <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 10, paddingTop: 10 }}>
-                <Fila label={`Comisión ${config.pct}% sobre la comida`} valor={fmt(resumen.comisionPct)}
+                <Fila label={exento ? 'Sin comisión (local propio)' : `Comisión ${config.pct}% sobre la comida`} valor={fmt(resumen.comisionPct)}
                   sub={`Base ${fmt(resumen.baseComisionable)}`} />
                 {resumen.nTelefonicos > 0 && (
                   <Fila label="Pedidos por teléfono" valor={fmt(resumen.comisionTel)}
