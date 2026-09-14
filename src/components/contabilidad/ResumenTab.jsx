@@ -72,6 +72,10 @@ export default function ResumenTab({ estId, onIrA }) {
   const reparto = datos?.reparto || {}
   const salio = Number(datos?.compras?.total || 0) + Number(datos?.gastos?.total || 0) + Number(reparto.neto || 0)
   const resultado = Number(datos?.resultado || 0)
+  // La utilidad real del periodo: comida neta − género que salió del almacén − reparto que asume
+  // el local. «Te quedó» no descuenta el género (las compras cuentan el día que se pagan).
+  const g = datos?.ganancia || {}
+  const ganancia = Number(g.total || 0)
 
   return (
     <div>
@@ -109,9 +113,23 @@ export default function ResumenTab({ estId, onIrA }) {
             <Grande
               label="Te quedó" valor={eur(resultado)}
               tono={resultado > 0 ? 'sage' : resultado < 0 ? 'danger' : null}
-              pie="Entró menos salió"
+              pie="Entró menos salió (no descuenta el género)"
+            />
+            <Grande
+              label="Ganancia" valor={eur(ganancia)}
+              tono={ganancia > 0 ? 'sage' : ganancia < 0 ? 'danger' : null}
+              pie="Comida − género − reparto"
             />
           </div>
+
+          {datos?.ganancia && (
+            <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 8, lineHeight: 1.5 }}>
+              Ganancia: comida neta {eur(g.comida_neta)} − género que salió del almacén {eur(g.genero)}
+              {' '}− reparto que asumes {eur(g.reparto)} = <strong>{eur(ganancia)}</strong>.
+              {Number(g.genero_estimado) > 0 && ` ${eur(g.genero_estimado)} del género se ha calculado con la receta de hoy (ventas de antes de contar el inventario).`}
+              {Number(g.vendido_sin_coste) > 0 && ` Ojo: ${eur(g.vendido_sin_coste)} vendidos no tienen receta y cuentan sin coste.`}
+            </div>
+          )}
 
           <div style={{
             display: 'grid', gap: 14, marginTop: 14, alignItems: 'start',
