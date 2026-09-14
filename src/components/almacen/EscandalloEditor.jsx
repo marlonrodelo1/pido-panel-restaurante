@@ -67,12 +67,18 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const costeBase = costeDe(lineas)
   // Los DOS precios: la barra no paga comisión, lo que entra por Pidoo sí. Enseñar
   // uno solo hace que el dueño decida con la mitad de la información.
-  const pBarra = producto.precio_local != null ? Number(producto.precio_local) : null
+  // La barra cobra `precio_local ?? precio`, igual que el TPV (Tpv.jsx): un plato sin
+  // precio de local se vende en barra al precio de la carta, no "sin precio".
   const pPidoo = Number(producto.precio ?? 0)
+  const pBarra = producto.precio_local != null ? Number(producto.precio_local) : (pPidoo > 0 ? pPidoo : null)
   const mBarra = pBarra != null ? pBarra - costeBase : null
   const mPidoo = pPidoo > 0
     ? (comision == null ? pPidoo : pPidoo * (1 - comision / 100)) - costeBase
     : null
+  // Lo que se lleva cada euro vendido. El hostelero piensa en «cuánto me queda de cada
+  // plato», así que el % va sobre el precio de venta, no sobre el coste.
+  const pct = (parte, total) => (total > 0 && parte != null ? `${Math.round((parte / total) * 100)} %` : null)
+  const pVenta = pBarra ?? (pPidoo > 0 ? pPidoo : null)
 
   function setLinea(i, campo, valor) {
     setLineas(prev => prev.map((l, j) => j === i ? { ...l, [campo]: valor } : l))
@@ -202,13 +208,17 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
               background: colors.surface2, border: `1px solid ${colors.border}`,
               display: 'flex', gap: 22, flexWrap: 'wrap',
             }}>
-              <Cifra label="Te cuesta" valor={eur(costeBase)} />
+              <Cifra label="Te cuesta" valor={eur(costeBase)}
+                porcentaje={pVenta != null ? pct(costeBase, pVenta) : null}
+                nota={pVenta != null ? 'del precio de venta' : null} />
               <Cifra label="En barra te queda"
                 valor={pBarra == null ? '—' : eur(mBarra)}
-                nota={pBarra == null ? 'sin precio de local' : `vendes a ${eur(pBarra)}`}
+                porcentaje={pBarra == null ? null : pct(mBarra, pBarra)}
+                nota={pBarra == null ? 'sin precio' : `vendes a ${eur(pBarra)}`}
                 tono={mBarra != null && mBarra < 0 ? 'danger' : 'ok'} />
               <Cifra label="Por Pidoo te queda"
                 valor={pPidoo > 0 ? eur(mPidoo) : '—'}
+                porcentaje={pPidoo > 0 ? pct(mPidoo, pPidoo) : null}
                 nota={pPidoo > 0
                   ? `vendes a ${eur(pPidoo)}${comision == null ? ' · sin descontar comisión'
                       : comision > 0 ? ` − ${comision} % comisión` : ''}`
@@ -329,14 +339,19 @@ function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
   )
 }
 
-function Cifra({ label, valor, tono, nota }) {
+function Cifra({ label, valor, tono, nota, porcentaje }) {
+  const color = tono === 'danger' ? colors.danger : tono === 'ok' ? colors.sage2 : colors.text
   return (
     <div>
       <div style={{ ...ds.label, marginBottom: 2 }}>{label}</div>
-      <div style={{
-        fontSize: type.lg, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-        color: tono === 'danger' ? colors.danger : tono === 'ok' ? colors.sage2 : colors.text,
-      }}>{valor}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: type.lg, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color }}>{valor}</div>
+        {porcentaje && (
+          <div style={{ fontSize: type.sm, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color }}>
+            {porcentaje}
+          </div>
+        )}
+      </div>
       {nota && <div style={{ ...ds.muted, marginTop: 1 }}>{nota}</div>}
     </div>
   )

@@ -21,6 +21,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
   const [costes, setCostes] = useState({})         // producto_id -> coste receta base
   const [busca, setBusca] = useState('')
   const [soloSin, setSoloSin] = useState(false)
+  const [categoria, setCategoria] = useState('')   // '' = todas
   const [abierto, setAbierto] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [refresco, setRefresco] = useState(0)
@@ -61,13 +62,20 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
     return () => { vivo = false }
   }, [estId, articulos, refresco])
 
+  const catDe = (p) => p.categorias?.nombre || 'Sin categoría'
+  // Las categorías salen de la propia carta, con cuántos platos tiene cada una.
+  const categorias = Object.entries(
+    prods.reduce((acc, p) => { acc[catDe(p)] = (acc[catDe(p)] || 0) + 1; return acc }, {})
+  ).sort(([a], [b]) => a.localeCompare(b, 'es'))
+
   const visibles = prods.filter(p => {
     if (soloSin && conReceta[p.id]) return false
+    if (categoria && catDe(p) !== categoria) return false
     if (busca.trim() && !p.nombre.toLowerCase().includes(busca.trim().toLowerCase())) return false
     return true
   })
 
-  const nSin = prods.length - Object.keys(conReceta).length
+  const nSin = prods.filter(p => !conReceta[p.id] && (!categoria || catDe(p) === categoria)).length
 
   if (cargando) return <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>Cargando la carta…</div>
 
@@ -80,6 +88,14 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           <input value={busca} onChange={e => setBusca(e.target.value)}
             placeholder="Buscar un plato de tu carta…" style={{ ...ds.input, paddingLeft: 34 }} />
         </div>
+        <select value={categoria} onChange={e => setCategoria(e.target.value)}
+          aria-label="Filtrar por categoría"
+          style={{ ...ds.select, flex: '0 1 220px', minWidth: 170, height: 36 }}>
+          <option value="">Todas las categorías ({prods.length})</option>
+          {categorias.map(([nombre, n]) => (
+            <option key={nombre} value={nombre}>{nombre} ({n})</option>
+          ))}
+        </select>
         <button onClick={() => setSoloSin(v => !v)} style={{
           ...ds.filterBtn, height: 36,
           background: soloSin ? colors.primary : colors.paper,
@@ -117,8 +133,9 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           const coste = costes[p.id]
           // Los DOS precios del producto. `precio_local` es la barra y el QR de mesa;
           // `precio` es lo que paga el cliente por la app y la tienda.
-          const pBarra = p.precio_local != null ? Number(p.precio_local) : null
+          // Sin precio de local la barra cobra el de la carta, igual que el TPV.
           const pPidoo = Number(p.precio ?? 0)
+          const pBarra = p.precio_local != null ? Number(p.precio_local) : (pPidoo > 0 ? pPidoo : null)
           // Por Pidoo se paga comisión; en barra no. Comparar los dos brutos mentiría.
           const netoPidoo = comision == null ? pPidoo : pPidoo * (1 - comision / 100)
           const mBarra = tiene && pBarra != null ? pBarra - coste : null
@@ -161,7 +178,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
 
         {!visibles.length && (
           <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>
-            {soloSin ? 'Todos los de esa búsqueda ya tienen receta.' : 'Ningún plato de tu carta con esa búsqueda.'}
+            {soloSin ? 'Todos los de ese filtro ya tienen receta.' : 'Ningún plato de tu carta con ese filtro.'}
           </div>
         )}
       </div>
@@ -204,7 +221,7 @@ function Precio({ ancho, precio, margen, nota }) {
       }}>
         {margen === null
           ? (nota || '—')
-          : `${margen < 0 ? '' : '+'}${eur(margen)}${precio > 0 ? ` · ${Math.round(1000 * margen / precio) / 10} %` : ''}`}
+          : `${margen < 0 ? '' : '+'}${eur(margen)}${precio > 0 ? ` · ${Math.round(100 * margen / precio)} %` : ''}`}
       </div>
       {nota && margen !== null && (
         <div style={{ fontSize: type.xxs, color: colors.textMute }}>{nota}</div>
