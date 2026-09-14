@@ -75,10 +75,10 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const mPidoo = pPidoo > 0
     ? (comision == null ? pPidoo : pPidoo * (1 - comision / 100)) - costeBase
     : null
-  // Lo que se lleva cada euro vendido. El hostelero piensa en «cuánto me queda de cada
-  // plato», así que el % va sobre el precio de venta, no sobre el coste.
-  const pct = (parte, total) => (total > 0 && parte != null ? `${Math.round((parte / total) * 100)} %` : null)
-  const pVenta = pBarra ?? (pPidoo > 0 ? pPidoo : null)
+  // El % de ganancia va SOBRE EL COSTE (decisión de Marlon, 14 sep 2026): Acentejo cuesta
+  // 2 € y se vende a 5 € → gana 3 € = 150 %. Sin coste no hay % (sería dividir entre 0).
+  const sobreCoste = (margen) => (costeBase > 0 && margen != null
+    ? `${Math.round((margen / costeBase) * 100)} % sobre el coste` : null)
 
   function setLinea(i, campo, valor) {
     setLineas(prev => prev.map((l, j) => j === i ? { ...l, [campo]: valor } : l))
@@ -208,17 +208,15 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
               background: colors.surface2, border: `1px solid ${colors.border}`,
               display: 'flex', gap: 22, flexWrap: 'wrap',
             }}>
-              <Cifra label="Te cuesta" valor={eur(costeBase)}
-                porcentaje={pVenta != null ? pct(costeBase, pVenta) : null}
-                nota={pVenta != null ? 'del precio de venta' : null} />
+              <Cifra label="Te cuesta" valor={eur(costeBase)} />
               <Cifra label="En barra te queda"
                 valor={pBarra == null ? '—' : eur(mBarra)}
-                porcentaje={pBarra == null ? null : pct(mBarra, pBarra)}
+                porcentaje={pBarra == null ? null : sobreCoste(mBarra)}
                 nota={pBarra == null ? 'sin precio' : `vendes a ${eur(pBarra)}`}
                 tono={mBarra != null && mBarra < 0 ? 'danger' : 'ok'} />
               <Cifra label="Por Pidoo te queda"
                 valor={pPidoo > 0 ? eur(mPidoo) : '—'}
-                porcentaje={pPidoo > 0 ? pct(mPidoo, pPidoo) : null}
+                porcentaje={pPidoo > 0 ? sobreCoste(mPidoo) : null}
                 nota={pPidoo > 0
                   ? `vendes a ${eur(pPidoo)}${comision == null ? ' · sin descontar comisión'
                       : comision > 0 ? ` − ${comision} % comisión` : ''}`

@@ -163,8 +163,8 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
               <div style={{ ...col(88), color: colors.textMute }}>
                 {tiene ? eur(coste) : '—'}
               </div>
-              <Precio ancho={124} precio={pBarra} margen={mBarra} />
-              <Precio ancho={148} precio={pPidoo} margen={mPidoo}
+              <Precio ancho={124} precio={pBarra} margen={mBarra} coste={coste} />
+              <Precio ancho={148} precio={pPidoo} margen={mPidoo} coste={coste}
                 nota={comision == null ? 'sin descontar comisión'
                   : comision > 0 ? `−${comision} % comisión` : 'sin comisión'} />
               <div style={{ ...col(176), display: 'flex', justifyContent: 'flex-end' }}>
@@ -184,6 +184,9 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
       </div>
 
       <div style={{ ...ds.muted, marginTop: 10, lineHeight: 1.5 }}>
+        El % es lo que ganas sobre lo que te cuesta el plato: si cuesta 2 € y lo vendes a
+        5 €, ganas 3 €, que es un 150 %.
+        <br />
         Aquí está tu carta entera, plato por plato. La receta dice qué le echas y cuánto,
         con los artículos de la pestaña <strong>Artículos de compra</strong>. Los platos sin
         receta no descuentan nada del almacén: es lo normal al principio, empieza por los que
@@ -208,7 +211,9 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
 
 // Una celda de precio: lo que cobra arriba y lo que le queda debajo. Dos numeros en
 // el sitio de uno, porque el precio solo no dice nada sin el coste al lado.
-function Precio({ ancho, precio, margen, nota }) {
+// El % es la ganancia SOBRE EL COSTE (2 € de coste, 5 € de venta → 150 %), como lo
+// cuenta Marlon. Sin coste no se enseña %.
+function Precio({ ancho, precio, margen, nota, coste }) {
   if (precio == null || precio === 0) {
     return <div style={{ ...col(ancho), color: colors.textMute }}>—</div>
   }
@@ -221,7 +226,7 @@ function Precio({ ancho, precio, margen, nota }) {
       }}>
         {margen === null
           ? (nota || '—')
-          : `${margen < 0 ? '' : '+'}${eur(margen)}${precio > 0 ? ` · ${Math.round(100 * margen / precio)} %` : ''}`}
+          : `${margen < 0 ? '' : '+'}${eur(margen)}${coste > 0 ? ` · ${Math.round(100 * margen / coste)} %` : ''}`}
       </div>
       {nota && margen !== null && (
         <div style={{ fontSize: type.xxs, color: colors.textMute }}>{nota}</div>
