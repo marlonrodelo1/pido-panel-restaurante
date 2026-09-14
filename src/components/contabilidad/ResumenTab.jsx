@@ -111,22 +111,22 @@ export default function ResumenTab({ estId, onIrA }) {
 
           <div className="ds-cards" style={{ display: 'grid', gap: 12, marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             <Grande label="Entró" valor={eur(v.neto)}
-              pie={`${v.pedidos === 1 ? '1 pedido' : `${v.pedidos || 0} pedidos`}, comisión ya descontada`} />
-            <Grande label="Salió" valor={eur(salio)} pie="Compras + gastos + reparto" />
+              pie={`Lo que vendiste en comida, ya sin comisión (${v.pedidos === 1 ? '1 pedido' : `${v.pedidos || 0} pedidos`})`} />
+            <Grande label="Salió" valor={eur(salio)} pie="Lo que pagaste: compras, gastos y reparto" />
             <Grande
               label="Te quedó" valor={eur(resultado)}
               tono={resultado > 0 ? 'sage' : resultado < 0 ? 'danger' : null}
-              pie="Entró menos salió (no descuenta el género)"
+              pie="El dinero que te queda (no resta lo gastado del almacén)"
             />
             <Grande
               label="Ganancia" valor={eur(ganancia)}
               tono={ganancia > 0 ? 'sage' : ganancia < 0 ? 'danger' : null}
-              pie="Comida − género − reparto"
+              pie="Lo que te dejan las ventas: comida − ingredientes − reparto"
             />
             <Grande
               label="Beneficio" valor={eur(beneficio)}
               tono={beneficio > 0 ? 'sage' : beneficio < 0 ? 'danger' : null}
-              pie="Ganancia − gastos fijos y sueltos"
+              pie="Lo que ganas de verdad: la ganancia − alquiler, sueldos y demás gastos"
             />
           </div>
 
