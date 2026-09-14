@@ -9,7 +9,7 @@
 // tenga impresoras dadas de alta en la nube, sigue funcionando el camino
 // clásico de este aparato (`impresora_destino`: 'cocina'/'barra').
 import { supabase } from './supabase'
-import { impresoraCocinaConfigurada, cargarImpresoras } from './printService'
+import { impresoraCocinaConfigurada, cargarImpresoras, impresoraCajaDe } from './printService'
 
 const TTL_MS = 60000
 const cache = new Map()   // establecimientoId -> { hasta, catDe: Map(prod->cat), destinoCat: Map(cat->destino) }
@@ -45,7 +45,29 @@ export async function crearDestinoDe(establecimientoId) {
       if (nube.length < 2) return null // con una sola impresora no hay reparto
       const entrada = await cargarCarta(establecimientoId, 'impresora_id')
       if (!entrada) return null
-      return (productoId) => entrada.destinoCat.get(entrada.catDe.get(productoId)) || null
+      // Las líneas SIN producto (el «Libre»: «extra de huevo») van a LA COCINA,
+      // no a la caja: casi siempre son comida y la plancha tiene que verlas
+      // (Marlon, 14 sep 2026). «La cocina» es la impresora que no es de caja con
+      // MÁS categorías asignadas; en empate, la primera por `orden` (así viene la
+      // lista). Si ninguna tiene categorías, caja, como antes. El nombre no se
+      // mira: es texto libre. Una categoría SIN impresora sigue yendo a caja: eso
+      // no cambia. Solo `null` explícito cuenta como línea libre; una línea que
+      // no traiga el campo sigue el camino de siempre.
+      const caja = impresoraCajaDe(nube)
+      const cuenta = new Map()
+      for (const impId of entrada.destinoCat.values()) {
+        if (impId) cuenta.set(impId, (cuenta.get(impId) || 0) + 1)
+      }
+      let cocinaId = null
+      let max = 0
+      for (const i of nube) {
+        if (i.id === caja?.id) continue
+        const n = cuenta.get(i.id) || 0
+        if (n > max) { max = n; cocinaId = i.id }
+      }
+      return (productoId) => (productoId === null
+        ? cocinaId
+        : entrada.destinoCat.get(entrada.catDe.get(productoId)) || null)
     }
 
     // Camino clásico de este aparato (dos impresoras fijas cocina/barra).

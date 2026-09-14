@@ -65,6 +65,8 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
   const [carrito, setCarrito] = useState([])
   // Que linea tiene el campo de nota abierto (su clave), o null.
   const [notaAbierta, setNotaAbierta] = useState(null)
+  // El «Libre» del mostrador: lo que el cliente pide y no está en la carta.
+  const [modalLibre, setModalLibre] = useState(false)
 
   const [telefono, setTelefono] = useState('')
   const [nombre, setNombre] = useState('')
@@ -304,6 +306,30 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
   const ponerNota = (k, texto) => setCarrito((prev) => prev
     .map((l) => (clave(l) === k ? { ...l, notas: texto.slice(0, 200) || null } : l)))
 
+  // LÍNEA LIBRE, con el mismo criterio que el «Libre» del mostrador: concepto de
+  // hasta 80 letras («Varios» si se deja en blanco) e importe mayor que 0 y de
+  // 500 € como mucho. Cada una es una línea aparte (clave con uuid): dos «extra
+  // de huevo» a precios distintos no se pueden sumar en una. Aquí el importe SÍ
+  // lo pone quien atiende —sin producto de la carta no hay precio que buscar— y
+  // el servidor vuelve a comprobar el tope. Devuelve si la ha añadido.
+  function anadirLibre(nombreLibre, importeTexto) {
+    const limpio = String(importeTexto || '').replace(/[^\d.,]/g, '')
+    const num = parseFloat(limpio.includes(',') ? limpio.replace(/\./g, '').replace(',', '.') : limpio)
+    // Se valida sobre los CÉNTIMOS ya redondeados: «0,004» pasaba el «mayor que
+    // 0» y acababa siendo una línea de 0,00 €.
+    const c = Math.round(num * 100)
+    if (!Number.isFinite(num) || c < 1 || c > 50000) {
+      toast('El importe tiene que ser mayor que 0 y como mucho 500 €', 'error')
+      return false
+    }
+    setCarrito((prev) => [...prev, {
+      k: 'libre|' + uuidv4(), producto_id: null,
+      nombre: (nombreLibre || '').trim().slice(0, 80) || 'Varios',
+      tamano: null, notas: null, precio_c: c, cantidad: 1, libre: true,
+    }])
+    return true
+  }
+
   const subtotal = carrito.reduce((s, l) => s + l.precio_c * l.cantidad, 0)
   const unidades = carrito.reduce((s, l) => s + l.cantidad, 0)
 
@@ -365,8 +391,11 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
           },
           lineas: carrito.map((l) => ({
             ...(l.linea_id ? { id: l.linea_id } : null),
-            producto_id: l.producto_id, tamano: l.tamano || null,
+            producto_id: l.producto_id || null, tamano: l.tamano || null,
             cantidad: l.cantidad, notas: l.notas || null,
+            // Una línea libre NUEVA lleva su nombre y su importe. Las que ya
+            // estaban se reconocen por el `id` y conservan los suyos.
+            ...(!l.producto_id && !l.linea_id ? { nombre: l.nombre, precio_unitario: l.precio_c / 100 } : null),
           })),
         }),
       })
@@ -457,7 +486,11 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
           },
           // La nota de cada plato viaja con su linea: la edge ya la guardaba,
           // pero esta pantalla nunca se la mandaba.
-          lineas: carrito.map((l) => ({ producto_id: l.producto_id, cantidad: l.cantidad, notas: l.notas || null })),
+          // La línea libre viaja con su nombre y su importe, igual que en el
+          // mostrador; las de la carta, solo con el producto.
+          lineas: carrito.map((l) => (l.producto_id
+            ? { producto_id: l.producto_id, cantidad: l.cantidad, notas: l.notas || null }
+            : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
         }),
       })
       const body = await resp.json().catch(() => ({}))
@@ -659,10 +692,18 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0,
       ...(esMonitor ? { height: '100%' } : null),
     }}>
-      <div style={{ position: 'relative', marginBottom: 10, flexShrink: 0 }}>
-        <Search size={15} style={{ position: 'absolute', left: 12, top: 16, color: T.muted }} />
-        <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar producto para añadir" style={{ ...inputOscuro, paddingLeft: 36 }} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexShrink: 0 }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: 16, color: T.muted }} />
+          <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar producto para añadir" style={{ ...inputOscuro, paddingLeft: 36 }} />
+        </div>
+        {/* El «Libre» del mostrador: para lo que el cliente pide y no está en la
+            carta («extra de huevo», «bolsa»). Marlon, 14 sep 2026. */}
+        <button onClick={() => setModalLibre(true)} title="Añadir algo que no está en la carta"
+          style={{ ...btnSecundario, height: 48, borderRadius: RADIO, gap: 6, flexShrink: 0 }}>
+          <Plus size={15} /> Libre
+        </button>
       </div>
 
       {/* LAS CATEGORÍAS, con el mismo botón que el mostrador: icono, nombre y
@@ -870,6 +911,13 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     />
   )
 
+  const modalLibreNodo = modalLibre && (
+    <ModalLibre
+      onCerrar={() => setModalLibre(false)}
+      onAceptar={(n, imp) => { if (anadirLibre(n, imp)) setModalLibre(false) }}
+    />
+  )
+
   // Teléfono y tablet: apilado, exactamente el mismo orden de siempre.
   if (!esMonitor) {
     return (
@@ -878,6 +926,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
         {bloqueCarta}
         {bloqueComanda}
         {modalNota}
+        {modalLibreNodo}
       </div>
     )
   }
@@ -891,6 +940,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       <Columna titulo="Qué pide">{bloqueCarta}</Columna>
       <Columna titulo="La comanda" sinBorde>{bloqueComanda}</Columna>
       {modalNota}
+      {modalLibreNodo}
     </div>
   )
 }
@@ -932,6 +982,51 @@ function ModalNota({ nombre, inicial, onCerrar, onGuardar }) {
           <button onClick={() => onGuardar(txt.trim())} style={{ ...btnAccion, flex: 1, height: 48 }}>
             Guardar
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// El «Libre» del mostrador, dentro de este modal. Estado propio por lo mismo que
+// la nota: mientras se teclea no se toca el carrito. Va a z 1300 para quedar
+// encima del modal del pedido (900). Si el importe no vale, el padre avisa y el
+// modal sigue abierto con lo escrito.
+function ModalLibre({ onCerrar, onAceptar }) {
+  const [concepto, setConcepto] = useState('')
+  const [importe, setImporte] = useState('')
+  const aceptar = () => onAceptar(concepto, importe)
+  return (
+    <div onClick={onCerrar} style={{
+      position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: T.surface, borderRadius: 16, padding: 20, width: '100%', maxWidth: 420,
+        border: `1px solid ${T.border}`, display: 'grid', gap: 12,
+      }}>
+        <div>
+          <strong style={{ fontSize: 15, color: T.text }}>Añadir un importe libre</strong>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 2 }}>
+            Para lo que no está en la carta. Sale en la comanda y en el ticket con el nombre que le pongas.
+          </div>
+        </div>
+        <div>
+          <label style={etiqueta}>Concepto</label>
+          <input value={concepto} autoFocus maxLength={80}
+            onChange={(e) => setConcepto(e.target.value)}
+            placeholder="Varios" style={inputOscuro} />
+        </div>
+        <div>
+          <label style={etiqueta}>Importe</label>
+          <input value={importe} inputMode="decimal"
+            onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
+            onKeyDown={(e) => { if (e.key === 'Enter') aceptar() }}
+            placeholder="2,50" style={{ ...inputOscuro, fontSize: 20, fontWeight: 600 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onCerrar} style={{ ...btnSecundario, flex: 1, height: 48 }}>Cancelar</button>
+          <button onClick={aceptar} style={{ ...btnAccion, flex: 1, height: 48 }}>Añadir a la comanda</button>
         </div>
       </div>
     </div>

@@ -658,7 +658,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     const claves = new Set(sinComandar.map((l) => l.clave))
     try {
       // Con varias impresoras, cada línea va a la suya según su CATEGORÍA
-      // (configurado en la nube; las líneas libres, a la de caja). El helper
+      // (configurado en la nube; las líneas libres, a la de cocina). El helper
       // resuelve también el camino clásico cocina/barra de este aparato.
       const destinoDe = await crearDestinoDe(restaurante.id)
       const ok = await imprimirComandaTpv(sinComandar, restaurante, { numero: rondaRef.current + 1 }, destinoDe)

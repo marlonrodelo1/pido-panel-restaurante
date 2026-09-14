@@ -1,4 +1,8 @@
-// tpv-pedido-editar v2 (5-sep-2026) — EDITAR un pedido telefonico ya creado.
+// tpv-pedido-editar v3 (14-sep-2026) — EDITAR un pedido telefonico ya creado.
+// v3: LINEAS SIN PRODUCTO. Se pueden anadir lineas libres (las del mostrador) y
+// las que ya estaban sin producto_id (libres, o de un producto borrado de la
+// carta) se conservan con su nombre y su precio en vez de tumbar la edicion con
+// 400. El DELTA de cocina las distingue por nombre.
 // v2: las notas cambiadas llevan `producto_id`, para que ese papel salga por su
 // impresora (cocina o barra) y no siempre por la de caja.
 //
@@ -21,9 +25,11 @@
 //     numero correlativo: el camino es anularla con rectificativa
 //     (`tpv_anular_ticket`), que ya existe. PD290.
 //   - Los precios. Las lineas nuevas se insertan a 0 y las sube el trigger, igual
-//     que al crear. Aqui no viaja ni un importe.
+//     que al crear. Aqui no viaja ni un importe... salvo el de una linea libre
+//     NUEVA (v3), que no tiene carta detras y lleva tope de 0-500 EUR.
 //
-// Body: { pedido_id, lineas: [{ id?, producto_id, tamano?, cantidad, notas? }],
+// Body: { pedido_id, lineas: [{ id?, producto_id, tamano?, cantidad, notas? }
+//                             | { id?, nombre, precio_unitario, cantidad, notas? }],
 //         modo?: 'reparto'|'recogida',
 //         cliente?: { telefono?, nombre?, direccion?, lat?, lng? },
 //         minutos_preparacion?, notas?, motivo? }
@@ -62,7 +68,10 @@ const ESTADOS_EDITABLES = ['preparando', 'listo']
 
 // La firma de una linea para el DELTA de cocina: el mismo plato con el mismo
 // tamano es la misma cosa aunque esten en dos filas distintas.
-const firma = (l: any) => `${l.producto_id || ''}|${l.tamano || ''}`
+// v3: una linea SIN producto se distingue por su NOMBRE. Antes todas compartian la
+// clave '|' y el papel de modificacion fundia «bolsa» y «extra de huevo» en una
+// sola, con el nombre de la primera (o no sacaba papel).
+const firma = (l: any) => `${l.producto_id || 'libre:' + (l.nombre_producto || l.nombre || '')}|${l.tamano || ''}`
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
@@ -146,7 +155,21 @@ Deno.serve(async (req) => {
   }
   if (lineasRaw.length > 100) return json({ error: 'validacion', campo: 'lineas' }, 400)
 
-  const idsProducto = [...new Set(lineasRaw.map((l: any) => l?.producto_id).filter(Boolean))]
+  // v3: las lineas que ya tiene el pedido van PRIMERO. Una linea que ya existe
+  // se reconoce por su `id` y manda la FILA, no lo que diga la pantalla.
+  const { data: actualesRaw } = await sb.from('pedido_items')
+    .select('id, producto_id, nombre_producto, tamano, cantidad, notas, precio_unitario, extras')
+    .eq('pedido_id', ped.id)
+  const actuales = actualesRaw || []
+  const porId = new Map(actuales.map((l: any) => [l.id, l]))
+  const esExistente = (l: any) => !!(l?.id && porId.has(l.id))
+
+  // Solo se buscan en la carta los productos de las lineas NUEVAS. Antes entraban
+  // tambien los de las que ya estaban: si alguien borraba ese producto de la
+  // carta con la edicion abierta, guardar moria con producto_no_encontrado y no
+  // se guardaba nada (ni la linea nueva, ni la direccion).
+  const idsProducto = [...new Set(lineasRaw
+    .filter((l: any) => !esExistente(l)).map((l: any) => l?.producto_id).filter(Boolean))]
   let productos: any[] = []
   if (idsProducto.length) {
     const { data: prods, error: pErr } = await sb.from('productos')
@@ -159,27 +182,57 @@ Deno.serve(async (req) => {
     if (productos.length !== idsProducto.length) return json({ error: 'producto_no_encontrado' }, 400)
   }
 
-  const { data: actualesRaw } = await sb.from('pedido_items')
-    .select('id, producto_id, nombre_producto, tamano, cantidad, notas, precio_unitario, extras')
-    .eq('pedido_id', ped.id)
-  const actuales = actualesRaw || []
-  const porId = new Map(actuales.map((l: any) => [l.id, l]))
-
   // Lo que pide el TPV, ya saneado. `id` presente = linea que ya existia.
   const deseadas = lineasRaw.map((l: any) => {
-    const prod = l?.producto_id ? productos.find((p) => p.id === l.producto_id) : null
-    if (!prod) return null
-    const id = l?.id && porId.has(l.id) ? l.id : null
+    const cantidad = Math.min(100, Math.max(1, Math.round(Number(l?.cantidad) || 1)))
+    const notas = l?.notas ? String(l.notas).slice(0, 200) : null
+    // v3: una linea que YA estaba se conserva tal cual —producto, nombre, tamano y
+    // precio los de la fila, que es lo que se le dijo al cliente—, sea de la
+    // carta, sea libre o sea de un producto que se borro despues (la FK deja
+    // producto_id a NULL). Solo cambian la cantidad y la nota.
+    if (esExistente(l)) {
+      const vieja: any = porId.get(l.id)
+      return {
+        id: l.id,
+        producto_id: vieja.producto_id,
+        nombre_producto: vieja.nombre_producto,
+        tamano: vieja.tamano,
+        cantidad,
+        notas,
+        precio_unitario: vieja.precio_unitario,
+      }
+    }
+    if (l?.producto_id) {
+      const prod = productos.find((p) => p.id === l.producto_id)
+      if (!prod) return null
+      return {
+        id: null,
+        producto_id: prod.id,
+        nombre_producto: prod.nombre,
+        tamano: l?.tamano ? String(l.tamano) : null,
+        cantidad,
+        notas,
+        precio_unitario: 0,   // nueva de la carta: el precio lo pone el trigger
+      }
+    }
+    // NUEVA y sin producto: es una linea libre. Manda el importe tecleado, con el
+    // mismo tope que al crear (`tpv-pedido` v6): mas de 0 y hasta 500.
+    if (l?.precio_unitario === null || l?.precio_unitario === undefined || l?.precio_unitario === '') return null
+    const precio = Math.round(Number(l.precio_unitario) * 100) / 100
+    if (!Number.isFinite(precio) || precio <= 0 || precio > 500) return null
     return {
-      id,
-      producto_id: prod.id,
-      nombre_producto: prod.nombre,
-      tamano: l?.tamano ? String(l.tamano) : null,
-      cantidad: Math.min(100, Math.max(1, Math.round(Number(l?.cantidad) || 1))),
-      notas: l?.notas ? String(l.notas).slice(0, 200) : null,
+      id: null,
+      producto_id: null,
+      nombre_producto: String(l?.nombre || '').trim().slice(0, 80) || 'Varios',
+      tamano: null,
+      cantidad,
+      notas,
+      precio_unitario: precio,
     }
   })
-  if (deseadas.some((l) => l === null)) return json({ error: 'validacion', campo: 'lineas' }, 400)
+  if (deseadas.some((l) => l === null)) {
+    return json({ error: 'validacion', campo: 'lineas', mensaje: 'Hay una linea sin producto de la carta o con un importe libre que no es de mas de 0 y hasta 500 EUR' }, 400)
+  }
 
   // ── Reparto o recogida ────────────────────────────────────────────────────
   const eraReparto = ped.modo_entrega === 'delivery'
@@ -278,13 +331,14 @@ Deno.serve(async (req) => {
     if (uErr) return json({ error: 'lineas_actualizar_failed', detalle: uErr.message }, 500)
   }
 
-  // 3) Las nuevas, a 0: el precio lo pone el servidor, igual que al crear.
+  // 3) Las nuevas, a 0: el precio lo pone el servidor, igual que al crear. La
+  //    linea libre (v3) lleva el suyo: sin producto el trigger no pone ninguno.
   const aInsertar = (deseadas as any[]).filter((l) => !l.id).map((l) => ({
     pedido_id: ped.id,
     producto_id: l.producto_id,
     nombre_producto: l.nombre_producto,
     tamano: l.tamano,
-    precio_unitario: 0,
+    precio_unitario: l.producto_id ? 0 : l.precio_unitario,
     cantidad: l.cantidad,
     notas: l.notas,
   }))

@@ -1,4 +1,5 @@
-// tpv-pedido v5 (3-sep-2026) — v5: los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
+// tpv-pedido v6 (14-sep-2026) — v6: LINEA LIBRE, la del mostrador: {nombre, precio_unitario, cantidad, notas?} sin producto_id, importe de mas de 0 y hasta 500 EUR.
+// v5 (3-sep-2026) — los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
 // v4 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
 // con los productos de la carta.
 //
@@ -27,9 +28,13 @@
 //
 // LOS PRECIOS LOS PONE EL SERVIDOR, igual que en el mostrador: las lineas se
 // insertan a 0 y `enforce_pedido_item_precio` las sube al suelo que corresponde a
-// este origen — que aqui es el precio de domicilio, no el de barra.
+// este origen — que aqui es el precio de domicilio, no el de barra. La unica
+// excepcion es la LINEA LIBRE (v6): sin producto no hay suelo, y el importe lo
+// teclea quien atiende, con tope.
 //
-// Body: { establecimiento_id, modo: 'reparto'|'recogida', lineas: [...],
+// Body: { establecimiento_id, modo: 'reparto'|'recogida',
+//         lineas: [{ producto_id, cantidad, tamano?, notas? }
+//                  | { nombre, precio_unitario, cantidad, notas? }],
 //         cliente: { telefono, nombre?, direccion?, lat?, lng? },
 //         metodo_pago: 'efectivo'|'datafono'|'pagado_local',
 //         minutos_preparacion?, notas?, idempotency_key?,
@@ -201,18 +206,40 @@ Deno.serve(async (req) => {
 
   const lineas = lineasRaw.map((l: any) => {
     const cantidad = Math.min(100, Math.max(1, Math.round(Number(l?.cantidad) || 1)))
-    const prod = l?.producto_id ? productos.find((p) => p.id === l.producto_id) : null
-    if (!prod) return null
+    const notasLinea = l?.notas ? String(l.notas).slice(0, 200) : null
+    if (l?.producto_id) {
+      const prod = productos.find((p) => p.id === l.producto_id)
+      if (!prod) return null
+      return {
+        producto_id: prod.id,
+        nombre_producto: prod.nombre,
+        tamano: l?.tamano ? String(l.tamano) : null,
+        precio_unitario: 0,          // lo pone el servidor (ver cabecera)
+        cantidad,
+        notas: notasLinea,
+      }
+    }
+    // v6: LINEA LIBRE, la misma del mostrador (`tpv-venta`): lo que el cliente
+    // pide y no esta en la carta. Sin producto_id no hay suelo que aplicar
+    // (`enforce_pedido_item_precio` lo salta), asi que aqui SI manda el importe
+    // tecleado: el tope (mas de 0 y hasta 500) vive AQUI, y se redondea a
+    // centimos porque la columna es double y nada mas lo redondea. Sin importe no
+    // hay linea libre, y una de 0,00 EUR tampoco: la pantalla ya no la deja.
+    if (l?.precio_unitario === null || l?.precio_unitario === undefined || l?.precio_unitario === '') return null
+    const precio = Math.round(Number(l.precio_unitario) * 100) / 100
+    if (!Number.isFinite(precio) || precio <= 0 || precio > 500) return null
     return {
-      producto_id: prod.id,
-      nombre_producto: prod.nombre,
-      tamano: l?.tamano ? String(l.tamano) : null,
-      precio_unitario: 0,          // lo pone el servidor (ver cabecera)
+      producto_id: null,
+      nombre_producto: String(l?.nombre || '').trim().slice(0, 80) || 'Varios',
+      tamano: null,
+      precio_unitario: precio,
       cantidad,
-      notas: l?.notas ? String(l.notas).slice(0, 200) : null,
+      notas: notasLinea,
     }
   })
-  if (lineas.some((l) => l === null)) return json({ error: 'validacion', campo: 'lineas' }, 400)
+  if (lineas.some((l) => l === null)) {
+    return json({ error: 'validacion', campo: 'lineas', detalle: 'Hay una linea sin producto de la carta o con un importe libre que no es de mas de 0 y hasta 500 EUR' }, 400)
+  }
 
   // ── Reparto: repartidores en linea y coste del envio ──
   let envio = 0
