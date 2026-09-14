@@ -65,20 +65,23 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const costeDe = (ls) => ls.reduce((s, l) => s + num(l.cantidad) * Number(porId[l.articulo_id]?.coste_medio || 0), 0)
 
   const costeBase = costeDe(lineas)
+  // En el local se sirve en plato de vidrio: la barra no gasta empaque (el almacén no lo
+  // descuenta en ventas de mostrador ni de mesa, ver `_stock_pedido_en_local`).
+  const costeLocal = costeDe(lineas.filter(l => !porId[l.articulo_id]?.es_empaque))
   // Los DOS precios: la barra no paga comisión, lo que entra por Pidoo sí. Enseñar
   // uno solo hace que el dueño decida con la mitad de la información.
   // La barra cobra `precio_local ?? precio`, igual que el TPV (Tpv.jsx): un plato sin
   // precio de local se vende en barra al precio de la carta, no "sin precio".
   const pPidoo = Number(producto.precio ?? 0)
   const pBarra = producto.precio_local != null ? Number(producto.precio_local) : (pPidoo > 0 ? pPidoo : null)
-  const mBarra = pBarra != null ? pBarra - costeBase : null
+  const mBarra = pBarra != null ? pBarra - costeLocal : null
   const mPidoo = pPidoo > 0
     ? (comision == null ? pPidoo : pPidoo * (1 - comision / 100)) - costeBase
     : null
   // El % de ganancia va SOBRE EL COSTE (decisión de Marlon, 14 sep 2026): Acentejo cuesta
   // 2 € y se vende a 5 € → gana 3 € = 150 %. Sin coste no hay % (sería dividir entre 0).
-  const sobreCoste = (margen) => (costeBase > 0 && margen != null
-    ? `${Math.round((margen / costeBase) * 100)} % sobre el coste` : null)
+  const sobreCoste = (margen, coste) => (coste > 0 && margen != null
+    ? `${Math.round((margen / coste) * 100)} % sobre el coste` : null)
 
   function setLinea(i, campo, valor) {
     setLineas(prev => prev.map((l, j) => j === i ? { ...l, [campo]: valor } : l))
@@ -208,15 +211,16 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
               background: colors.surface2, border: `1px solid ${colors.border}`,
               display: 'flex', gap: 22, flexWrap: 'wrap',
             }}>
-              <Cifra label="Te cuesta" valor={eur(costeBase)} />
+              <Cifra label="Te cuesta" valor={eur(costeBase)}
+                nota={costeLocal !== costeBase ? `en el local, sin empaque: ${eur(costeLocal)}` : null} />
               <Cifra label="En barra te queda"
                 valor={pBarra == null ? '—' : eur(mBarra)}
-                porcentaje={pBarra == null ? null : sobreCoste(mBarra)}
+                porcentaje={pBarra == null ? null : sobreCoste(mBarra, costeLocal)}
                 nota={pBarra == null ? 'sin precio' : `vendes a ${eur(pBarra)}`}
                 tono={mBarra != null && mBarra < 0 ? 'danger' : 'ok'} />
               <Cifra label="Por Pidoo te queda"
                 valor={pPidoo > 0 ? eur(mPidoo) : '—'}
-                porcentaje={pPidoo > 0 ? sobreCoste(mPidoo) : null}
+                porcentaje={pPidoo > 0 ? sobreCoste(mPidoo, costeBase) : null}
                 nota={pPidoo > 0
                   ? `vendes a ${eur(pPidoo)}${comision == null ? ' · sin descontar comisión'
                       : comision > 0 ? ` − ${comision} % comisión` : ''}`

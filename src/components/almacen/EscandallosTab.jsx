@@ -19,6 +19,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
   const [prods, setProds] = useState([])
   const [conReceta, setConReceta] = useState({})   // producto_id -> nº de líneas
   const [costes, setCostes] = useState({})         // producto_id -> coste receta base
+  const [costesLocal, setCostesLocal] = useState({}) // igual, sin empaque (en el local va en plato)
   const [busca, setBusca] = useState('')
   const [soloSin, setSoloSin] = useState(false)
   const [categoria, setCategoria] = useState('')   // '' = todas
@@ -48,15 +49,19 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
 
       const cuenta = {}
       const coste = {}
+      const costeLocal = {}
       const porId = Object.fromEntries(articulos.map(a => [a.id, a]))
       for (const l of (e.data || [])) {
         if (l.tamano_clave !== '') continue
+        const art = porId[l.articulo_id]
+        const euros = Number(l.cantidad) * Number(art?.coste_medio || 0)
         cuenta[l.producto_id] = (cuenta[l.producto_id] || 0) + 1
-        coste[l.producto_id] = (coste[l.producto_id] || 0)
-          + Number(l.cantidad) * Number(porId[l.articulo_id]?.coste_medio || 0)
+        coste[l.producto_id] = (coste[l.producto_id] || 0) + euros
+        costeLocal[l.producto_id] = (costeLocal[l.producto_id] || 0) + (art?.es_empaque ? 0 : euros)
       }
       setConReceta(cuenta)
       setCostes(coste)
+      setCostesLocal(costeLocal)
       setCargando(false)
     })()
     return () => { vivo = false }
@@ -138,7 +143,8 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
           const pBarra = p.precio_local != null ? Number(p.precio_local) : (pPidoo > 0 ? pPidoo : null)
           // Por Pidoo se paga comisión; en barra no. Comparar los dos brutos mentiría.
           const netoPidoo = comision == null ? pPidoo : pPidoo * (1 - comision / 100)
-          const mBarra = tiene && pBarra != null ? pBarra - coste : null
+          const cLocal = costesLocal[p.id] ?? coste   // la barra no gasta empaque
+          const mBarra = tiene && pBarra != null ? pBarra - cLocal : null
           const mPidoo = tiene && pPidoo > 0 ? netoPidoo - coste : null
           return (
             <div key={p.id} style={{ ...ds.tableRow, ...filaMin(950), background: colors.paper }}>
@@ -163,7 +169,7 @@ export default function EscandallosTab({ estId, articulos, onCambio }) {
               <div style={{ ...col(88), color: colors.textMute }}>
                 {tiene ? eur(coste) : '—'}
               </div>
-              <Precio ancho={124} precio={pBarra} margen={mBarra} coste={coste} />
+              <Precio ancho={124} precio={pBarra} margen={mBarra} coste={cLocal} />
               <Precio ancho={148} precio={pPidoo} margen={mPidoo} coste={coste}
                 nota={comision == null ? 'sin descontar comisión'
                   : comision > 0 ? `−${comision} % comisión` : 'sin comisión'} />
