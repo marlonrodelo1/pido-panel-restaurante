@@ -35,9 +35,7 @@ import {
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
   Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
   Maximize2, Minimize2, StickyNote, Bookmark,
-  ShoppingBag,
-  Sandwich, Croissant, Beef, Beer, CupSoda, Coffee, Pizza, Salad, CakeSlice, IceCream,
-  Fish, Drumstick, Soup, Cookie, Utensils, Wine, Ham, Popcorn, Carrot, EggFried,
+  ShoppingBag, Utensils,
 } from 'lucide-react'
 
 import { T, FONT, cents, eur, caja, btnIcono, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
@@ -45,6 +43,8 @@ import TpvPedidos from '../components/TpvPedidos'
 import TpvCaja from '../components/TpvCaja'
 import TpvTickets from '../components/TpvTickets'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
+import { BotonCategoria, TarjetaProducto } from '../components/TpvCartaPiezas'
+import { etiquetaBloque } from '../lib/tpvCarta'
 import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
 import { prepararLogo } from '../lib/logoTicket'
 import TpvStock from '../components/TpvStock'
@@ -59,32 +59,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 // Un MONITOR no es una tablet grande. Los tamanos pensados para tocar a un brazo de
 // distancia, en 1900 px se ven enormes (Marlon: "se ve muy grande"). Tercer escalon.
 
-// Icono por categoría. Se mira el nombre porque `categorias` no guarda ningún icono
-// ni imagen. Con la carta de un bar (bocadillos, croissants, papas, perritos…) el
-// mapa de ilustraciones que hay en `lib/food.jsx` mandaría casi todo al icono de
-// pizza, así que aquí se usa lucide, que ya está en el proyecto.
-const ICONOS = [
-  [/bocadill|sandwi|sándwi|montad/i, Sandwich],
-  [/croissa|bolleri|bollería|dulce/i, Croissant],
-  [/hamburg|burger/i, Beef],
-  [/perrit|salchich|hot ?dog/i, Drumstick],
-  [/cervez|alcoh|copa|cubata/i, Beer],
-  [/vino|tinto|blanco|rioja/i, Wine],
-  [/refresc|bebid|zumo|agua/i, CupSoda],
-  [/caf[eé]|infusi|t[eé]\b|desayun/i, Coffee],
-  [/pizza/i, Pizza],
-  [/ensalad|verdur|vegetal/i, Salad],
-  [/postre|tarta|pastel/i, CakeSlice],
-  [/helad|granizad/i, IceCream],
-  [/pescad|marisc|at[uú]n/i, Fish],
-  [/sopa|crema|caldo|guiso/i, Soup],
-  [/galle|snack|aperitiv/i, Cookie],
-  [/jam[oó]n|ib[eé]ric|embutid/i, Ham],
-  [/papa|patata|frit/i, Popcorn],
-  [/tortill|huevo/i, EggFried],
-  [/extra|complement|salsa/i, Carrot],
-]
-const iconoDe = (nombre) => (ICONOS.find(([re]) => re.test(nombre || ''))?.[1]) || Utensils
+// El botón de categoría y la tarjeta de producto viven en
+// `components/TpvCartaPiezas.jsx` (el icono por categoría, en `lib/tpvCarta.js`):
+// el nuevo reparto/recogida pinta los mismos.
 
 const PANTALLAS = {
   'socios-riders': 'Repartidores',
@@ -347,7 +324,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   function aplicarCarta({ cats, prods, gru, tam, vin }, desdeEspejo = false) {
     setCategorias(cats || [])
     setProductos(prods || [])
-    setCatSel((actual) => actual || cats?.[0]?.id || null)
+    // Se queda la elegida SOLO si sigue teniendo algo a la venta; si no, la
+    // primera que tenga. Sin esto la elegida podía ser una categoría vacía, la
+    // pantalla enseñaba otra, y al encender un producto de la vieja la rejilla
+    // saltaba sola a ella sin que nadie tocara nada.
+    const conAlgo = new Set((prods || []).map((p) => p.categoria_id))
+    setCatSel((actual) => ((actual && conAlgo.has(actual))
+      ? actual
+      : ((cats || []).find((c) => conAlgo.has(c.id))?.id || null)))
     setGrupos(gru || [])
     setTamanos(tam || [])
     setVinculos(vin || [])
@@ -370,7 +354,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // dejar el mostrador sin carta.
       try {
         const espejo = JSON.parse(localStorage.getItem(claveEspejo) || 'null')
-        if (espejo?.cats?.length) { aplicarCarta(espejo, true); return }
+        // Con productos basta: una carta sin categorías también se vende.
+        if (espejo?.cats?.length || espejo?.prods?.length) { aplicarCarta(espejo, true); return }
       } catch { /* espejo roto: se sigue al aviso de siempre */ }
       if (avisar) toast('No se pudo recargar la carta: ' + (cats.error || prods.error || gru.error).message, 'error')
       setCargando(false)
@@ -535,6 +520,18 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     return m
   }, [productos])
 
+  // Solo las categorías con algo que vender (Marlon, 14 sep 2026: «quita también
+  // las vacías del mostrador»). Un «Arepas 0» es un botón que al tocarlo no
+  // enseña nada.
+  const categoriasVenta = useMemo(
+    () => categorias.filter((c) => contarPorCategoria[c.id]),
+    [categorias, contarPorCategoria])
+  // La elegida se DEDUCE: si al recargar la carta la categoría que estaba
+  // marcada se ha quedado vacía (se apagó su último producto), se pasa sola a la
+  // primera que tenga algo, en vez de dejar la rejilla en blanco.
+  const catEfectiva = categoriasVenta.some((c) => c.id === catSel)
+    ? catSel : (categoriasVenta[0]?.id || null)
+
   // Cuántas unidades de cada producto llevas ya, para el contador de la esquina:
   // se ve lo que va picado sin tener que leer el ticket de al lado.
   const enCarritoPorProducto = useMemo(() => {
@@ -546,9 +543,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     if (q) return productos.filter((p) => p.nombre.toLowerCase().includes(q))
-    if (!catSel) return []
-    return productos.filter((p) => p.categoria_id === catSel)
-  }, [productos, catSel, busqueda])
+    // Sin ninguna categoría que enseñar, los productos SUELTOS (sin categoría),
+    // como la tienda pública. No la carta entera: ahí irían también los de una
+    // categoría desactivada, que no deben venderse a la vista.
+    if (!categoriasVenta.length) return productos.filter((p) => !p.categoria_id)
+    return productos.filter((p) => p.categoria_id === catEfectiva)
+  }, [productos, categoriasVenta, catEfectiva, busqueda])
 
   const precioBarra = (p, tam) => cents(tam ? (tam.precio_local ?? tam.precio) : (p.precio_local ?? p.precio))
 
@@ -1157,7 +1157,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
                 bajos, no tarjetas altas — así caben más y sobra sitio para los
                 productos, que es lo que de verdad se toca. Se centra cuando cabe y
                 se desliza cuando no. */}
-            <div style={{ ...etiquetaBloque, marginBottom: 7 }}>Categorías</div>
+            {categoriasVenta.length > 0 && (
+              <div style={{ ...etiquetaBloque, marginBottom: 7 }}>Categorías</div>
+            )}
             <div style={{
               position: 'relative', marginBottom: esMonitor ? 12 : 14,
               display: 'flex', justifyContent: esMonitor ? 'flex-start' : 'center',
@@ -1181,35 +1183,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
                   : { display: 'flex', flexWrap: 'wrap', gap: 8, width: '100%',
                       justifyContent: 'flex-start' }),
               }}>
-                {categorias.map((c) => {
-                  const Icono = iconoDe(c.nombre)
-                  const activa = c.id === catSel && !busqueda
-                  return (
-                    <button key={c.id} onClick={() => { setCatSel(c.id); setBusqueda('') }} style={{
-                      // No encoge en ninguno de los dos: cada categoria ocupa lo que
-                      // mide su nombre. Un tope evita que "Bebidas Alcoholicas" se lleve
-                      // media fila.
-                      flex: '0 0 auto', minWidth: 0, maxWidth: esMonitor ? 230 : '100%',
-                      height: tam(46, 56, 44), padding: esMovil ? '0 12px' : '0 12px', cursor: 'pointer',
-                      scrollSnapAlign: 'start', fontFamily: 'inherit',
-                      border: `1px solid ${activa ? T.accent : T.border}`,
-                      borderRadius: 12,
-                      background: activa ? T.accentFill : T.surface2,
-                      color: activa ? T.onAccent : T.text,
-                      display: 'flex', alignItems: 'center', gap: 9,
-                      fontSize: tam(13, 14, 13), fontWeight: activa ? 700 : 500,
-                    }}>
-                      <Icono size={tam(16, 18, 15)} color={activa ? T.onAccent : T.accent} style={{ flexShrink: 0 }} />
-                      <span style={{
-                        minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap', textAlign: 'left', flex: 1,
-                      }}>{c.nombre}</span>
-                      <span style={{
-                        fontSize: 12, opacity: 0.65, fontWeight: 500, flexShrink: 0,
-                      }}>{contarPorCategoria[c.id] || 0}</span>
-                    </button>
-                  )
-                })}
+                {categoriasVenta.map((c) => (
+                  <BotonCategoria key={c.id} nombre={c.nombre}
+                    cuantos={contarPorCategoria[c.id] || 0}
+                    activa={c.id === catEfectiva && !busqueda}
+                    esMovil={esMovil} esMonitor={esMonitor} tam={tam}
+                    onClick={() => { setCatSel(c.id); setBusqueda('') }} />
+                ))}
               </div>
               {/* El CSS global esconde las barras de scroll, así que sin esta pista
                   visual no hay forma de saber que quedan categorías a la derecha.
@@ -1236,7 +1216,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
                 fontSize: 12, color: T.muted, minWidth: 0,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
-                {busqueda ? `"${busqueda}"` : (categorias.find((c) => c.id === catSel)?.nombre || '')}
+                {busqueda ? `"${busqueda}"` : (categorias.find((c) => c.id === catEfectiva)?.nombre || '')}
               </span>
               <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted, flexShrink: 0 }}>
                 {visibles.length}
@@ -2271,115 +2251,6 @@ function AvisoPedido({ pedido, cuantos, onVer, onLuego }) {
   )
 }
 
-// Etiqueta de bloque del mostrador ("Categorías", "Productos"). Pequeña y apagada:
-// tiene que separar sin robarle sitio a la carta, que es lo que se toca.
-const etiquetaBloque = {
-  fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase',
-  color: T.muted, flexShrink: 0,
-}
-
-// La tarjeta de un producto en el mostrador.
-//
-// CON FOTO: la foto ocupa la tarjeta entera y el nombre va ENCIMA, abajo, sobre un
-// degradado. Se busca el plato mirando la foto, no leyendo: la foto tiene que mandar.
-// Antes la imagen era una franja y debajo habia otra franja de texto casi igual de
-// alta, y en un monitor eso deja la foto diminuta.
-//
-// SIN FOTO: hoy 122 de 160 productos no tienen. Una tarjeta alta y negra con el nombre
-// perdido en medio se lee peor que una fila compacta, asi que esas mantienen el
-// formato de texto de siempre. Dos formas para dos casos, a proposito.
-function TarjetaProducto({ p, tams, tieneExtras, yaLleva, esMovil, tam, precioBarra, onClick }) {
-  // 🔴 En TELEFONO no: ahi la rejilla es de 2-3 columnas y una tarjeta de 126 px de
-  // alto deja ver media carta, asi que se queda la fila compacta de texto.
-  // En TABLET SI. Es el aparato con el que se cobra en la barra, y era justo donde
-  // no se veia ni una foto: esto pedia `esMonitor` (>=1280 px) y una tablet de 800
-  // o de 1024 se quedaba fuera. Hay fotos de sobra para ello — en BD (1 sep 2026):
-  // Duende Burger 77 de 77 productos, Burger House 38 de 38 a la venta.
-  const conFoto = !!p.imagen_url && !esMovil
-  const precio = (
-    <>
-      {tams.length ? 'desde ' : ''}
-      {eur(tams.length ? Math.min(...tams.map((t) => precioBarra(p, t))) : precioBarra(p))}
-    </>
-  )
-
-  const contador = yaLleva > 0 && (
-    <span style={{
-      position: 'absolute', top: 6, right: 6,
-      minWidth: esMovil ? 20 : 24, height: esMovil ? 20 : 24,
-      padding: '0 5px', borderRadius: 7, background: T.accentFill, color: T.onAccent,
-      fontSize: esMovil ? 11 : 13, fontWeight: 800,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      // Sobre una foto clara, el naranja solo no separa: hace falta la sombra.
-      boxShadow: '0 2px 6px rgba(0,0,0,0.45)',
-    }}>{yaLleva}</span>
-  )
-
-  const marco = {
-    position: 'relative', overflow: 'hidden', padding: 0, textAlign: 'left',
-    cursor: 'pointer', fontFamily: 'inherit', color: T.text,
-    border: `1px solid ${yaLleva ? T.accent : T.border}`,
-    borderRadius: esMovil ? 10 : 12,
-    background: T.surface2,
-    display: 'flex', flexDirection: 'column',
-  }
-
-  if (!conFoto) {
-    return (
-      <button onClick={onClick} style={{ ...marco, minHeight: tam(64, 78, 68) }}>
-        {contador}
-        <span style={{
-          padding: esMovil ? '8px 9px' : '10px 11px',
-          display: 'flex', flexDirection: 'column', gap: esMovil ? 3 : 5,
-          flex: 1, justifyContent: 'space-between',
-        }}>
-          <span style={{ fontSize: tam(12, 14, 12.5), fontWeight: 500, lineHeight: 1.25 }}>{p.nombre}</span>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: tam(13, 15, 13.5), fontWeight: 700, color: T.accent }}>{precio}</span>
-            {tieneExtras && <span style={{ fontSize: esMovil ? 10 : 11, color: T.muted }}>+ extras</span>}
-          </span>
-        </span>
-      </button>
-    )
-  }
-
-  return (
-    <button onClick={onClick} title={p.nombre} style={{ ...marco, height: tam(126, 150, 132) }}>
-      <img src={p.imagen_url} alt="" loading="lazy" style={{
-        position: 'absolute', inset: 0, width: '100%', height: '100%',
-        objectFit: 'cover', display: 'block',
-      }} />
-      {/* El degradado NO es adorno: sin el, un nombre blanco sobre una foto clara
-          (unas papas, un plato con luz) no se lee. Sube casi hasta media tarjeta
-          porque el texto puede ocupar dos lineas. */}
-      <span style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0, top: '38%',
-        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 45%, rgba(0,0,0,0.88) 100%)',
-        pointerEvents: 'none',
-      }} />
-      {contador}
-      <span style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        padding: esMovil ? '0 8px 8px' : '0 10px 10px',
-        display: 'flex', flexDirection: 'column', gap: 2,
-      }}>
-        <span style={{
-          fontSize: tam(12, 14, 12.5), fontWeight: 600, lineHeight: 1.25, color: '#FFFFFF',
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-          // Por si el degradado se queda corto con una foto muy blanca.
-          textShadow: '0 1px 3px rgba(0,0,0,0.6)',
-        }}>{p.nombre}</span>
-        <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
-          <span style={{
-            fontSize: tam(13, 15, 13.5), fontWeight: 800, color: T.accent,
-            textShadow: '0 1px 3px rgba(0,0,0,0.7)',
-          }}>{precio}</span>
-          {tieneExtras && (
-            <span style={{ fontSize: esMovil ? 10 : 11, color: 'rgba(255,255,255,0.75)' }}>+ extras</span>
-          )}
-        </span>
-      </span>
-    </button>
-  )
-}
+// La tarjeta de producto del mostrador está en `components/TpvCartaPiezas.jsx` y
+// la etiqueta de bloque en `lib/tpvCarta.js`, compartidas con el nuevo
+// reparto/recogida.

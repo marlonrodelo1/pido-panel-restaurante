@@ -20,12 +20,14 @@
 //
 // Los precios y el envío NO se calculan aquí: los pone `tpv-pedido` en el
 // servidor. Lo que se pinta en pantalla es orientativo.
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { toast } from '../App'
 import AddressInput from './AddressInput'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
-import { useEsMonitor } from '../lib/tamanoPantalla'
+import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
+import { BotonCategoria, TarjetaProducto } from './TpvCartaPiezas'
+import { etiquetaBloque } from '../lib/tpvCarta'
 import { imprimirPedido, imprimirModificacion, impresoraConfigurada } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
@@ -54,6 +56,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     pedidoEditar ? (pedidoEditar.modo_entrega === 'delivery' ? 'reparto' : 'recogida') : modo)
   const esReparto = modoActual === 'reparto'
   const esMonitor = useEsMonitor()
+  const esMovil = useEsMovil()
 
   const [productos, setProductos] = useState([])
   const [categorias, setCategorias] = useState([])
@@ -119,7 +122,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     let vivo = true
     Promise.all([
       supabase.from('productos')
-        .select('id, nombre, precio, categoria_id, disponible, agotado_por_stock')
+        .select('id, nombre, precio, categoria_id, disponible, agotado_por_stock, orden, imagen_url')
         .eq('establecimiento_id', restaurante.id).order('orden'),
       supabase.from('categorias')
         .select('id, nombre, orden')
@@ -127,8 +130,14 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     ]).then(([prods, cats]) => {
       if (!vivo) return
       // Igual que el mostrador: lo agotado por stock se sigue vendiendo en el TPV.
-      setProductos((prods.data || []).filter((p) => p.disponible !== false || p.agotado_por_stock))
+      const aLaVenta = (prods.data || []).filter((p) => p.disponible !== false || p.agotado_por_stock)
+      setProductos(aLaVenta)
       setCategorias(cats.data || [])
+      // Se entra con la PRIMERA categoría que tenga algo a la venta ya elegida. El
+      // «Todo» de antes mezclaba la carta entera por `orden` y salían croissants
+      // entre hamburguesas.
+      const conAlgo = new Set(aLaVenta.map((p) => p.categoria_id))
+      setCatActiva((actual) => actual || (cats.data || []).find((c) => conAlgo.has(c.id))?.id || null)
     })
     return () => { vivo = false }
   }, [restaurante?.id])
@@ -218,14 +227,55 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
   }, [digitos, telefonoCompleto, restaurante?.id, esReparto])
 
   // ── La comanda ────────────────────────────────────────────────────────────
+  // Cuántos hay a la venta en cada categoría: el número de su botón.
+  const contarPorCategoria = useMemo(() => {
+    const m = {}
+    for (const p of productos) m[p.categoria_id] = (m[p.categoria_id] || 0) + 1
+    return m
+  }, [productos])
+  // Solo las categorías con algo que vender. Una «Arepas 0» (todas apagadas a
+  // mano) es un botón que al tocarlo no enseña nada.
+  const categoriasVenta = useMemo(
+    () => categorias.filter((c) => contarPorCategoria[c.id]),
+    [categorias, contarPorCategoria])
+
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     // La búsqueda manda sobre la categoría: si escribes «coca» quieres la Coca-Cola
     // esté donde esté, no un «no hay resultados» porque estabas en Hamburguesas.
     if (q) return productos.filter((p) => p.nombre.toLowerCase().includes(q))
-    if (catActiva) return productos.filter((p) => p.categoria_id === catActiva)
-    return productos
-  }, [productos, busqueda, catActiva])
+    // Sin categorías que enseñar (un restaurante que no las usa), los productos
+    // SUELTOS, como la tienda pública: no los de una categoría desactivada.
+    if (!categoriasVenta.length) return productos.filter((p) => !p.categoria_id)
+    if (!catActiva) return []
+    return productos.filter((p) => p.categoria_id === catActiva)
+  }, [productos, categoriasVenta, busqueda, catActiva])
+
+  // El contador de la esquina de cada foto: cuántos llevas ya picados.
+  const enCarritoPorProducto = useMemo(() => {
+    const m = {}
+    for (const l of carrito) m[l.producto_id] = (m[l.producto_id] || 0) + l.cantidad
+    return m
+  }, [carrito])
+
+  // 🔴 Se mide EL HUECO DE LA CARTA, no la ventana. Esta carta vive dentro de un
+  // modal: 440 px en tablet y la columna del medio en monitor. Con la ventana, una
+  // tablet de 1024 pintaría fotos pensadas para 1024 en 404 px de hueco.
+  const [anchoCarta, setAnchoCarta] = useState(0)
+  const roCarta = useRef(null)
+  const medirCarta = useCallback((el) => {
+    if (roCarta.current) { roCarta.current.disconnect(); roCarta.current = null }
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([e]) => setAnchoCarta(Math.round(e.contentRect.width)))
+    ro.observe(el)
+    roCarta.current = ro
+  }, [])
+  // Por debajo de 380 px las fotos no caben: tarjeta de texto, como el mostrador
+  // en el teléfono. Antes de la primera medida se estima por la ventana.
+  const compacto = anchoCarta ? anchoCarta < 380 : esMovil
+  const tamCarta = (movil, tablet, monitor) => (compacto ? movil : esMonitor ? monitor : tablet)
+  // Precio de DOMICILIO: este pedido sale del local, no se cobra el de barra.
+  const precioDomicilio = (p) => cents(p.precio)
 
   // La clave de una linea del carrito. Al EDITAR, dos lineas pueden ser del
   // mismo producto (una que ya estaba, con su precio congelado, y otra recien
@@ -599,8 +649,9 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     </div>
   )
 
+  const hayBusqueda = !!busqueda.trim()
   const bloqueCarta = (
-    <div style={{
+    <div ref={medirCarta} style={{
       // 🔴 `minWidth: 0` NO sobra. Este bloque es hijo de una rejilla, y un hijo de
       // rejilla vale `min-width: auto`: se niega a encoger por debajo de su
       // contenido. Con 38 productos dentro, la rejilla de la carta se estiraba a
@@ -608,48 +659,95 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0,
       ...(esMonitor ? { height: '100%' } : null),
     }}>
-      <div style={{ position: 'relative', marginBottom: 8, flexShrink: 0 }}>
+      <div style={{ position: 'relative', marginBottom: 10, flexShrink: 0 }}>
         <Search size={15} style={{ position: 'absolute', left: 12, top: 16, color: T.muted }} />
         <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar producto para añadir" style={{ ...inputOscuro, paddingLeft: 36 }} />
       </div>
 
-      {categorias.length > 0 && !busqueda.trim() && (
-        <div style={{
-          display: 'flex', gap: 6, marginBottom: 8, flexShrink: 0,
-          // En monitor caben todas a la vista; en tablet y teléfono se deslizan.
-          ...(esMonitor ? { flexWrap: 'wrap' } : { overflowX: 'auto', paddingBottom: 4 }),
-        }}>
-          <ChipCat activa={!catActiva} onClick={() => setCatActiva(null)}>Todo</ChipCat>
-          {categorias.map((c) => (
-            <ChipCat key={c.id} activa={catActiva === c.id} onClick={() => setCatActiva(c.id)}>
-              {c.nombre}
-            </ChipCat>
-          ))}
-        </div>
+      {/* LAS CATEGORÍAS, con el mismo botón que el mostrador: icono, nombre y
+          cuántos productos tiene. Marlon (14 sep 2026): «deben estar mejor
+          organizadas». Antes eran chips de texto con un «Todo» delante. La tira
+          no desaparece al buscar: tocar una categoría borra la búsqueda. */}
+      {categoriasVenta.length > 0 && (
+        <>
+          {/* En monitor sin etiqueta: la columna ya se titula «Qué pide» y cada
+              píxel de alto que no gasta la cabecera es una fila más de fotos. */}
+          {!esMonitor && <div style={{ ...etiquetaBloque, marginBottom: 7 }}>Categorías</div>}
+          <div style={{ position: 'relative', marginBottom: 12, flexShrink: 0 }}>
+            <div style={{
+              display: 'flex', gap: 8, maxWidth: '100%',
+              // En monitor se ven TODAS, en filas alineadas a la izquierda. En el
+              // modal estrecho de tablet y teléfono, una fila que se desliza.
+              ...(esMonitor
+                ? { flexWrap: 'wrap' }
+                : { overflowX: 'auto', paddingBottom: 2, scrollSnapType: 'x proximity' }),
+            }}>
+              {categoriasVenta.map((c) => (
+                <BotonCategoria key={c.id} nombre={c.nombre}
+                  cuantos={contarPorCategoria[c.id] || 0}
+                  activa={c.id === catActiva && !hayBusqueda}
+                  esMovil={compacto} esMonitor={esMonitor} tam={tamCarta}
+                  onClick={() => { setCatActiva(c.id); setBusqueda('') }} />
+              ))}
+            </div>
+            {/* Las barras de scroll están escondidas: sin esta sombra no se sabe
+                que quedan categorías a la derecha. */}
+            {!esMonitor && (
+              <div style={{
+                position: 'absolute', right: 0, top: 0, bottom: 2, width: 24, pointerEvents: 'none',
+                background: `linear-gradient(90deg, rgba(26,24,21,0), ${T.surface})`,
+              }} />
+            )}
+          </div>
+        </>
       )}
 
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: 6, overflowY: 'auto', alignContent: 'start', minWidth: 0,
+        display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0,
+        borderTop: `1px solid ${T.border}`, paddingTop: 10, marginBottom: 8,
+      }}>
+        <span style={etiquetaBloque}>{hayBusqueda ? 'Resultados' : 'Productos'}</span>
+        <span style={{
+          fontSize: 12, color: T.muted, minWidth: 0,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {hayBusqueda ? `"${busqueda.trim()}"` : (categorias.find((c) => c.id === catActiva)?.nombre || '')}
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted, flexShrink: 0 }}>
+          {visibles.length}
+        </span>
+      </div>
+
+      <div style={{
+        display: 'grid', gap: compacto ? 8 : 10,
+        gridTemplateColumns: `repeat(auto-fill, minmax(${compacto ? 104 : 150}px, 1fr))`,
+        // 🔴 `max-content`: la tarjeta lleva `overflow: hidden`, y en una rejilla de
+        // alto fijo una fila `auto` puede quedarse en el `minHeight` de la tarjeta y
+        // montar un nombre de dos líneas encima de la fila de abajo.
+        gridAutoRows: 'max-content',
+        overflowY: 'auto', alignContent: 'start', minWidth: 0,
         // En monitor `flex: 1` (se queda con lo que sobre) y NO un alto en píxeles:
         // el bloque de arriba mide distinto según haya categorías o búsqueda activa.
-        ...(esMonitor ? { flex: 1, minHeight: 0 } : { maxHeight: 190 }),
+        // Apilado, con fotos, dos filas enteras a la vista.
+        ...(esMonitor ? { flex: 1, minHeight: 0 } : { maxHeight: compacto ? 220 : 330 }),
       }}>
         {visibles.map((p) => (
-          <button key={p.id} onClick={() => anadir(p)} title={p.nombre} style={{
-            padding: '9px 10px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-            borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text,
-          }}>
-            <span style={{ display: 'block', fontSize: 13, lineHeight: 1.25 }}>{p.nombre}</span>
-            <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: T.accent, marginTop: 3 }}>
-              {eur(cents(p.precio))}
-            </span>
-          </button>
+          <TarjetaProducto
+            key={p.id}
+            p={p}
+            tams={[]}
+            tieneExtras={false}
+            yaLleva={enCarritoPorProducto[p.id] || 0}
+            esMovil={compacto}
+            tam={tamCarta}
+            precioBarra={precioDomicilio}
+            onClick={() => anadir(p)}
+          />
         ))}
         {visibles.length === 0 && (
           <div style={{ gridColumn: '1 / -1', padding: 16, textAlign: 'center', color: T.muted, fontSize: 13 }}>
-            Nada con ese nombre en la carta.
+            {hayBusqueda ? 'Nada con ese nombre en la carta.' : 'No hay productos en esta categoría.'}
           </div>
         )}
       </div>
@@ -886,20 +984,6 @@ function EstadoCliente({ completo, buscando, cliente, esReparto }) {
         </div>
       )}
     </div>
-  )
-}
-
-function ChipCat({ activa, onClick, children }) {
-  return (
-    <button onClick={onClick} style={{
-      flex: '0 0 auto', maxWidth: 190, padding: '0 12px', height: 34, borderRadius: 9,
-      cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
-      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      border: `1px solid ${activa ? T.accent : T.border}`,
-      background: T.surface2,
-      color: activa ? T.accent : T.text,
-      fontWeight: activa ? 700 : 500,
-    }}>{children}</button>
   )
 }
 

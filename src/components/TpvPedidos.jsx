@@ -351,7 +351,7 @@ export default function TpvPedidos({
       <Pastilla activa={registro === 'curso'} onClick={() => setRegistro('curso')}
         texto="En curso" cuantos={enMarcha.length} />
       <Pastilla activa={registro === 'cerrados'} onClick={() => setRegistro('cerrados')}
-        texto="Cerrados" cuantos={cerrados.length} />
+        texto="Cerrados hoy" cuantos={cerrados.length} />
       {/* El kanban solo se ofrece donde cabe: cuatro columnas en 400 px son cuatro
           tiras donde no entra ni el codigo del pedido. */}
       {alLado && (
