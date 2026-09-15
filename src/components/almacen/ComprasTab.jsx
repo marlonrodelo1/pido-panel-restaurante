@@ -14,6 +14,15 @@ import FacturaEditor from './FacturaEditor'
 //     Es un BORRADOR hasta que se pulsa «Contabilizar»: hasta entonces no mueve ni una
 //     unidad del almacén, así que se puede teclear con calma y corregir.
 // Las dos son la misma tabla y cuentan igual en las cuentas.
+
+// Con qué se pagó, dicho en la línea de estado de cada compra. «El cajón del TPV» con
+// apellido: desde que existe la caja mayor, «el cajón» a secas ya no deja claro cuál.
+const PAGADA_CON = {
+  caja_mayor: 'pagada con la caja mayor',
+  banco: 'pagada por banco',
+  caja: 'pagada con el cajón del TPV',
+}
+
 export default function ComprasTab({ estId, articulos, onCambio, recarga, onApuntar }) {
   const [facturas, setFacturas] = useState([])
   const [proveedores, setProveedores] = useState([])
@@ -107,7 +116,7 @@ export default function ComprasTab({ estId, articulos, onCambio, recarga, onApun
                     ? (f.origen === 'rapida' && !f.stock_proveedores?.nombre ? 'Ya en tu almacén'
                       : f.origen === 'rapida' ? 'Compra rápida · ya en tu almacén' : 'Contabilizada · ya en tu almacén')
                     : 'Borrador · no ha entrado en el almacén',
-                  f.pagado_con === 'caja' ? 'pagada con el cajón' : f.pagado_con === 'banco' ? 'pagada por banco' : null,
+                  PAGADA_CON[f.pagado_con] || null,
                 ].filter(Boolean).join(' · ')}
               </div>
             </div>

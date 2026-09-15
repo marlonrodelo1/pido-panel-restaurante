@@ -5,7 +5,7 @@ import { colors, ds, radius, type, col } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import {
   eur, UNIDADES, contabilizarFactura, descontabilizarFactura,
-  marcarPagado, textoCajon, hoyCanariasIso,
+  marcarPagado, textoCajon, hoyCanariasIso, fechaLarga,
 } from '../../lib/stock'
 
 // El albarán: qué te ha traído el proveedor y a qué precio.
@@ -17,9 +17,30 @@ import {
 // El total del papel se teclea aparte de las líneas a propósito: si no cuadran, hay
 // una línea de menos o un precio mal puesto, y eso vale más que un campo calculado.
 //
-// «¿Con qué la pagaste?» (15 sep 2026): si fue con el dinero del cajón, al contabilizar
-// sale de la caja abierta del TPV — solo si la factura es de hoy: la caja de otro día ya
-// se contó. Las compras rápidas no se descontabilizan aquí: se deshacen en «El día».
+// «¿Con qué la pagaste?» (15 sep 2026): lo normal es la caja mayor. Un BORRADOR no mueve
+// dinero: el pago cuenta al contabilizar, igual que la mercancía. Si fue con el dinero del
+// cajón, sale de la caja abierta del TPV, y por eso «Cajón del TPV» solo se ofrece con la
+// caja abierta y para facturas de hoy: la caja de otro día ya se contó. Las compras rápidas
+// no se descontabilizan aquí: se deshacen en «El día».
+//
+// OJO con la DESCONTABILIZADA: vuelve a ser borrador, pero conserva el pago de la primera vez
+// (`pagado_at`, y la salida del cajón si la hubo). Ese pago sigue contando en Tu dinero y al
+// contabilizarla otra vez no resta de nuevo. Por eso «el pago cuenta al contabilizar» solo se
+// dice de un borrador que nunca se ha contabilizado.
+//
+// Contabilizar y apuntar el pago son DOS llamadas. La primera no se deshace si la segunda
+// falla, así que lo del cajón se comprueba antes, y si aun así falla el pago, la factura se
+// queda sin «con qué» (sale «¿Con qué?» en El día) en vez de decir que se pagó con algo
+// que no se ha apuntado. Salvo que ese pago ya contara la primera vez (o saliera del cajón):
+// entonces está bien apuntado y no se toca.
+
+// Cómo se dice en el aviso con qué quedó pagada.
+const PAGADA_CON = {
+  caja_mayor: 'con la caja mayor',
+  banco: 'por banco',
+  caja: 'con el cajón del TPV',
+}
+
 export default function FacturaEditor({ estId, factura, articulos, proveedores, onCerrar, onGuardado }) {
   const nueva = !factura
   const bloqueada = !!factura?.contabilizada
@@ -44,6 +65,28 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
   const [nuevosArt, setNuevosArt] = useState([])
   const [creando, setCreando] = useState(null)      // { linea, nombre, unidad }
   const [creandoArt, setCreandoArt] = useState(false)
+  // ¿Tiene el TPV la caja abierta? null mientras se mira. Si la consulta falla se queda en
+  // false: mejor no ofrecer el cajón que ofrecer un pago que la base de datos va a rechazar.
+  const [cajaAbierta, setCajaAbierta] = useState(null)
+  // Contabilizada, pero el pago no se pudo apuntar: se avisa con calma, no con un toast de 3 s.
+  const [avisoPago, setAvisoPago] = useState(null)
+
+  const hoy = hoyCanariasIso()
+  // La factura ya sacó dinero del cajón del TPV (tiene su salida enlazada). Entonces «con qué
+  // la pagaste» no se cambia con un UPDATE a pelo: la base de datos lo corta (PD277) y, aunque
+  // no lo cortara, la salida seguiría en el cajón y el mismo pago saldría dos veces.
+  const conSalidaCajon = !nueva && !!factura?.caja_movimiento_id
+  // «Cajón del TPV» solo con la caja del TPV abierta y para pagos de hoy. `cajonNoVale` es
+  // la respuesta ya sabida; mientras se mira el TPV tampoco se ofrece, pero no se acusa.
+  const cajonNoVale = !conSalidaCajon && (cab.fecha !== hoy || cajaAbierta === false)
+  const motivoSinCajon = conSalidaCajon ? null
+    : cab.fecha !== hoy ? 'Solo para pagos de hoy'
+      : cajaAbierta === null ? 'Mirando el TPV…'
+        : !cajaAbierta ? 'El TPV no tiene la caja abierta' : null
+  // El pago ya contó la primera vez que se contabilizó (lo guardado, no lo del formulario).
+  const pagoContadoAntes = !nueva && (!!factura?.pagado_at || conSalidaCajon)
+  // …y sigue siendo el mismo: al contabilizarla otra vez no se vuelve a restar.
+  const pagoYaContado = pagoContadoAntes && (cab.pagado_con || null) === (factura?.pagado_con || null)
 
   // Los archivados no se ofrecen (no se compra lo que ya no se usa), pero los recién
   // creados sí, aunque el prop todavía no los tenga.
@@ -68,6 +111,14 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
     })()
     return () => { vivo = false }
   }, [factura?.id, nueva])
+
+  useEffect(() => {
+    if (!estId) return
+    let vivo = true
+    supabase.rpc('tpv_estado_caja', { p_establecimiento_id: estId })
+      .then(({ data }) => { if (vivo) setCajaAbierta(!!data?.abierta) })
+    return () => { vivo = false }
+  }, [estId])
 
   const num = (v) => Number(String(v ?? '').replace(',', '.')) || 0
   const sumaLineas = lineas.reduce((s, l) => s + num(l.cantidad) * num(l.precio_unitario), 0)
@@ -138,6 +189,17 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
     if (cab.fecha > hoyCanariasIso()) {
       return toast('La fecha de la factura no puede estar en el futuro.', 'error')
     }
+    // Guardarla con el cajón cuando no vale solo sirve para que falle al contabilizar.
+    if (cab.pagado_con === 'caja' && motivoSinCajon) {
+      return toast(cab.fecha !== hoy
+        ? 'Una factura de otro día no se puede pagar con el cajón del TPV: la caja de ese día ya se contó. Elige caja mayor o banco.'
+        : cajonNoVale ? 'El TPV no tiene la caja abierta: elige caja mayor o banco.'
+          : 'Un momento: se está mirando si el TPV tiene la caja abierta. Vuelve a pulsar Guardar.', 'error')
+    }
+    const cambiaPago = conSalidaCajon && (cab.pagado_con || null) !== (factura.pagado_con || null)
+    if (cambiaPago && !cab.pagado_con) {
+      return toast('Esta factura ya sacó dinero del cajón del TPV: no puede quedarse sin decir. Elige caja mayor, banco o déjala en el cajón.', 'error')
+    }
 
     setGuardando(true)
     try {
@@ -147,7 +209,8 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
         fecha: cab.fecha,
         total: totalPapel || Math.round(sumaLineas * 100) / 100,
         notas: cab.notas.trim() || null,
-        pagado_con: cab.pagado_con || null,
+        // Con salida del cajón, el pago lo cambia la RPC de abajo, nunca este UPDATE.
+        ...(conSalidaCajon ? {} : { pagado_con: cab.pagado_con || null }),
       }
       let id = factura?.id
       if (nueva) {
@@ -156,6 +219,9 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
         if (error) throw new Error(error.message)
         id = data.id
       } else {
+        // ANTES del UPDATE: si la RPC falla (PD277, esa caja ya está cerrada) no se ha tocado
+        // nada y el catch de abajo enseña el motivo. Si va bien, la salida vuelve al cajón.
+        if (cambiaPago) await marcarPagado('compra', id, cab.pagado_con)
         const { error } = await supabase.from('stock_facturas').update(cabecera).eq('id', id)
         if (error) throw new Error(error.message)
         const del = await supabase.from('stock_factura_lineas').delete().eq('factura_id', id)
@@ -173,7 +239,9 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
       const ins = await supabase.from('stock_factura_lineas').insert(filas)
       if (ins.error) throw new Error(ins.error.message)
 
-      toast('Borrador guardado. Para que entre en el almacén, pulsa Contabilizar.', 'success')
+      toast(pagoContadoAntes
+        ? 'Borrador guardado. Hasta que pulses Contabilizar no entra en el almacén.'
+        : 'Borrador guardado. Hasta que pulses Contabilizar no entra en el almacén ni cuenta el pago.', 'success')
       onGuardado()
     } catch (e) {
       toast('No se ha podido guardar: ' + e.message, 'error')
@@ -182,23 +250,64 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
   }
 
   async function contabilizar() {
+    // Con salida del cajón, cambiar «con qué» va por la RPC ANTES de tocar nada, y eso lo hace
+    // «Guardar borrador». Aquí la mercancía entraría primero y el cambio podría fallar (PD277).
+    if (conSalidaCajon && (cab.pagado_con || null) !== (factura.pagado_con || null)) {
+      return toast('Has cambiado con qué la pagaste: pulsa «Guardar borrador» y luego Contabilizar.', 'error')
+    }
+    // Lo del cajón se mira ANTES: después de contabilizar ya no hay vuelta atrás. La RPC mira
+    // la fecha GUARDADA de la factura, no la del formulario.
+    if (cab.pagado_con === 'caja' && !conSalidaCajon) {
+      if (factura.fecha !== hoy) {
+        return toast(cab.fecha === hoy
+          ? 'Has cambiado la fecha pero no la has guardado: pulsa «Guardar borrador» y luego Contabilizar.'
+          : 'Una factura de otro día no se puede pagar con el cajón del TPV: la caja de ese día ya se contó. Elige caja mayor o banco y guarda el borrador.', 'error')
+      }
+      const { data: caja } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: estId })
+      setCajaAbierta(!!caja?.abierta)
+      if (!caja?.abierta) return toast('El TPV no tiene la caja abierta: elige caja mayor o banco y guarda el borrador.', 'error')
+    }
     if (!(await confirmar(
       'Al contabilizar, esta mercancía entra en tu almacén y cada artículo se queda con ' +
       'el precio que has pagado en esta factura.' +
-      (cab.pagado_con === 'caja' ? '\n\nComo la pagaste con el cajón, si es de hoy sale de la caja abierta.' : '') +
+      (pagoYaContado && cab.pagado_con !== 'caja' ? '\n\nEl pago ya contó la primera vez que la contabilizaste: no se vuelve a restar.'
+        : cab.pagado_con === 'caja_mayor' ? '\n\nComo la pagaste con la caja mayor, al contabilizarla sale de la caja mayor.'
+        : cab.pagado_con === 'banco' ? '\n\nComo la pagaste por banco, al contabilizarla sale del banco.'
+          : cab.pagado_con === 'caja' && conSalidaCajon ? '\n\nLa pagaste con el cajón del TPV y ese dinero ya salió: no se vuelve a sacar.'
+          : cab.pagado_con === 'caja' ? '\n\nComo la pagaste con el cajón del TPV, al contabilizarla sale de la caja abierta del TPV.'
+            : '\n\nNo has dicho con qué la pagaste: el dinero no sale de ningún sitio hasta que lo digas.') +
       '\n\nDespués no podrás editar la factura sin descontabilizarla antes.'
     ))) return
     setGuardando(true)
     try {
       await contabilizarFactura(factura.id)
-      let cajonTxt = ''
-      if (cab.pagado_con) {
+    } catch (e) { toast(e.message, 'error'); setGuardando(false); return }
+
+    let cajonTxt = ''
+    if (cab.pagado_con) {
+      try {
         const r = await marcarPagado('compra', factura.id, cab.pagado_con)
-        cajonTxt = textoCajon(r.cajon, factura.total)
+        // Si el pago ya contó la primera vez, no se dice «Salen X de la caja mayor»: no sale otra vez.
+        cajonTxt = pagoYaContado && cab.pagado_con !== 'caja' ? '' : textoCajon(r.cajon, factura.total)
+      } catch (e) {
+        // La mercancía ya entró y eso no se deshace. Que la lista no diga «pagada con…» algo
+        // que no se ha apuntado: se deja sin «con qué» y El día lo pregunta. Con salida del
+        // cajón no se puede (PD277): ahí sigue siendo del cajón, que es lo que de verdad pasó.
+        // Si el pago ya contó la primera vez tampoco se toca: está bien apuntado, y quitarle el
+        // «con qué» borraría un pago que sí se hizo.
+        // `.select('id')`: si no es el dueño, la RLS deja el UPDATE en 0 filas SIN error.
+        let sinConQue = false
+        if (!conSalidaCajon && !pagoYaContado) {
+          const { data, error } = await supabase.from('stock_facturas')
+            .update({ pagado_con: null }).eq('id', factura.id).select('id')
+          sinConQue = !error && (data?.length || 0) > 0
+        }
+        setAvisoPago({ motivo: e.message, sinConQue })
+        return
       }
-      toast(['Factura contabilizada: la mercancía está en el almacén.', cajonTxt].filter(Boolean).join(' '), 'success')
-      onGuardado()
-    } catch (e) { toast(e.message, 'error'); setGuardando(false) }
+    }
+    toast(['Factura contabilizada: la mercancía está en el almacén.', cajonTxt].filter(Boolean).join(' '), 'success')
+    onGuardado()
   }
 
   // Ya contabilizada, decir con qué se pagó va por RPC: si fue el cajón, sale de la caja.
@@ -207,7 +316,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
     try {
       const r = await marcarPagado('compra', factura.id, valor)
       setCab(c => ({ ...c, pagado_con: valor }))
-      toast([`Apuntado: pagada ${valor === 'caja' ? 'con el cajón' : 'por banco'}.`, textoCajon(r.cajon, factura.total)].filter(Boolean).join(' '), 'success')
+      toast([`Apuntado: pagada ${PAGADA_CON[valor] || 'por banco'}.`, textoCajon(r.cajon, factura.total)].filter(Boolean).join(' '), 'success')
     } catch (e) { toast(e.message, 'error') }
   }
 
@@ -225,6 +334,56 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
     } catch (e) { toast(e.message, 'error'); setGuardando(false) }
   }
 
+  // Contabilizada, pero el pago no se pudo apuntar. El formulario ya no vale (la factura de
+  // la prop es la de antes de contabilizar): solo el aviso, y al cerrarlo se recarga la lista.
+  if (avisoPago) {
+    // El pago de antes (del cajón, o de la primera vez que se contabilizó) sigue bien apuntado:
+    // no se le dice «sin el pago», que le haría pensar que falta dinero por apuntar.
+    const pagoIntacto = conSalidaCajon || pagoYaContado
+    return (
+      <div style={ds.modal} onClick={onGuardado}>
+        <div style={{ ...ds.modalContent, maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+          <h2 style={{ ...ds.h2, marginBottom: 12 }}>
+            {pagoIntacto ? 'Factura contabilizada, con un aviso del pago' : 'Factura contabilizada, pero sin el pago'}
+          </h2>
+          <div style={{
+            display: 'flex', gap: 8, padding: '12px 14px', borderRadius: radius.sm,
+            border: `1px solid ${colors.warning}`, background: colors.warningSoft,
+            fontSize: type.sm, lineHeight: 1.55, color: colors.text,
+          }}>
+            <TriangleAlert size={16} color={colors.warning} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ minWidth: 0 }}>
+              {pagoIntacto ? (
+                <>La mercancía ya está en tu almacén. Al repasar con qué la pagaste ha salido un error, pero <strong>el pago sigue bien apuntado</strong>.</>
+              ) : (
+                <>La mercancía ya está en tu almacén, pero <strong>no se ha podido apuntar con qué la pagaste</strong>.</>
+              )}
+              <div style={{ marginTop: 6, color: colors.textDim }}>Motivo: {avisoPago.motivo}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: type.sm, color: colors.text, lineHeight: 1.6, marginTop: 14 }}>
+            {avisoPago.sinConQue ? (
+              <>
+                Se ha quedado sin decir con qué se pagó, para que tu dinero no cuente mal. Dilo en{' '}
+                <strong>Contabilidad → El día</strong> del {fechaLarga(factura.fecha)}, donde pone
+                «¿Con qué?», o abriendo otra vez esta factura.
+              </>
+            ) : conSalidaCajon ? (
+              'Sigue apuntada con el cajón del TPV: ese dinero ya salió del cajón y así queda bien apuntado. No tienes que hacer nada más.'
+            ) : pagoYaContado ? (
+              `Sigue apuntada ${PAGADA_CON[cab.pagado_con] || 'por banco'}, como la primera vez que la contabilizaste: ese pago ya contó y no se vuelve a restar. No tienes que hacer nada más.`
+            ) : (
+              'Ábrela otra vez y elige con qué la pagaste.'
+            )}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+            <button onClick={onGuardado} style={ds.primaryBtn}>Entendido</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={ds.modal} onClick={onCerrar}>
       <div style={{ ...ds.modalContent, maxWidth: 940 }} onClick={e => e.stopPropagation()}>
@@ -236,7 +395,9 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
             ? 'Ya está en tu almacén. Si te equivocaste, deshazla en Contabilidad → El día: sale del almacén y vuelve el coste de antes.'
             : bloqueada
               ? 'Esta mercancía ya está en tu almacén. Para cambiarla, descontabilízala primero.'
-              : 'Todavía no ha entrado nada en el almacén ni ha cambiado ningún coste. Eso pasa al contabilizarla.'}
+              : pagoContadoAntes
+                ? 'Todavía no ha entrado nada en el almacén ni ha cambiado ningún coste. El pago ya contó la primera vez que la contabilizaste: no se vuelve a restar.'
+                : 'Todavía no ha entrado nada en el almacén, ni ha cambiado ningún coste, ni ha contado el pago. Eso pasa al contabilizarla.'}
         </div>
 
         {cargando ? (
@@ -287,10 +448,22 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
                     ? cambiarPagadoBloqueada(e.target.value)
                     : setCab({ ...cab, pagado_con: e.target.value })}
                   style={ds.select}>
-                  <option value="" disabled={bloqueada && !!cab.pagado_con}>— Sin decir / aún no —</option>
-                  <option value="caja">Dinero del cajón</option>
+                  {/* Con salida del cajón no puede quedarse sin decir: la base de datos lo corta (PD277). */}
+                  <option value="" disabled={(bloqueada && !!cab.pagado_con) || conSalidaCajon}>— Sin decir / aún no —</option>
+                  <option value="caja_mayor">Caja mayor</option>
                   <option value="banco">Tarjeta o banco</option>
+                  {/* Deshabilitado en vez de oculto: así se ve que existe y por qué ahora no vale. */}
+                  <option value="caja" disabled={!!motivoSinCajon}>
+                    {motivoSinCajon ? `Cajón del TPV · ${motivoSinCajon}` : 'Cajón del TPV'}
+                  </option>
                 </select>
+                {cab.pagado_con === 'caja' && cajonNoVale && (
+                  <div style={{ fontSize: type.xs, color: colors.danger, marginTop: 4, lineHeight: 1.4 }}>
+                    {cab.fecha !== hoy
+                      ? 'El cajón del TPV solo vale para pagos de hoy: elige caja mayor o banco.'
+                      : 'El TPV no tiene la caja abierta: elige caja mayor o banco.'}
+                  </div>
+                )}
               </div>
             </div>
 

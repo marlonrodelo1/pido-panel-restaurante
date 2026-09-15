@@ -17,13 +17,15 @@ import { toast, confirmar } from '../App'
 import { useRest } from '../context/RestContext'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { hayQueCobrar } from '../lib/metodoPago'
+import { sePuedeCambiarPago } from '../lib/stock'
+import CambiarFormaPago from './CambiarFormaPago'
 import {
   aceptarPedido, rechazarPedido, cancelarPedido, marcarListo, marcarRecogido,
   marcarEntregado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
 } from '../lib/accionesPedido'
 import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
 import { unlockAudio, startAlarm, stopAlarm } from '../lib/alarm'
-import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil } from 'lucide-react'
+import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil, Wallet } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
@@ -78,6 +80,22 @@ const ICONO_TIPO = { mostrador: Store, reparto: Bike, recogida: ShoppingBag }
 // peor que no avisar: el camarero deja de fiarse del aviso.
 const pendienteDeCobro = (p) =>
   EN_CURSO.includes(p.estado) && p.origen_pedido !== 'tpv' && hayQueCobrar(p.metodo_pago)
+
+// La forma de pago dicha para personas. Antes salía el valor crudo de la base de
+// datos ("datafono", "pagado_local") junto al importe del pedido.
+// OJO: NO es `etiquetaPago` de `lib/metodoPago.js`: aquella dice «Tarjeta (online)» y
+// «Pagado en el local». Se llama distinto a propósito para que nadie crea que es la
+// misma. Si algún día se unifican, se cambian allí las etiquetas y se borra esta.
+const PAGO_LEGIBLE = {
+  efectivo: 'Efectivo', datafono: 'Datáfono', tarjeta: 'Tarjeta (app)', pagado_local: 'Ya pagado',
+}
+const pagoLegible = (metodo) => PAGO_LEGIBLE[metodo] || metodo || '—'
+
+// «Cambiar forma de pago» en el detalle. `sePuedeCambiarPago` ya deja fuera la tarjeta de
+// la app, el mostrador y lo cancelado. Aquí se quita además el pedido NUEVO: todavía no se
+// ha aceptado y lo que toca es decir sí o no, no corregir cómo pagará. En cuanto está en
+// marcha sí se ofrece, porque a veces el repartidor avisa antes de entregar.
+const puedeCambiarPago = (p) => p.estado !== 'nuevo' && sePuedeCambiarPago(p)
 
 // Los cuatro filtros, definidos UNA vez: arriba en escritorio, abajo en telefono.
 const FILTROS = [
@@ -917,7 +935,7 @@ function TiraRepartidores({ filas, repartoPropio, abierta, onAlternar, onGestion
 // ticket y sacar la factura con los datos fiscales del cliente. Los candados
 // de concurrencia y el dinero viven en `lib/accionesPedido.js`.
 function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvConfig, onCambiado, onEditar }) {
-  // 'aceptar' | 'rechazar' | 'cancelar' | 'factura' — el paso intermedio abierto.
+  // 'aceptar' | 'rechazar' | 'cancelar' | 'factura' | 'pago' — el paso intermedio abierto.
   const [paso, setPaso] = useState(null)
   const [minutos, setMinutos] = useState(20)
   const [ocupado, setOcupado] = useState(false)
@@ -975,7 +993,7 @@ function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvCon
             fontSize: 26, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums',
           }}>{eur(cents(p.total))}</div>
           <div style={{ fontSize: 12, color: cobrar ? T.accent : T.muted, fontWeight: cobrar ? 800 : 500 }}>
-            {cobrar ? 'COBRAR · ' : ''}{p.metodo_pago || '—'}
+            {cobrar ? 'COBRAR · ' : ''}{pagoLegible(p.metodo_pago)}
           </div>
         </div>
       </div>
@@ -1092,6 +1110,22 @@ function Acciones({
   paso, setPaso, minutos, setMinutos, ocupado, setOcupado, fact, setFact,
 }) {
   const cobraEfectivo = pendienteDeCobro(p)
+
+  // Lo que se pregunta antes de dar un pedido por entregado. Antes decía «en efectivo»
+  // también en los pedidos con datáfono. Si la forma de pago aún se puede corregir, se
+  // dice QUÉ botón pulsar: el cliente que pidió en efectivo y en la puerta saca la
+  // tarjeta es justo el caso que descuadra el cajón. Se nombran los botones del diálogo
+  // tal cual son («Cancelar» / «Confirmar»): con un «cámbiala en el pedido» a secas, el
+  // dueño con prisa confirmaba creyendo que se cambiaba solo.
+  const avisoEntrega = () => {
+    if (!cobraEfectivo) return '¿Marcar el pedido como entregado?'
+    const como = p.metodo_pago === 'datafono' ? ' con datáfono'
+      : p.metodo_pago === 'efectivo' ? ' en efectivo' : ''
+    const otraForma = puedeCambiarPago(p)
+      ? ' ¿Pagó de otra forma? Pulsa «Cancelar» y toca «Cambiar forma de pago».'
+      : ''
+    return `¿Entregado y COBRADO? Son ${eur(cents(p.total))}${como}.${otraForma}`
+  }
 
   // Envuelve una acción: candado de doble toque, aviso y refresco.
   async function ejecutar(fn, args, okMsg) {
@@ -1304,10 +1338,7 @@ function Acciones({
       botones.push(
         <button key="entregado" disabled={ocupado} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}
           onClick={async () => {
-            const aviso = cobraEfectivo
-              ? `¿Entregado y COBRADO? Son ${eur(cents(p.total))} en efectivo.`
-              : '¿Marcar el pedido como entregado?'
-            if (await confirmar(aviso)) ejecutar(marcarEntregado, { pedido: p }, 'Pedido entregado')
+            if (await confirmar(avisoEntrega())) ejecutar(marcarEntregado, { pedido: p }, 'Pedido entregado')
           }}>
           <Check size={17} style={{ marginRight: 6 }} /> Entregado{cobraEfectivo ? ' y cobrado' : ''}
         </button>,
@@ -1319,10 +1350,7 @@ function Acciones({
     botones.push(
       <button key="entregado2" disabled={ocupado} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}
         onClick={async () => {
-          const aviso = cobraEfectivo
-            ? `¿Entregado y COBRADO? Son ${eur(cents(p.total))} en efectivo.`
-            : '¿Marcar el pedido como entregado?'
-          if (await confirmar(aviso)) ejecutar(marcarEntregado, { pedido: p }, 'Pedido entregado')
+          if (await confirmar(avisoEntrega())) ejecutar(marcarEntregado, { pedido: p }, 'Pedido entregado')
         }}>
         <Check size={17} style={{ marginRight: 6 }} /> Entregado{cobraEfectivo ? ' y cobrado' : ''}
       </button>,
@@ -1330,7 +1358,8 @@ function Acciones({
   }
 
   // La fila de secundarios: reimprimir (todo lo aceptado en adelante), factura
-  // (solo lo entregado) y cancelar (solo lo vivo, nunca un cerrado).
+  // (solo lo entregado), cambiar forma de pago (efectivo o datáfono, en marcha o
+  // entregado) y cancelar (solo lo vivo, nunca un cerrado).
   const secundarios = []
   // EDITAR: solo el pedido que has tomado tu por telefono, y solo mientras la
   // comida no ha salido por la puerta. Una venta del MOSTRADOR no aparece aqui
@@ -1363,6 +1392,16 @@ function Acciones({
       </button>,
     )
   }
+  // Pidió en efectivo y pagó con datáfono, o al revés. El cajón y el cierre de caja se
+  // corrigen solos en la base de datos (`pedido_cambiar_forma_pago`).
+  if (puedeCambiarPago(p)) {
+    secundarios.push(
+      <button key="pago" disabled={ocupado} onClick={() => setPaso('pago')}
+        style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>
+        <Wallet size={15} style={{ marginRight: 6 }} /> Cambiar forma de pago
+      </button>,
+    )
+  }
   if (EN_CURSO.includes(p.estado) && p.estado !== 'nuevo') {
     secundarios.push(
       <button key="cancelar" onClick={() => setPaso('cancelar')} style={btnPeligro}>
@@ -1384,6 +1423,16 @@ function Acciones({
         <div style={{ display: 'flex', gap: 8, marginTop: botones.length ? 8 : 0, flexWrap: 'wrap' }}>
           {secundarios}
         </div>
+      )}
+      {/* Va con `paso` y no con un estado propio: al cambiar de pedido, DetallePedido
+          cierra el paso abierto, y así el modal nunca se queda enseñando el anterior.
+          Tras guardar se relee la lista y el detalle: el realtime también llegaría,
+          pero la cabecera («COBRAR · Efectivo») y la pregunta de entregar seguirían
+          diciendo la forma de pago vieja un segundo. */}
+      {paso === 'pago' && puedeCambiarPago(p) && (
+        <CambiarFormaPago pedido={p}
+          onCerrar={() => setPaso(null)}
+          onHecho={() => { setPaso(null); onCambiado?.() }} />
       )}
     </div>
   )

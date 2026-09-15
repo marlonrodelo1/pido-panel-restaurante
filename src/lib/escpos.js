@@ -925,6 +925,27 @@ export function generarReporteCaja(d, restaurante, tipo = 'X') {
     bytes.push(...boldOn(), ...tallSize())
     bytes.push(...twoColumns(desc === 0 ? 'CUADRA' : (desc > 0 ? 'SOBRA' : 'FALTA'), eur(Math.abs(desc))))
     bytes.push(...normalSize(), ...boldOff())
+
+    // LA CAJA MAYOR (15 sep 2026). Al cerrar, lo que pasa de la base se saca del
+    // cajon y se guarda aparte; en el cajon se queda la base para dar cambio
+    // manana. Si el papel no lo dice, el que abre por la manana cuenta 50 donde
+    // ayer se contaron 237 y cree que falta dinero.
+    //
+    // 🔴 SOLO SI LA CAJA TRAE `fondo_siguiente`. Los cierres de antes de la caja
+    // mayor lo tienen vacio y `retirado_caja_mayor` a 0 POR DEFECTO, no porque se
+    // dejara todo en el cajon: entre cierre y apertura se iban 70-310 EUR sin
+    // rastro. Reimprimir uno de esos con "A CAJA MAYOR 0.00" afirmaria algo que
+    // nadie sabe; mejor no pintar el bloque.
+    const retirado = d.retirado_caja_mayor == null || d.retirado_caja_mayor === ''
+      ? NaN : Number(d.retirado_caja_mayor)
+    if (Number.isFinite(retirado) && d.fondo_siguiente != null) {
+      bytes.push(...separator('-'))
+      bytes.push(...boldOn(), ...twoColumns('A CAJA MAYOR', eur(retirado)), ...boldOff())
+      bytes.push(...twoColumns('QUEDA EN CAJON', eur(d.fondo_siguiente)))
+    }
+    // Se cambio la forma de pago de un pedido despues de cerrar: las cifras de
+    // este papel ya no son las del primer Z, y tiene que notarse.
+    if (d.recalculada_at) bytes.push(...line('(Corregido despues del cierre)'))
   }
 
   if (d.notas) { bytes.push(...separator('-'), ...line('Nota: ' + d.notas)) }

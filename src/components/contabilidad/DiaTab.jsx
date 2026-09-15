@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
 import {
-  ChevronLeft, ChevronRight, ShoppingCart, Receipt, Wallet, Landmark,
+  ChevronLeft, ChevronRight, ShoppingCart, Receipt, Wallet, Landmark, Vault, Smartphone,
   TriangleAlert, ChevronDown, ChevronUp, Plus, Undo2,
 } from 'lucide-react'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import {
   eur, diaContable, deshacerPago, marcarPagado, salidaNoEsGasto, textoCajon,
-  hoyCanariasIso, sumarDias, fechaLarga,
+  hoyCanariasIso, sumarDias, fechaLarga, tesoreria, sePuedeCambiarPago, PAGADO_CON,
 } from '../../lib/stock'
 import { VIAS } from '../../lib/jornada'
+import CambiarFormaPago from '../CambiarFormaPago'
 
 // EL DÍA: lo primero que se ve al entrar en Contabilidad.
 //
@@ -18,10 +19,12 @@ import { VIAS } from '../../lib/jornada'
 //   VENDISTE  lo cobrado ese día (lo mismo que suman los cierres de caja)
 //   PAGASTE   las compras y los gastos apuntados ese día
 //   GANASTE   lo que dejan las ventas: vendido − repartidores − ingredientes − comisión
-// Y debajo, sin mezclarlo con lo anterior, el DINERO: cuánto hay en el cajón ahora.
+// Y debajo, sin mezclarlo con lo anterior, TU DINERO AHORA: cajón, caja mayor, banco y lo que
+// debe Pidoo. El detalle (contar, llevar al banco, movimientos) vive en la pestaña «Tu dinero».
 //
 // La regla que la pantalla tiene que explicar: comprar el pan NO resta de la ganancia del
-// día (el pan se va restando cuando se vende cada bocadillo), pero SÍ sale del cajón.
+// día (el pan se va restando cuando se vende cada bocadillo), pero SÍ sale de tu dinero: de la
+// caja mayor, del banco o del cajón, según con qué se pagó.
 //
 // Los números vienen de `contab_dia`, que usa `stock_resumen_negocio`: el mismo cálculo que
 // «Cómo va» y la meta del mes. Una cifra, un sitio.
@@ -29,6 +32,9 @@ import { VIAS } from '../../lib/jornada'
 const redondo = (n) => Math.round(n * 100) / 100
 const ETIQUETA_VIA = { ...VIAS, app: 'App Pidoo' }
 const ETIQUETA_PAGO = { efectivo: 'Efectivo', pagado_local: 'Efectivo', datafono: 'Datáfono', tarjeta: 'Tarjeta (app)' }
+// Con qué se pagó una compra o un gasto: el icono va con la etiqueta de `PAGADO_CON`.
+const ICONO_PAGADO = { caja: Wallet, caja_mayor: Vault, banco: Landmark }
+const PAGADO_TXT = { caja: 'con el cajón', caja_mayor: 'con la caja mayor', banco: 'por banco' }
 
 function capitalizar(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s }
 function isoCanarias(ts) {
@@ -36,11 +42,6 @@ function isoCanarias(ts) {
     new Intl.DateTimeFormat('en-US', { timeZone: 'Atlantic/Canary', year: 'numeric', month: 'numeric', day: 'numeric' })
       .formatToParts(new Date(ts)).map(x => [x.type, x.value]))
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`
-}
-function cuando(ts) {
-  return new Date(ts).toLocaleString('es-ES', {
-    timeZone: 'Atlantic/Canary', weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
 }
 function hora(ts) {
   return new Date(ts).toLocaleTimeString('es-ES', { timeZone: 'Atlantic/Canary', hour: '2-digit', minute: '2-digit' })
@@ -86,7 +87,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
   async function marcar(p, con) {
     try {
       const r = await marcarPagado(p.tipo, p.id, con)
-      toast([`Apuntado: pagado ${con === 'caja' ? 'con el cajón' : 'por banco'}.`, textoCajon(r.cajon, p.total)].filter(Boolean).join(' '), 'success')
+      toast([`Apuntado: pagado ${PAGADO_TXT[con] || ''}.`, textoCajon(r.cajon, p.total)].filter(Boolean).join(' '), 'success')
       recargar()
     } catch (e) { toast(e.message, 'error') }
   }
@@ -153,6 +154,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
           ) : (
             <ContenidoDia
               d={d} fecha={fecha} hoy={hoy} esHoy={esHoy}
+              estId={estId} recargaDinero={`${recarga}-${vuelta}`} onRecargar={recargar}
               onApuntar={onApuntar} onIrA={onIrA}
               onDeshacer={deshacer} onMarcar={marcar} onNoEsGasto={noEsGasto}
             />
@@ -163,7 +165,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
   )
 }
 
-function ContenidoDia({ d, fecha, hoy, esHoy, onApuntar, onIrA, onDeshacer, onMarcar, onNoEsGasto }) {
+function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, onApuntar, onIrA, onDeshacer, onMarcar, onNoEsGasto }) {
   const res = d.resumen || {}
   const c = d.cobro || {}
   const g = res.ganancia || {}
@@ -188,6 +190,9 @@ function ContenidoDia({ d, fecha, hoy, esHoy, onApuntar, onIrA, onDeshacer, onMa
   const beneficio = Number(b.total || 0)
 
   const pendientes = d.pendientes_cajon || []
+  // ¿Es el dueño (o Pidoo)? Lo manda `contab_tesoreria`, que ya carga «Tu dinero ahora».
+  // null mientras no ha llegado: entonces no se quita ningún botón y la base de datos manda.
+  const [puedeEditar, setPuedeEditar] = useState(null)
 
   return (
     <>
@@ -304,12 +309,13 @@ function ContenidoDia({ d, fecha, hoy, esHoy, onApuntar, onIrA, onDeshacer, onMa
 
       <Nota arriba={10}>
         Lo que compras (el pan, la carne) no resta de la ganancia del día en que lo pagas: se va restando
-        cuando se vende cada plato. Donde sí se nota el pago es en tu dinero, aquí abajo.
+        cuando se vende cada plato. Donde sí se nota el pago es en tu dinero: sale de la caja mayor, del banco o del cajón.
       </Nota>
 
       {/* ── El dinero ───────────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gap: 12, marginTop: 14, alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))' }}>
-        <Cajon cajon={d.cajon} hoy={hoy} />
+        <TuDineroAhora estId={estId} recarga={recargaDinero} hoy={hoy} esHoy={esHoy} cajonDia={d.cajon} onIrA={onIrA}
+          onPuedeEditar={setPuedeEditar} />
         <DondeEstaLoVendido cobro={c} esHoy={esHoy} cajas={d.cajas_dia || []} />
       </div>
 
@@ -327,7 +333,8 @@ function ContenidoDia({ d, fecha, hoy, esHoy, onApuntar, onIrA, onDeshacer, onMa
           ) : (
             <>
               {pagos.map(p => (
-                <FilaPago key={p.tipo + p.id} p={p} onDeshacer={onDeshacer} onMarcar={onMarcar} onIrA={onIrA} />
+                <FilaPago key={p.tipo + p.id} p={p} esHoy={esHoy} cajaAbierta={!!d.cajon?.abierta}
+                  onDeshacer={onDeshacer} onMarcar={onMarcar} onIrA={onIrA} />
               ))}
               <Fila fuerte label="Total pagado" valor={eur(pagado)} />
             </>
@@ -340,56 +347,120 @@ function ContenidoDia({ d, fecha, hoy, esHoy, onApuntar, onIrA, onDeshacer, onMa
           )}
         </Seccion>
 
-        <Ventas pedidos={d.pedidos || []} cobro={c} />
+        <Ventas pedidos={d.pedidos || []} cobro={c} fecha={fecha} hoy={hoy} cajon={d.cajon} cajas={d.cajas_dia || []}
+          puedeEditar={puedeEditar} onRecargar={onRecargar} />
       </div>
     </>
   )
 }
 
-/* ── El cajón ─────────────────────────────────────────────────────────────── */
+/* ── Tu dinero ahora ──────────────────────────────────────────────────────── */
 
-function Cajon({ cajon, hoy }) {
-  if (!cajon) return null
-  if (!cajon.abierta) {
-    return (
-      <Seccion titulo="El cajón">
-        <div style={{ fontSize: 30, fontWeight: 800, color: colors.text, fontVariantNumeric: 'tabular-nums' }}>
-          {eur(cajon.contado_final)}
-        </div>
-        <div style={{ fontSize: type.sm, color: colors.textDim, lineHeight: 1.5, marginTop: 2 }}>
-          Es lo que contaste al cerrar la caja el {cuando(cajon.cerrada_at)}.
-        </div>
-        <Nota>Ahora no hay caja abierta. Ábrela en el TPV para vender y para que lo que pagues con el cajón se descuente solo.</Nota>
-      </Seccion>
-    )
-  }
-  const entradas = Number(cajon.entradas || 0)
-  const salidas = Number(cajon.salidas || 0)
-  const abiertaDia = isoCanarias(cajon.abierta_at)
+// La foto de HOY de los cuatro bolsillos, aunque se esté mirando otro día: el dinero no es
+// «de un día», es lo que hay. Sale de `contab_tesoreria`, lo mismo que la pestaña «Tu dinero»
+// (una cifra, un sitio); aquí solo el resumen y el botón para ir allí.
+function TuDineroAhora({ estId, recarga, hoy, esHoy, cajonDia, onIrA, onPuedeEditar }) {
+  const [t, setT] = useState(null)
+  const [error, setError] = useState(null)
+  const [vuelta, setVuelta] = useState(0)
+
+  useEffect(() => {
+    if (!estId) return
+    let vivo = true
+    tesoreria(estId)
+      .then(r => { if (vivo) { setT(r); setError(null); onPuedeEditar?.(r?.puede_editar ?? null) } })
+      .catch(e => { if (vivo) setError(e.message) })
+    return () => { vivo = false }
+  }, [estId, recarga, vuelta, onPuedeEditar]) // `onPuedeEditar` es un setState: no cambia ni recarga
+
+  // El aviso de caja olvidada abierta se conserva aunque falle la tesorería: el día ya trae el cajón.
+  const cajon = t?.caja_menor?.cajon ?? cajonDia
+  const abiertaDia = cajon?.abierta && cajon.abierta_at ? isoCanarias(cajon.abierta_at) : null
+  const base = Number(t?.caja_menor?.fondo_base || 0)
+  const total = Number(t?.total || 0)
+  // En negativo es al revés: le debes tú a Pidoo (la comisión de lo que cobraste en efectivo o
+  // datáfono). Se enseña en positivo con su nombre, igual que en la pestaña «Tu dinero».
+  const saldoPidoo = Number(t?.pidoo?.saldo || 0)
+  const debesPidoo = saldoPidoo < -0.005
+  // Caja mayor y banco parten de 0 hasta el primer recuento: el total no es exacto hasta entonces.
+  // Mismas frases que la pestaña «Tu dinero»: segunda persona al dueño, tercera al equipo.
+  const puede = t?.puede_editar === true
+  const sinContar = !t ? [] : puede
+    ? [!t.caja_mayor?.contada && 'cuentes la caja mayor', !t.banco?.contado && 'pongas el saldo del banco'].filter(Boolean)
+    : [!t.caja_mayor?.contada && 'cuente la caja mayor', !t.banco?.contado && 'ponga el saldo del banco'].filter(Boolean)
+  // Si falla la tesorería, el cajón se enseña con lo que ya trae el día (`contab_dia`).
+  const cajonSolo = !t && error ? cajonDelDia(cajonDia) : null
+
   return (
-    <Seccion titulo="En el cajón ahora">
-      <div style={{ fontSize: 34, fontWeight: 800, color: colors.text, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-        {eur(cajon.esperado)}
-      </div>
-      <div style={{ fontSize: type.sm, color: colors.textMute, marginBottom: 8 }}>
-        Lo que debería haber si cuentas los billetes.
-      </div>
-      <Fila pequena label="Empezó con" valor={eur(cajon.fondo_inicial)} />
-      <Fila pequena label="+ Cobrado en efectivo" valor={eur(cajon.ventas_efectivo)} />
-      {entradas > 0 && <Fila pequena label="+ Dinero que metiste" valor={eur(entradas)} />}
-      {salidas > 0 && <Fila pequena label="− Pagado con dinero del cajón" valor={'− ' + eur(salidas)} />}
-      <Nota>
-        Caja abierta el {cuando(cajon.abierta_at)}{cajon.abierta_por_nombre ? ` por ${cajon.abierta_por_nombre}` : ''}.
-        El efectivo de los repartos cuenta: lo trae el repartidor.
-      </Nota>
-      {abiertaDia < hoy && (
+    <Seccion titulo="Tu dinero ahora">
+      {!t && !error && (
+        <div style={{ fontSize: type.sm, color: colors.textMute }}>Contando tu dinero…</div>
+      )}
+      {!t && error && (
+        <>
+          {cajonSolo && (
+            <Destino icono={<Wallet size={16} />} label="Cajón del TPV" valor={cajonSolo.valor} donde={cajonSolo.donde} />
+          )}
+          <div style={{ fontSize: type.sm, color: colors.textMute, margin: cajonSolo ? '8px 0' : '0 0 8px' }}>
+            No se ha podido cargar {cajonSolo ? 'el resto de tu dinero' : 'tu dinero'}: {error}
+          </div>
+          <button onClick={() => setVuelta(n => n + 1)} style={{ ...ds.miniBtn, height: 30 }}>Reintentar</button>
+        </>
+      )}
+      {t && (
+        <>
+          <Destino icono={<Wallet size={16} />} label="Cajón del TPV" valor={t.caja_menor?.saldo} donde="Lo que debería haber en el cajón" />
+          <Destino icono={<Vault size={16} />} label="Caja mayor" valor={t.caja_mayor?.saldo}
+            donde={t.caja_mayor?.contada ? 'Lo que retiras al cerrar la caja' : 'Todavía sin contar'} />
+          <Destino icono={<Landmark size={16} />} label="Banco" valor={t.banco?.saldo}
+            donde={t.banco?.contado ? 'Datáfono y lo que te paga Pidoo' : 'Todavía sin poner el saldo'} />
+          {debesPidoo ? (
+            <Destino icono={<Smartphone size={16} />} label="Le debes a Pidoo" valor={Math.abs(saldoPidoo)}
+              donde="Es la comisión de los pedidos que cobraste tú (efectivo o datáfono). Se descuenta en la liquidación del lunes." />
+          ) : (
+            <Destino icono={<Smartphone size={16} />} label="Te debe Pidoo" valor={saldoPidoo} donde="Te lo paga los lunes" />
+          )}
+          <Fila fuerte label="Tienes en total" valor={eur(total)} color={total < 0 ? colors.danger : null} />
+          {sinContar.length > 0 && (
+            <Nota aviso>
+              Todavía no es exacto: falta que {puede ? '' : 'el dueño '}{sinContar.join(' y que ')}.
+              {puede ? ' Hazlo en «Tu dinero».' : ''}
+            </Nota>
+          )}
+          {!esHoy && <Nota>Es lo que tienes hoy, no lo que tenías ese día.</Nota>}
+          {/* Una recarga que falla no borra las cifras de antes: se avisa de que pueden estar viejas. */}
+          {error && (
+            <Nota aviso>
+              No se han podido actualizar estas cifras: {error}{' '}
+              <button onClick={() => setVuelta(n => n + 1)} style={enlace}>Reintentar</button>
+            </Nota>
+          )}
+        </>
+      )}
+      {abiertaDia && abiertaDia < hoy && (
         <Nota aviso>
           La caja sigue abierta desde {abiertaDia === sumarDias(hoy, -1) ? 'ayer' : fechaLarga(abiertaDia)}.
-          Ciérrala en el TPV cuando cuentes el dinero: así cada día empieza limpio.
+          Ciérrala en el TPV cuando cuentes el dinero{base > 0 ? `: lo que pase de la base (${eur(base)}) pasará a la caja mayor` : ''}.
         </Nota>
       )}
+      <button onClick={() => onIrA('dinero')} style={{ ...ds.secondaryBtn, height: 34, marginTop: 12 }}>
+        Ver tu dinero <ChevronRight size={14} />
+      </button>
     </Seccion>
   )
+}
+
+// El cajón con lo que trae `contab_dia`, para cuando falla la tesorería. Con la caja cerrada,
+// `esperado_apertura` (lo que quedó más el efectivo cobrado después) es lo que debería haber;
+// si no viene, solo se sabe lo que quedó o lo que se contó al cerrar, y se dice así.
+function cajonDelDia(c) {
+  if (!c) return null
+  if (c.abierta) return c.esperado != null ? { valor: c.esperado, donde: 'Lo que debería haber en el cajón' } : null
+  if (c.esperado_apertura != null) return { valor: c.esperado_apertura, donde: 'Lo que debería haber en el cajón' }
+  const quedo = c.quedo_al_cerrar ?? c.fondo_siguiente
+  if (quedo != null) return { valor: quedo, donde: 'Lo que quedó en el cajón al cerrar la caja' }
+  if (c.contado_final != null) return { valor: c.contado_final, donde: 'Lo que contaste al cerrar la caja' }
+  return null
 }
 
 function DondeEstaLoVendido({ cobro, esHoy, cajas }) {
@@ -415,6 +486,7 @@ function DondeEstaLoVendido({ cobro, esHoy, cajas }) {
           <div style={{ ...ds.label, marginBottom: 6 }}>Cierre de caja de ese día</div>
           {cajas.map((k, i) => {
             const desc = Number(k.descuadre || 0)
+            const retirado = Number(k.retirado_caja_mayor || 0)
             return (
               <div key={i} style={{ fontSize: type.xs, color: colors.textDim, lineHeight: 1.6, marginBottom: 6 }}>
                 De {hora(k.abierta_at)} a {hora(k.cerrada_at)}: empezó con {eur(k.fondo)}, cobrado en efectivo {eur(k.efectivo)}
@@ -423,6 +495,15 @@ function DondeEstaLoVendido({ cobro, esHoy, cajas }) {
                 <span style={{ fontWeight: 700, color: Math.abs(desc) < 0.005 ? colors.sage2 : colors.danger }}>
                   {Math.abs(desc) < 0.005 ? 'cuadró' : desc < 0 ? `faltaban ${eur(-desc)}` : `sobraban ${eur(desc)}`}
                 </span>.
+                {/* Lo que pasó del cajón a la caja mayor al cerrar (lo que pasaba de la base). */}
+                {retirado > 0 && (
+                  <> Pasaron <strong>{eur(retirado)}</strong> a la caja mayor
+                    {k.fondo_siguiente != null ? ` y quedaron ${eur(k.fondo_siguiente)} en el cajón` : ''}.</>
+                )}
+                {/* Se cambió la forma de pago de un pedido después de cerrar: la foto se rehízo. */}
+                {k.recalculada_at && (
+                  <span style={{ color: colors.textMute }}> (corregido después del cierre)</span>
+                )}
               </div>
             )
           })}
@@ -440,7 +521,11 @@ function Destino({ icono, label, valor, donde }) {
         <div style={{ fontSize: type.sm, fontWeight: 600, color: colors.text }}>{label}</div>
         {donde && <div style={{ fontSize: type.xs, color: colors.textMute }}>{donde}</div>}
       </div>
-      <span style={{ fontSize: type.sm, fontWeight: 700, color: colors.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      {/* En rojo si sale en negativo (una caja mayor sin contar de la que ya se ha pagado algo). */}
+      <span style={{
+        fontSize: type.sm, fontWeight: 700, color: Number(valor) < -0.005 ? colors.danger : colors.text,
+        fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+      }}>
         {eur(valor)}
       </span>
     </div>
@@ -449,7 +534,7 @@ function Destino({ icono, label, valor, donde }) {
 
 /* ── Pagos y ventas ───────────────────────────────────────────────────────── */
 
-function FilaPago({ p, onDeshacer, onMarcar, onIrA }) {
+function FilaPago({ p, esHoy, cajaAbierta, onDeshacer, onMarcar, onIrA }) {
   const compra = p.tipo === 'compra'
   const titulo = compra
     ? (p.detalle || (p.numero ? `Factura ${p.numero}` : 'Factura'))
@@ -458,6 +543,8 @@ function FilaPago({ p, onDeshacer, onMarcar, onIrA }) {
     ? ['Compra', p.proveedor, p.origen === 'factura' ? (p.numero ? `factura ${p.numero}` : 'factura') : null, p.hora].filter(Boolean).join(' · ')
     : [p.fijo ? 'Gasto fijo' : 'Gasto', p.cuenta === false ? 'no cuenta como gasto (se recupera)' : null, p.hora].filter(Boolean).join(' · ')
   const sePuedeDeshacer = !compra || p.origen === 'rapida'
+  const donde = PAGADO_CON[p.pagado_con]
+  const IconoDonde = ICONO_PAGADO[p.pagado_con]
 
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '9px 0', borderBottom: `1px solid ${colors.border}` }}>
@@ -473,14 +560,19 @@ function FilaPago({ p, onDeshacer, onMarcar, onIrA }) {
         </div>
         <div style={{ fontSize: type.xs, color: colors.textMute }}>{sub}</div>
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-        {p.pagado_con === 'caja' && <Etiqueta icono={<Wallet size={12} />} texto="Cajón" />}
-        {p.pagado_con === 'banco' && <Etiqueta icono={<Landmark size={12} />} texto="Banco" />}
+      {/* Con qué se pagó. Si no se dijo, se pregunta: caja mayor o banco, que es lo normal; el
+          cajón del TPV solo el mismo día y con la caja abierta en el TPV, porque la caja de otro
+          día ya se contó y cerró, y sin caja abierta no hay cajón del que sacarlo (PD284). */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+        {p.pagado_con && (
+          <Etiqueta icono={IconoDonde ? <IconoDonde size={12} /> : null} texto={donde?.corto || p.pagado_con} />
+        )}
         {!p.pagado_con && (
           <>
             <span style={{ fontSize: type.xs, color: colors.warning, fontWeight: 700 }}>¿Con qué?</span>
-            <button onClick={() => onMarcar(p, 'caja')} style={ds.miniBtn}>Cajón</button>
-            <button onClick={() => onMarcar(p, 'banco')} style={ds.miniBtn}>Banco</button>
+            <button onClick={() => onMarcar(p, 'caja_mayor')} style={ds.miniBtn}>{PAGADO_CON.caja_mayor.corto}</button>
+            <button onClick={() => onMarcar(p, 'banco')} style={ds.miniBtn}>{PAGADO_CON.banco.corto}</button>
+            {esHoy && cajaAbierta && <button onClick={() => onMarcar(p, 'caja')} style={ds.miniBtn}>{PAGADO_CON.caja.corto}</button>}
           </>
         )}
       </div>
@@ -501,8 +593,38 @@ function FilaPago({ p, onDeshacer, onMarcar, onIrA }) {
   )
 }
 
-function Ventas({ pedidos, cobro }) {
+function Ventas({ pedidos, cobro, fecha, hoy, cajon, cajas, puedeEditar, onRecargar }) {
   const [ver, setVer] = useState(false)
+  // El pedido al que se le cambia la forma de pago (null = ventana cerrada). Es para el cliente
+  // que pidió en efectivo y al final pagó con datáfono (o al revés): el cajón se corrige solo.
+  const [cambiando, setCambiando] = useState(null)
+
+  // «Cambiar pago» solo donde la base de datos lo va a dejar: los 14 días y, para el equipo, la
+  // caja cerrada (las reglas viven en `sePuedeCambiarPago`). Para saber en qué caja cayó cada
+  // cobro se compara 'AAAA-MM-DD HH:MM' en hora de Canarias: `p.hora` sale como 'HH:MM' y
+  // `hora()` da lo mismo. `cajon` es la caja de AHORA, aunque se mire otro día.
+  //
+  // «Caja cerrada» son dos casos, los mismos que mira la RPC (PD282):
+  //   - el cobro cae dentro de una caja ya cerrada;
+  //   - se cobró con la caja cerrada y la primera caja que se abrió después también está
+  //     cerrada (turno partido: cierra a las 16:00, reparto a las 16:20, caja de 19:00 a 23:30).
+  // Para lo segundo basta con que haya UNA caja cerrada abierta después del cobro: solo hay una
+  // caja abierta a la vez, así que la que sigue abierta es posterior a todas las cerradas y la
+  // primera tras el cobro también está cerrada. Lo que cae en la caja abierta no cambia:
+  // `enCajaAbierta` manda.
+  const momento = (ts) => `${isoCanarias(ts)} ${hora(ts)}`
+  const abiertaDesde = cajon?.abierta && cajon.abierta_at ? momento(cajon.abierta_at) : null
+  const sePuedeCambiar = (p) => {
+    const m = p.hora ? `${fecha} ${p.hora}` : null
+    return sePuedeCambiarPago(p, {
+      fecha, hoy, puedeEditar,
+      enCajaAbierta: !!(m && abiertaDesde && m > abiertaDesde),
+      enCajaCerrada: !!m && cajas.some(k => k.abierta_at && k.cerrada_at && (
+        momento(k.abierta_at) > m
+        || (momento(k.abierta_at) <= m && m <= momento(k.cerrada_at))
+      )),
+    })
+  }
   const porVia = new Map()
   for (const p of pedidos) {
     const x = porVia.get(p.via) || { n: 0, total: 0 }
@@ -529,22 +651,36 @@ function Ventas({ pedidos, cobro }) {
             <div style={{ marginTop: 8 }}>
               {pedidos.map(p => (
                 <div key={p.id} style={{
-                  display: 'flex', gap: 8, alignItems: 'baseline', padding: '5px 0',
+                  display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0',
                   borderBottom: `1px solid ${colors.border}`, fontSize: type.xs, color: colors.textDim,
                 }}>
                   <span style={{ width: 40, flexShrink: 0, color: colors.textMute, fontVariantNumeric: 'tabular-nums' }}>{p.hora}</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ flex: '1 1 120px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <strong style={{ color: colors.text }}>{p.codigo || '—'}</strong>
                     {' '}· {ETIQUETA_VIA[p.via] || p.via}
                     {p.via !== 'tpv' && p.modo ? ` · ${p.modo === 'delivery' ? 'domicilio' : 'recogida'}` : ''}
                     {' '}· {ETIQUETA_PAGO[p.pago] || p.pago}
                   </span>
-                  <span style={{ fontWeight: 700, color: colors.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{eur(p.total)}</span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+                    <span style={{ fontWeight: 700, color: colors.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{eur(p.total)}</span>
+                    {sePuedeCambiar(p) && (
+                      <button onClick={() => setCambiando(p)} title="El cliente pagó de otra forma" style={{ ...ds.miniBtn, height: 26 }}>
+                        Cambiar pago
+                      </button>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
           )}
         </>
+      )}
+      {cambiando && (
+        <CambiarFormaPago
+          pedido={cambiando}
+          onCerrar={() => setCambiando(null)}
+          onHecho={() => { setCambiando(null); onRecargar?.() }}
+        />
       )}
     </Seccion>
   )

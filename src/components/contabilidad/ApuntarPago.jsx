@@ -1,20 +1,27 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ShoppingCart, Receipt, ArrowLeft, Plus, X, Wallet, Landmark, Search, Check } from 'lucide-react'
+import { ShoppingCart, Receipt, ArrowLeft, Plus, X, Wallet, Landmark, Vault, Search, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast } from '../../App'
 import {
-  eur, eurCoste, cantidad as fmtCantidad, UNIDADES, CATEGORIAS_GASTO,
-  cargarArticulos, cargarFijos, cargarGastos,
+  eur, eurCoste, cantidad as fmtCantidad, UNIDADES, CATEGORIAS_GASTO, PAGADO_CON,
+  cargarArticulos, cargarFijos, cargarGastos, tesoreria,
   apuntarCompra, apuntarGasto, textoCajon, hoyCanariasIso, sumarDias, fechaLarga,
 } from '../../lib/stock'
 
 // «Apuntar un pago»: la única puerta de lo que SALE del negocio.
 //
 // Dos preguntas y listo: ¿qué pagaste? (género, que entra al almacén, o un gasto) y ¿con qué?
-// (dinero del cajón o tarjeta/banco). Lo demás lo hace la base de datos en un solo paso: la
-// compra entra en el almacén con su precio, el gasto cuenta en las cuentas y, si salió del
-// cajón, sale de la caja abierta del TPV. Así «cuánto queda en el cajón» dice la verdad.
+// (caja mayor, tarjeta/banco o dinero del cajón). Lo demás lo hace la base de datos en un solo
+// paso: la compra entra en el almacén con su precio, el gasto cuenta en las cuentas y el dinero
+// sale de donde salió. Así «cuánto queda» dice la verdad en cada bolsillo.
+//
+// Lo normal es la CAJA MAYOR (15 sep 2026): los billetes que se retiran al cerrar la caja.
+// El cajón del TPV queda para lo que se paga en plena venta (el panadero que llega a mediodía):
+// si se ofrece igual que las otras, se elige por costumbre y descuadra el cierre. Y solo se
+// puede elegir con la caja del TPV abierta y para pagos de HOY: la caja de otro día ya se contó,
+// y un pago de ayer sacado de la caja de hoy hace que esta noche «sobre» dinero. La base de
+// datos lo rechaza igual (PD284); aquí se dice antes de pulsar.
 //
 // `inicial` la abre ya encaminada: { modo: 'compra'|'gasto', fijo, salida, fecha }.
 // `salida` es una salida del cajón que YA existe (se apuntó en el TPV) y ahora se explica:
@@ -22,8 +29,12 @@ import {
 //
 // No se cierra al pulsar fuera: con media compra tecleada, un clic perdido lo borraba todo.
 
+// «1.500» es mil quinientos (puntos de miles, como se escribe en España); «13,20» y «13.20»
+// son trece con veinte. Sin esto, «1.500» se leía como 1,5 sin ningún aviso.
 const num = (v) => {
-  const n = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.'))
+  let s = String(v ?? '').replace(/\s/g, '')
+  if (/^[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+  const n = Number(s.replace(/\.(?=.*,)/g, '').replace(',', '.'))
   return Number.isFinite(n) ? n : 0
 }
 const redondo = (n) => Math.round(n * 100) / 100
@@ -41,6 +52,10 @@ export default function ApuntarPago({ estId, inicial = {}, onCerrar, onHecho }) 
   const [proveedores, setProveedores] = useState([])
   const [fijosPendientes, setFijosPendientes] = useState([])
   const [cajon, setCajon] = useState(null)
+  const [cajaMayor, setCajaMayor] = useState(null)   // { saldo, contada, … } de contab_tesoreria
+  // Ya se sabe si el TPV tiene la caja abierta. Sin esto, mientras carga, el cajón diría
+  // «el TPV no tiene la caja abierta» aunque la tenga.
+  const [cajonCargado, setCajonCargado] = useState(false)
   const [guardando, setGuardando] = useState(false)
 
   const [fecha, setFecha] = useState(inicial.fecha && inicial.fecha <= hoy ? inicial.fecha : hoy)
@@ -74,8 +89,17 @@ export default function ApuntarPago({ estId, inicial = {}, onCerrar, onHecho }) 
         const hechos = new Set(gastos.value.map(g => g.fijo_id).filter(Boolean))
         setFijosPendientes(fijos.value.filter(f => f.activo && !hechos.has(f.id)))
       }
+      // Si `tpv_estado_caja` falla, `cajon` se queda en null y el cajón no se ofrece: es lo seguro.
       if (caja.status === 'fulfilled' && caja.value.data?.abierta) setCajon(caja.value.data)
+      setCajonCargado(true)
     })
+    // La tesorería va APARTE: es la llamada más pesada (datáfono, liquidaciones, lo que debe
+    // Pidoo) y solo sirve para el «hay X €». Dentro del allSettled dejaba «Compré género» en
+    // «Cargando tus artículos…» hasta que respondía. Si no carga, se puede pagar igual con
+    // la caja mayor: se pierde la ayuda, no el requisito.
+    tesoreria(estId)
+      .then(t => { if (vivo && t?.caja_mayor) setCajaMayor(t.caja_mayor) })
+      .catch(() => {})
     return () => { vivo = false }
   }, [estId])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -89,10 +113,18 @@ export default function ApuntarPago({ estId, inicial = {}, onCerrar, onHecho }) 
 
   const total = modo === 'compra' ? totalCompra : importeGasto
   const cuadraSalida = !salida || Math.abs(total - Number(salida.importe)) < 0.005
+  // Del cajón solo sale lo de hoy y con la caja abierta. Explicar una salida que YA existe vale
+  // siempre: ese dinero ya salió y no se vuelve a sacar.
+  const cajonVale = !!salida || (!!cajon && fecha === hoy)
+  const motivoSinCajon = cajonVale ? null
+    : !cajonCargado ? 'Mirando si el TPV tiene la caja abierta…'
+      : !cajon ? 'El TPV no tiene la caja abierta'
+        : 'Solo para pagos de hoy'
+  const pagoVale = !!pagadoCon && (pagadoCon !== 'caja' || cajonVale)
   const valido = modo === 'compra'
-    ? lineasListas.length > 0 && lineasAMedias.length === 0 && !!pagadoCon && cuadraSalida
+    ? lineasListas.length > 0 && lineasAMedias.length === 0 && pagoVale && cuadraSalida
     : modo === 'gasto'
-      ? categoria.trim() && importeGasto > 0 && !!pagadoCon && cuadraSalida
+      ? categoria.trim() && importeGasto > 0 && pagoVale && cuadraSalida
       : false
 
   const setLinea = (key, cambios) => setLineas(prev => prev.map(l => l.key === key ? { ...l, ...cambios } : l))
@@ -269,30 +301,52 @@ export default function ApuntarPago({ estId, inicial = {}, onCerrar, onHecho }) 
           {modo && (
             <>
               <Paso n={modo === 'compra' ? 2 : (fijosPendientes.length > 0 && !salida ? 3 : 2)} texto="¿Con qué pagaste?" arriba={22} />
-              <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+              {/* Cuando se explica una salida del cajón, el dinero YA salió del cajón: las otras
+                  dos se ven (para que se entienda por qué no valen) pero no se pueden elegir. */}
+              <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))' }}>
                 <OpcionPago
-                  activo={pagadoCon === 'caja'}
-                  icono={<Wallet size={20} />}
-                  titulo="Dinero del cajón"
-                  texto={cajon ? `Hay ${eur(cajon.esperado)} en el cajón` : 'Sale de la caja del TPV'}
-                  onClick={() => setPagadoCon('caja')}
+                  activo={pagadoCon === 'caja_mayor'}
+                  icono={<Vault size={20} />}
+                  titulo={PAGADO_CON.caja_mayor.label}
+                  texto={!cajaMayor ? 'Los billetes que guardas de los cierres'
+                    : cajaMayor.contada === false ? 'Todavía no la has contado'
+                      : `Hay ${eur(cajaMayor.saldo)} en la caja mayor`}
+                  disabled={!!salida}
+                  onClick={() => setPagadoCon('caja_mayor')}
                 />
                 <OpcionPago
                   activo={pagadoCon === 'banco'}
                   icono={<Landmark size={20} />}
-                  titulo="Tarjeta o banco"
-                  texto="No toca el cajón"
+                  titulo={PAGADO_CON.banco.label}
+                  texto="No toca el cajón ni la caja mayor"
                   disabled={!!salida}
                   onClick={() => setPagadoCon('banco')}
                 />
               </div>
+              <div style={{ display: 'grid', marginTop: 10 }}>
+                <OpcionPago
+                  activo={pagadoCon === 'caja'}
+                  discreta={!salida}
+                  icono={<Wallet size={salida ? 20 : 17} />}
+                  titulo={PAGADO_CON.caja.label}
+                  texto={motivoSinCajon || 'Solo si lo sacaste del cajón mientras vendías'}
+                  nota={cajon && cajonVale && !salida ? `Hay ${eur(cajon.esperado)} en el cajón` : null}
+                  disabled={!cajonVale}
+                  onClick={() => setPagadoCon('caja')}
+                />
+              </div>
 
               <Paso n={modo === 'compra' ? 3 : (fijosPendientes.length > 0 && !salida ? 4 : 3)} texto="¿Qué día?" arriba={22} />
-              <ElegirFecha fecha={fecha} hoy={hoy} onCambio={setFecha} />
+              {/* Cambiar a otro día con el cajón elegido lo deja sin elegir: ya no vale y el
+                  botón de apuntar se quedaría apagado sin que se viera por qué. */}
+              <ElegirFecha fecha={fecha} hoy={hoy} onCambio={f => {
+                setFecha(f)
+                if (!salida && pagadoCon === 'caja' && f !== hoy) setPagadoCon(null)
+              }} />
 
               <Resumen
                 modo={modo} total={total} lineas={lineasListas} lineasAMedias={lineasAMedias.length}
-                pagadoCon={pagadoCon} cajon={cajon} salida={salida} cuadraSalida={cuadraSalida}
+                pagadoCon={pagadoCon} cajon={cajon} cajaMayor={cajaMayor} salida={salida} cuadraSalida={cuadraSalida}
                 fecha={fecha} hoy={hoy} categoria={categoria} fijo={fijo}
               />
             </>
@@ -348,20 +402,24 @@ function OpcionGrande({ icono, titulo, texto, onClick }) {
   )
 }
 
-function OpcionPago({ activo, icono, titulo, texto, onClick, disabled }) {
+// `discreta`: la misma opción, pero en segundo plano (más baja, borde discontinuo, título más
+// pequeño). Es para el cajón del TPV, que vale pero no es lo normal. Elegida, se ve como las demás.
+function OpcionPago({ activo, icono, titulo, texto, nota, onClick, disabled, discreta }) {
+  const baja = discreta && !activo
   return (
     <button onClick={onClick} disabled={disabled} style={{
-      display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
-      padding: '12px 14px', borderRadius: radius.md, fontFamily: 'inherit',
+      display: 'flex', alignItems: 'center', gap: baja ? 10 : 12, textAlign: 'left',
+      padding: baja ? '8px 12px' : '12px 14px', borderRadius: radius.md, fontFamily: 'inherit',
       cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
-      background: activo ? colors.primarySoft : colors.paper,
-      border: `2px solid ${activo ? colors.primary : colors.border}`,
-      color: activo ? colors.primaryDark : colors.text,
+      background: activo ? colors.primarySoft : baja ? 'transparent' : colors.paper,
+      border: `2px ${baja ? 'dashed' : 'solid'} ${activo ? colors.primary : colors.border}`,
+      color: activo ? colors.primaryDark : baja ? colors.textDim : colors.text,
     }}>
       <span style={{ flexShrink: 0, display: 'flex' }}>{icono}</span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: type.base, fontWeight: 700 }}>{titulo}</span>
+        <span style={{ display: 'block', fontSize: baja ? type.sm : type.base, fontWeight: 700 }}>{titulo}</span>
         <span style={{ display: 'block', fontSize: type.xs, color: colors.textMute }}>{texto}</span>
+        {nota && <span style={{ display: 'block', fontSize: type.xs, color: colors.textMute }}>{nota}</span>}
       </span>
     </button>
   )
@@ -603,7 +661,7 @@ function BuscaArticulo({ estId, articulos, valor, onElegir, onCreado }) {
 }
 
 // Lo que va a pasar al pulsar, dicho antes de pulsar.
-function Resumen({ modo, total, lineas, lineasAMedias, pagadoCon, cajon, salida, cuadraSalida, fecha, hoy, categoria, fijo }) {
+function Resumen({ modo, total, lineas, lineasAMedias, pagadoCon, cajon, cajaMayor, salida, cuadraSalida, fecha, hoy, categoria, fijo }) {
   const puntos = []
   if (modo === 'compra') {
     for (const l of lineas) {
@@ -618,11 +676,24 @@ function Resumen({ modo, total, lineas, lineasAMedias, pagadoCon, cajon, salida,
     puntos.push(cuadraSalida
       ? `Queda explicada la salida de ${eur(salida.importe)} del cajón. El cajón no cambia: ese dinero ya había salido.`
       : `Tiene que sumar ${eur(salida.importe)}, lo que salió del cajón. Ahora suma ${eur(total)}.`)
+  } else if (pagadoCon === 'caja_mayor' && total > 0) {
+    // Sin contar, el saldo parte de 0 desde que empezó la contabilidad: decir «quedarán
+    // −13,20 €» asustaría por un número que no es real. Mejor no dar cifra.
+    const quedan = cajaMayor ? Number(cajaMayor.saldo) - total : null
+    if (!cajaMayor) puntos.push(`Salen ${eur(total)} de la caja mayor.`)
+    else if (cajaMayor.contada === false) puntos.push(`Salen ${eur(total)} de la caja mayor. Todavía no la has contado, así que no sabemos cuánto queda.`)
+    // Contada, el saldo puede quedar en negativo por pagos apuntados después del recuento:
+    // «solo hay −5,00 €» no lo entiende nadie. Con 0 o menos se dice que ya no queda nada.
+    else if (Number(cajaMayor.saldo) <= 0.005) puntos.push(`Salen ${eur(total)} de la caja mayor, pero según lo apuntado ya no queda nada. ¿Seguro que lo pagaste con ella? Si falta algo, cuéntala en Tu dinero.`)
+    else if (quedan < -0.005) puntos.push(`Salen ${eur(total)} de la caja mayor, pero solo hay ${eur(cajaMayor.saldo)}. ¿Seguro que lo pagaste con ella?`)
+    else puntos.push(`Salen ${eur(total)} de la caja mayor: quedarán ${eur(quedan)}.`)
   } else if (pagadoCon === 'caja' && total > 0) {
-    if (cajon) puntos.push(`Salen ${eur(total)} del cajón: quedarán ${eur(Number(cajon.esperado) - total)}.`)
-    else puntos.push('No hay caja abierta en el TPV: se apunta el pago, pero el cajón no se toca.')
+    // Sin caja abierta o de otro día la base de datos no apunta nada (PD284): no se promete.
+    if (cajon && fecha === hoy) puntos.push(`Salen ${eur(total)} del cajón: quedarán ${eur(Number(cajon.esperado) - total)}.`)
+    else if (!cajon) puntos.push('El TPV no tiene la caja abierta: elige caja mayor o banco.')
+    else puntos.push('Del cajón del TPV solo se pagan cosas de hoy: la caja de ese día ya se contó. Elige caja mayor o banco.')
   } else if (pagadoCon === 'banco') {
-    puntos.push('Se paga por el banco: el cajón no cambia.')
+    puntos.push('Se paga por el banco: no toca el cajón ni la caja mayor.')
   }
   if (fecha !== hoy) puntos.push(`Cuenta en el ${fechaLarga(fecha)}.`)
 

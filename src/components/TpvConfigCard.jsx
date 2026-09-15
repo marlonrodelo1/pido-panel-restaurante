@@ -8,6 +8,10 @@
 // —que esté activo, la serie del ticket y el tipo de IGIC— se muestra pero no se
 // puede tocar: lo impide `tpv_config_guard` en la base de datos (PD190-PD192), así
 // que aquí ni siquiera se ofrece.
+//
+// La base del cajón es del DUEÑO: el equipo la ve, pero solo el dueño la cambia
+// (`tpv_config_guard`, PD285). El resto de esta tarjeta sí lo puede guardar el
+// equipo.
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
@@ -15,17 +19,48 @@ import { toast } from '../App'
 import { Calculator, Save } from 'lucide-react'
 
 export default function TpvConfigCard() {
-  const { restaurante, tpvConfig, setTpvConfig } = useRest()
+  const { restaurante, tpvConfig, setTpvConfig, user } = useRest()
   const [guardando, setGuardando] = useState(false)
   const [borrador, setBorrador] = useState(null)
 
   if (!tpvConfig) return null
 
+  // El dueño es quien figura en `establecimientos.user_id`: lo mismo que mira la
+  // base de datos. Quien entra como equipo, o con otra cuenta por el correo, no
+  // lo es. (No es un hook: puede ir detrás del return.)
+  const esDueno = !!user?.id && restaurante?.user_id === user.id
+
   const v = borrador || tpvConfig
   const cambiar = (campo, valor) => setBorrador({ ...v, [campo]: valor })
-  const hayCambios = borrador && Object.keys(borrador).some((k) => borrador[k] !== tpvConfig[k])
+  // La base del cajón se escribe como texto ("50,00") y en la BD es un número:
+  // compararlos a pelo daría "hay cambios" nada más tocar el campo sin cambiarlo.
+  // Y solo cuenta como cambio si alguien la ha ESCRITO (es texto): el número que
+  // copia el borrador al tocar otro campo no es un cambio (ver `guardar`).
+  const hayCambios = borrador && Object.keys(borrador).some((k) => (
+    k === 'fondo_base'
+      ? (typeof borrador[k] === 'string' && !mismaBase(borrador[k], tpvConfig[k]))
+      : borrador[k] !== tpvConfig[k]
+  ))
 
   async function guardar() {
+    // 🔴 LA BASE SOLO SE MANDA SI SE HA ESCRITO EN EL CAMPO (15 sep 2026). Antes
+    // se mandaba en cada guardado la que hubiera en el borrador, y el borrador
+    // copia la configuración entera al tocar cualquier cosa. Si el dueño cambiaba
+    // la base a 60 desde otro aparato, guardar aquí el pie del ticket devolvía
+    // el 50 viejo sin avisar; y si guardaba alguien del equipo, el guardado entero
+    // fallaba (PD285) aunque no hubiera tocado la base. Lo escrito llega como
+    // texto; lo copiado, como número: por eso basta con mirar el tipo.
+    const baseEscrita = typeof borrador?.fondo_base === 'string' && !mismaBase(borrador.fondo_base, tpvConfig.fondo_base)
+    let base = null
+    if (baseEscrita) {
+      if (!esDueno) { toast('La base del cajón solo la cambia el dueño.', 'error'); return }
+      base = aEuros(borrador.fondo_base)
+      if (!(base >= 0)) {
+        toast('Escribe la base del cajón con números, por ejemplo 50 o 50,00', 'error')
+        return
+      }
+    }
+
     setGuardando(true)
     // Solo se mandan los campos que el dueño puede tocar. Enviar los demás haría
     // saltar el guard con un error que no ayudaría a nadie.
@@ -36,6 +71,7 @@ export default function TpvConfigCard() {
       pie_ticket: (v.pie_ticket || '').trim() || null,
       impresora_ip: (v.impresora_ip || '').trim() || null,
       impresora_puerto: Number(v.impresora_puerto) || 9100,
+      ...(base != null ? { fondo_base: base } : {}),
     }).eq('establecimiento_id', restaurante.id).select().single()
     setGuardando(false)
     if (error) { toast('No se pudo guardar: ' + error.message, 'error'); return }
@@ -91,6 +127,31 @@ export default function TpvConfigCard() {
         onChange={(x) => cambiar('abrir_cajon_datafono', x)}
       />
 
+      {/* LA BASE DEL CAJÓN (15 sep 2026). Al cerrar la caja, lo que pasa de aquí
+          se va a la caja mayor y en el cajón se queda esta cantidad para dar
+          cambio al día siguiente. Se escribe como texto para admitir la coma.
+          Mientras no se escribe, se enseña la guardada, no la copia del
+          borrador: si se cambió desde otro aparato, aquí se ve la buena. El
+          equipo la ve pero no la puede tocar (PD285). */}
+      <div style={{ marginTop: 16 }}>
+        <label style={label} htmlFor="tpv-fondo-base">Base del cajón (€)</label>
+        <input
+          id="tpv-fondo-base"
+          inputMode="decimal"
+          value={typeof v.fondo_base === 'string' ? v.fondo_base : textoBase(tpvConfig.fondo_base)}
+          onChange={(e) => cambiar('fondo_base', e.target.value)}
+          placeholder="50,00"
+          maxLength={9}
+          disabled={!esDueno}
+          style={{ ...input, maxWidth: 200, opacity: esDueno ? 1 : 0.6, cursor: esDueno ? 'text' : 'not-allowed' }}
+        />
+        <div style={nota}>
+          {esDueno
+            ? 'Lo que se deja en el cajón cada noche para dar cambio. Lo demás pasa a la caja mayor al cerrar.'
+            : 'Lo que se deja en el cajón cada noche para dar cambio. Solo la cambia el dueño.'}
+        </div>
+      </div>
+
       <div style={{ marginTop: 16 }}>
         <label style={label}>Pie del ticket</label>
         <input
@@ -139,6 +200,32 @@ export default function TpvConfigCard() {
       </button>
     </div>
   )
+}
+
+// "50", "50,5", "50,00" o "50.00" → 50 / 50.5. Cualquier otra cosa → NaN.
+// Máximo dos decimales: así "1.250" no se cuela como uno con veinticinco.
+function aEuros(texto) {
+  const s = String(texto ?? '').trim().replace(/\s|€/g, '')
+  if (!s) return NaN
+  const normal = s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s
+  if (!/^\d+(\.\d{1,2})?$/.test(normal)) return NaN
+  return Number(normal)
+}
+
+// La base tal como se ve en el campo: con coma, que es como se escribe aquí.
+function textoBase(n) {
+  if (n == null || n === '') return ''
+  const x = Number(n)
+  return Number.isFinite(x) ? String(x).replace('.', ',') : ''
+}
+
+// ¿Lo escrito es la misma base que la guardada? Un texto que no es un número
+// cuenta como cambio, para que al guardar salga el aviso en vez de ignorarse.
+function mismaBase(escrito, guardado) {
+  const a = typeof escrito === 'string' ? aEuros(escrito) : (escrito == null ? null : Number(escrito))
+  const b = guardado == null ? null : Number(guardado)
+  if (Number.isNaN(a)) return false
+  return a === b
 }
 
 function Interruptor({ titulo, texto, valor, onChange, alerta }) {

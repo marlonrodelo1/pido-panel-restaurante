@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Plus, CircleCheck, Wallet, Landmark } from 'lucide-react'
+import { Trash2, Plus, CircleCheck, Wallet, Landmark, Vault } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import {
-  eur, CATEGORIAS_GASTO,
+  eur, CATEGORIAS_GASTO, PAGADO_CON,
   cargarGastos, borrarGasto, apuntarGasto, textoCajon, hoyCanariasIso,
   cargarFijos, crearFijo, borrarFijo, apuntarFijo, apuntarFijosMes,
 } from '../../lib/stock'
@@ -13,8 +14,11 @@ import {
 // PAGA, y quien sabe si el recibo salió es el dueño, no un cron — y debajo los
 // gastos sueltos de toda la vida (una reparación, la ferretería).
 //
-// Cada gasto dice CON QUÉ se pagó: si fue con el dinero del cajón, sale de la caja
-// abierta del TPV en el mismo paso (15 sep 2026), y el «cuánto hay en el cajón» cuadra.
+// Cada gasto dice CON QUÉ se pagó: lo normal es la caja mayor (los billetes retirados en
+// los cierres); si fue con el dinero del cajón, sale de la caja abierta del TPV en el mismo
+// paso (15 sep 2026), y el «cuánto hay» de cada bolsillo cuadra. El cajón solo se puede
+// elegir con la caja del TPV abierta y para gastos de HOY: un gasto del día 12 sacado de la
+// caja de hoy descuadra el cierre de esta noche (la base de datos lo corta con PD284).
 //
 // Regla que se repite en pantalla porque se preguntó dos veces: las compras de
 // género (comida, bebida, envases, aseo) NO van aquí — van en Compras, y ya
@@ -33,6 +37,9 @@ export default function GastosTab({ estId, recarga, onApuntar }) {
   const [fijos, setFijos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [refresco, setRefresco] = useState(0)
+  // ¿Tiene el TPV la caja abierta? null mientras se mira; si la consulta falla, false (no se
+  // ofrece el cajón: mejor eso que un pago que la base de datos va a rechazar).
+  const [cajaAbierta, setCajaAbierta] = useState(null)
   const recargar = () => setRefresco(n => n + 1)
 
   useEffect(() => {
@@ -49,6 +56,10 @@ export default function GastosTab({ estId, recarga, onApuntar }) {
       }
       if (vivo) setCargando(false)
     })()
+    // Aparte, para no retrasar la lista. Se vuelve a mirar en cada recarga: la caja puede
+    // abrirse o cerrarse con la pantalla abierta.
+    supabase.rpc('tpv_estado_caja', { p_establecimiento_id: estId })
+      .then(({ data }) => { if (vivo) setCajaAbierta(!!data?.abierta) })
     return () => { vivo = false }
   }, [estId, refresco, recarga])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -70,7 +81,8 @@ export default function GastosTab({ estId, recarga, onApuntar }) {
         totalFijos={totalFijos} totalPendiente={totalPendiente} mesNombre={mesNombre}
         onCambio={recargar} onApuntar={onApuntar}
       />
-      <Sueltos estId={estId} gastos={gastos} totalMes={totalMes} mesNombre={mesNombre} hoy={hoy} onCambio={recargar} />
+      <Sueltos estId={estId} gastos={gastos} totalMes={totalMes} mesNombre={mesNombre} hoy={hoy}
+        cajaAbierta={cajaAbierta} onCambio={recargar} />
     </div>
   )
 }
@@ -82,7 +94,7 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
   const [v, setV] = useState({ categoria: '', concepto: '', importe: '' })
   const [guardando, setGuardando] = useState(false)
 
-  const importe = Number(String(v.importe).replace(',', '.'))
+  const importe = leerImporte(v.importe)
   const valido = v.categoria.trim() && !Number.isNaN(importe) && importe > 0
 
   async function guardarFijo() {
@@ -108,11 +120,15 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
     } catch (e) { toast(e.message, 'error') }
   }
 
+  // El aviso nombra los TRES bolsillos: los fijos juntos se guardan sin «con qué», y el
+  // alquiler o la luz, que suelen ir por banco, tampoco bajan del banco. Si solo se decía
+  // «ni caja mayor ni cajón», el dueño entendía que salían del banco.
   async function apuntarTodos() {
     if (!(await confirmar(
       `¿Apuntar los ${pendientes.length} fijos que faltan de ${mesNombre} (${eur(totalPendiente)})?\n\n` +
-      `Hazlo solo si ya están pagados: un gasto se apunta cuando sale el dinero. ` +
-      `No se saca nada del cajón; si alguno lo pagaste con el cajón, apúntalo uno a uno.`
+      `Hazlo solo si ya están pagados.\n\n` +
+      `Ojo: apuntados todos juntos no salen de ningún sitio, ni de la caja mayor, ni del banco, ni del cajón. ` +
+      `Si quieres que cuadre lo que tienes, apúntalos uno a uno y di con qué los pagaste.`
     ))) return
     try {
       const r = await apuntarFijosMes(estId)
@@ -242,13 +258,21 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
 
 /* ── Gastos sueltos del mes ───────────────────────────────────────────────── */
 
-function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
+function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, cajaAbierta, onCambio }) {
   const vacio = { fecha: hoy, categoria: '', concepto: '', importe: '', pagadoCon: '' }
   const [v, setV] = useState(vacio)
   const [guardando, setGuardando] = useState(false)
 
-  const importe = Number(String(v.importe).replace(',', '.'))
+  // El cajón, solo con la caja del TPV abierta y para gastos de hoy. Mientras se mira el TPV
+  // tampoco se ofrece, pero sin decir que está cerrada.
+  const cajonVale = cajaAbierta === true && v.fecha === hoy
+  const motivoSinCajon = cajonVale ? null
+    : v.fecha !== hoy ? 'solo para pagos de hoy'
+      : cajaAbierta === false ? 'el TPV no tiene la caja abierta' : null
+
+  const importe = leerImporte(v.importe)
   const valido = v.categoria.trim() && !Number.isNaN(importe) && importe > 0 && v.pagadoCon
+    && (v.pagadoCon !== 'caja' || cajonVale)
 
   async function guardar() {
     setGuardando(true)
@@ -275,13 +299,14 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
     } catch (e) { toast(e.message, 'error') }
   }
 
-  const botonPago = (id, Icono, texto) => (
-    <button onClick={() => setV(p => ({ ...p, pagadoCon: id }))} style={{
+  const botonPago = (id, Icono, texto, disabled = false) => (
+    <button onClick={() => setV(p => ({ ...p, pagadoCon: id }))} disabled={disabled} style={{
       ...ds.filterBtn, height: 38,
       background: v.pagadoCon === id ? colors.primary : colors.paper,
       color: v.pagadoCon === id ? colors.cream : colors.textDim,
       borderColor: v.pagadoCon === id ? colors.primary : colors.border,
       fontWeight: v.pagadoCon === id ? 700 : 600,
+      opacity: disabled ? 0.45 : 1, cursor: disabled ? 'not-allowed' : 'pointer',
     }}>
       <Icono size={14} /> {texto}
     </button>
@@ -303,8 +328,13 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
         <Campo label="Día">
+          {/* A otro día con el cajón elegido: se quita, porque ya no vale y «Apuntar» se
+              quedaría apagado sin que se viera por qué. */}
           <input type="date" value={v.fecha} max={hoy}
-            onChange={e => setV(p => ({ ...p, fecha: e.target.value }))}
+            onChange={e => {
+              const f = e.target.value
+              setV(p => ({ ...p, fecha: f, pagadoCon: p.pagadoCon === 'caja' && f !== hoy ? '' : p.pagadoCon }))
+            }}
             style={{ ...ds.formInput, width: 138 }} />
         </Campo>
         <Campo label="Categoría">
@@ -326,10 +356,19 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
             style={{ ...ds.formInput, width: 90, textAlign: 'right' }} />
         </Campo>
         <Campo label="¿Con qué pagaste?">
-          <div style={{ display: 'flex', gap: 6 }}>
-            {botonPago('caja', Wallet, 'Cajón')}
-            {botonPago('banco', Landmark, 'Banco')}
+          {/* Lo normal primero. Con wrap: los tres juntos no caben a 340 px. */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {botonPago('caja_mayor', Vault, PAGADO_CON.caja_mayor.corto)}
+            {botonPago('banco', Landmark, PAGADO_CON.banco.corto)}
+            {botonPago('caja', Wallet, PAGADO_CON.caja.corto, !cajonVale)}
           </div>
+          {/* Apagado en vez de oculto: así se ve que existe y por qué ahora no vale. `Campo` es
+              un <label>: sin el preventDefault, tocar esta frase elegiría «Caja mayor». */}
+          {motivoSinCajon && (
+            <span onClick={e => e.preventDefault()} style={{ fontSize: type.xxs, color: colors.textMute, lineHeight: 1.4 }}>
+              {PAGADO_CON.caja.label}: {motivoSinCajon}
+            </span>
+          )}
         </Campo>
         <button onClick={guardar} disabled={!valido || guardando}
           style={{ ...ds.primaryBtn, opacity: !valido || guardando ? 0.5 : 1 }}>
@@ -361,7 +400,7 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
                 whiteSpace: 'nowrap', color: colors.textMute, fontSize: type.sm,
               }}>
                 {[g.concepto || '—', g.fijo_id ? 'fijo' : null,
-                  g.pagado_con === 'caja' ? 'cajón' : g.pagado_con === 'banco' ? 'banco' : null].filter(Boolean).join(' · ')}
+                  PAGADO_CON[g.pagado_con]?.label || null].filter(Boolean).join(' · ')}
               </span>
               <span style={{ ...col(84), fontWeight: 700 }}>{eur(g.importe)}</span>
               <span style={{ ...col(48), display: 'inline-flex', justifyContent: 'flex-end' }}>
@@ -376,6 +415,15 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
       )}
     </div>
   )
+}
+
+// «1.500» es mil quinientos (puntos de miles, como se escribe en España); «45,50» y «45.50»
+// son cuarenta y cinco con cincuenta. Devuelve NaN si no es un número, para no dar por bueno
+// un importe mal escrito.
+function leerImporte(v) {
+  let s = String(v ?? '').replace(/\s/g, '')
+  if (/^[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+  return Number(s.replace(/\.(?=.*,)/g, '').replace(',', '.'))
 }
 
 function Campo({ label, children }) {

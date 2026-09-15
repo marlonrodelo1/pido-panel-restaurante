@@ -18,14 +18,29 @@
 // Marlon a partir de las pantallas de Last.app.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useRest } from '../context/RestContext'
 import { VIAS, etiquetaLinea } from '../lib/jornada'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { imprimirReporteCaja, pulsoCajon } from '../lib/printService'
 import { ventasPendientes } from '../lib/colaVentas'
-import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus, Copy, Inbox } from 'lucide-react'
+import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus, Inbox } from 'lucide-react'
 
 export default function TpvCaja({ establecimientoId, restaurante, vistaInicial = 'resumen', onCerrarModal }) {
+  // La BASE del cajón (15 sep 2026): lo que se deja cada noche para dar cambio.
+  // Al cerrar, lo que pase de ahí se va a la caja mayor. La edita el dueño en el
+  // panel web (`tpv_config.fondo_base`) y la cuenta de verdad la hace el servidor
+  // al cerrar; aquí solo se usa para ENSEÑAR ese reparto antes de que ocurra.
+  //
+  // 🔴 SE VUELVE A LEER, NO SE FÍA DEL CONTEXTO. `tpvConfig` se carga al arrancar
+  // y solo se refresca al volver a primer plano, y el TPV está SIEMPRE delante:
+  // si el dueño cambia la base en el panel web, la tablet seguiría con la vieja,
+  // el aviso antes de cerrar diría un reparto y el servidor haría otro. Por eso
+  // se lee al abrir esta ventana, al entrar en el cierre y al pulsar Finalizar.
+  // Mientras no llega (o si falla la lectura), vale la del contexto.
+  const { tpvConfig } = useRest()
+  const [baseLeidaC, setBaseLeidaC] = useState(undefined)   // undefined = aún no leída
+  const baseC = baseLeidaC !== undefined ? baseLeidaC : centsONull(tpvConfig?.fondo_base)
   const [estado, setEstado] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [ocupado, setOcupado] = useState(false)
@@ -65,12 +80,37 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   useEffect(() => { cargar() }, [cargar])
 
-  // El último cierre, para el botón "Copiar último cierre". En un bar el fondo de
+  const leerBase = useCallback(async () => {
+    const { data, error } = await supabase.from('tpv_config')
+      .select('fondo_base').eq('establecimiento_id', establecimientoId).maybeSingle()
+    if (!error) setBaseLeidaC(centsONull(data?.fondo_base))
+  }, [establecimientoId])
+  const enCierre = vista === 'cierre'
+  useEffect(() => { leerBase() }, [leerBase, enCierre])
+
+  // El aviso «Pones X € más/menos…» espera a que se deje de teclear. El teclado
+  // mete los céntimos por la derecha: para escribir 50,00 se pasa por 0,05, 0,50
+  // y 5,00, y en cada tecla salía «Pones 49,95 € menos…». A quien no sabe de
+  // cuentas le parecía que estaba haciendo algo mal a cada pulsación.
+  const [importeQuietoC, setImporteQuietoC] = useState(0)
+  useEffect(() => {
+    const t = setTimeout(() => setImporteQuietoC(importeC), 800)
+    return () => clearTimeout(t)
+  }, [importeC])
+
+  // El último cierre, para proponer con cuánto se empieza. En un bar el fondo de
   // hoy suele ser lo que quedó ayer, y teclearlo cada mañana es justo donde se
   // cuela un error de un dígito.
+  //
+  // 🔴 LO QUE QUEDÓ NO ES LO CONTADO (15 sep 2026). Desde que existe la caja
+  // mayor, al cerrar se retira lo que pasa de la base: en el cajón queda
+  // `fondo_siguiente`, no `contado_final`. Proponer lo contado entero haría
+  // abrir con 237 € un cajón que tiene 50, y el turno nacería descuadrado. Por
+  // eso de aquí solo se usa lo contado, y solo como último recurso: lo que
+  // debería haber en el cajón lo trae `tpv_estado_caja` (ver `debeHaberC`).
   useEffect(() => {
     supabase.from('tpv_cajas')
-      .select('contado_final, cerrada_at').eq('establecimiento_id', establecimientoId)
+      .select('contado_final, cerrada_at, fondo_siguiente, retirado_caja_mayor').eq('establecimiento_id', establecimientoId)
       .not('cerrada_at', 'is', null)
       .order('cerrada_at', { ascending: false }).limit(1).maybeSingle()
       .then(({ data }) => setUltimoCierre(data || null))
@@ -91,8 +131,36 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     if (!ok) toast('El cajón no responde (¿está conectado a la impresora?)', 'error')
   }
 
+  // Se abre SIEMPRE con lo que pone la pantalla: nunca a 0 € ni con una
+  // propuesta de un solo toque. Ver la nota junto al botón.
   async function abrir() {
+    if (!(importeC > 0)) return
     setOcupado(true)
+    // 🔴 SE VUELVE A LEER JUSTO ANTES DE ABRIR (15 sep 2026). Lo que debería haber
+    // en el cajón se leyó al abrir esta ventana, y la ventana puede llevar un
+    // rato abierta: si mientras tanto se entrega un reparto cobrado en efectivo,
+    // la propuesta y el aviso de la diferencia hablan de una cifra vieja y el
+    // servidor mide contra la nueva. Si ha cambiado, NO se abre: la pantalla se
+    // pone al día y quien abre vuelve a mirar la cantidad antes de pulsar. Si la
+    // lectura falla se sigue: la diferencia la calcula el servidor igualmente.
+    const { data: fresco, error: errorLectura } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: establecimientoId })
+    if (!errorLectura && fresco) {
+      const antesC = centsONull(estado?.esperado_apertura)
+      const ahoraC = centsONull(fresco.esperado_apertura)
+      setEstado(fresco)
+      if (fresco.abierta) {
+        setOcupado(false)
+        toast('Ya hay una caja abierta (quizá desde otro aparato).', 'error')
+        return
+      }
+      if (antesC !== ahoraC) {
+        setOcupado(false)
+        toast(ahoraC != null
+          ? `Lo que debería haber en el cajón acaba de cambiar: ahora son ${eur(ahoraC)}. Revisa la cantidad y vuelve a pulsar.`
+          : 'La caja acaba de cambiar. Revisa la cantidad y vuelve a pulsar.', 'error')
+        return
+      }
+    }
     const { error } = await supabase.rpc('tpv_abrir_caja', {
       p_establecimiento_id: establecimientoId, p_fondo: importeC / 100,
     })
@@ -150,7 +218,10 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     // lo que acababa de pasar se perdía. Ahora queda en pantalla hasta que se
     // cierra a propósito.
     setCerrada(data)
-    setUltimoCierre({ contado_final: data?.contado_final, cerrada_at: data?.cerrada_at })
+    setUltimoCierre({
+      contado_final: data?.contado_final, cerrada_at: data?.cerrada_at,
+      fondo_siguiente: data?.fondo_siguiente ?? null, retirado_caja_mayor: data?.retirado_caja_mayor ?? null,
+    })
     limpiar(); setVista('cerrada'); cargar()
   }
 
@@ -196,6 +267,12 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
   // ── Resumen de la caja que se acaba de cerrar ─────────────────────────────
   if (vista === 'cerrada' && cerrada) {
     const d = cents(cerrada.descuadre)
+    // Manda lo que ha guardado el servidor. Solo si no lo trajera se recalcula,
+    // y entonces con la base de ESTA caja antes que con la de la configuración:
+    // el dueño pudo cambiarla después.
+    const reparto = (cerrada.retirado_caja_mayor != null && cerrada.fondo_siguiente != null)
+      ? { aMayor: cents(cerrada.retirado_caja_mayor), enCajon: cents(cerrada.fondo_siguiente) }
+      : repartoCierre(cents(cerrada.contado_final), centsONull(cerrada.fondo_base) ?? baseC)
     return (
       <div style={{ display: 'grid', gap: 14 }}>
         <div>
@@ -230,6 +307,22 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
           <Fila etiqueta="Fondo con el que se abrió" valor={eur(cents(cerrada.fondo_inicial))} />
         </div>
 
+        {/* A DÓNDE VA EL DINERO CONTADO (15 sep 2026). Lo que pasa de la base se
+            saca y se guarda aparte: es la caja mayor. Si la pantalla no lo dice,
+            ese dinero se queda en el cajón y mañana nadie sabe con cuánto abrir. */}
+        {reparto && (
+          <div style={{ background: T.surface2, borderRadius: 12, padding: 14, display: 'grid', gap: 8 }}>
+            <Fila etiqueta="Pasa a la caja mayor" valor={eur(reparto.aMayor)} fuerte />
+            <Fila etiqueta="Se queda en el cajón para mañana" valor={eur(reparto.enCajon)} />
+            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+              {reparto.aMayor > 0
+                ? `Saca ${eur(reparto.aMayor)} del cajón y guárdalos aparte. `
+                : 'Todo se queda en el cajón. '}
+              Lo de la caja mayor lo ves en Contabilidad → Tu dinero.
+            </div>
+          </div>
+        )}
+
         <button onClick={() => imprimirZDe(cerrada)} style={{ ...btnSecundario, height: 46 }}>
           <Printer size={16} style={{ marginRight: 6 }} /> Imprimir el reporte Z
         </button>
@@ -242,6 +335,38 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
   // ── Sin caja abierta: el comienzo del turno ───────────────────────────────
   if (!estado?.abierta) {
+    // CON CUÁNTO SE EMPIEZA. Por orden: lo que debería haber en el cajón según
+    // el servidor; si no se sabe (cierres de antes de la caja mayor), la base
+    // del cajón; y si tampoco hay base, lo contado en el último cierre, como se
+    // hacía antes.
+    //
+    // 🔴 LO QUE DEBERÍA HABER LO DICE EL SERVIDOR (15 sep 2026). No es solo lo
+    // que quedó al cerrar (`fondo_siguiente`): si después del Z se entrega un
+    // pedido cobrado en efectivo, ese dinero también está en el cajón, y
+    // `tpv_abrir_caja` mide la diferencia contra las dos cosas juntas. La
+    // pantalla proponía solo lo que quedó: al aceptarlo, la caja mayor contaba
+    // ese dinero dos veces (al abrir y otra vez al cerrar). Ahora la cifra es
+    // `esperado_apertura` de `tpv_estado_caja`, la misma que usa el servidor, y
+    // aquí no se suma nada. Si la lectura falló, no hay cifra y se pide contar.
+    const debeHaberC = centsONull(estado?.esperado_apertura)
+    const despuesC = centsONull(estado?.efectivo_despues_cierre) || 0
+    const propuestaC = debeHaberC ?? baseC ?? centsONull(ultimoCierre?.contado_final)
+    const dePropuesta = debeHaberC != null
+      ? (despuesC > 0
+        ? `Es lo que quedó en el cajón al cerrar (${eur(cents(estado.quedo_al_cerrar))}) más ${eur(despuesC)} de pedidos cobrados en efectivo después.`
+        : 'Es lo que quedó en el cajón al cerrar.')
+      : baseC != null ? 'Es la base del cajón.'
+      : 'Es lo que se contó en el último cierre.'
+    // Si no se sabe lo que quedó (los cierres de antes de la caja mayor no lo
+    // guardaron), la propuesta es un número de manual, no el del cajón: se pide
+    // contarlo antes. Si se sabe, basta con recordar que se puede poner otro.
+    const notaPropuesta = debeHaberC == null
+      ? ' Cuenta el cajón antes: si hay otra cantidad, escríbela.'
+      : ' ¿Hay otra cantidad? Escríbela arriba.'
+    // Si se teclea otra cantidad, la diferencia con lo que debería haber no sale
+    // de la nada: el servidor la apunta contra la caja mayor. Se avisa ANTES de
+    // abrir, pero solo con el número ya quieto (ver `importeQuietoC`).
+    const difC = debeHaberC != null && importeC > 0 && importeQuietoC === importeC ? importeC - debeHaberC : 0
     return (
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: T.muted, fontSize: 14 }}>
@@ -259,32 +384,54 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
           ? <ContadorDenominaciones onTotal={setImporteC} />
           : <Teclado onCambio={setImporteC} valor={importeC} />}
 
+        {/* La propuesta RELLENA el importe, no abre (ver la nota del botón de
+            abrir). Se queda en su sitio aunque ya esté puesta, apagada: si
+            desapareciera, todo lo de debajo subiría y un segundo toque rápido
+            caería en otro botón. */}
+        {propuestaC > 0 && (
+          <div style={{ display: 'grid', gap: 6 }}>
+            <button onClick={() => { setContando(false); setImporteC(propuestaC) }}
+              disabled={importeC === propuestaC}
+              style={{ ...btnSecundario, height: 46, opacity: importeC === propuestaC ? 0.4 : 1 }}>
+              Poner {eur(propuestaC)}
+            </button>
+            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5, textAlign: 'center' }}>
+              {dePropuesta}{notaPropuesta}
+            </div>
+          </div>
+        )}
+
+        {difC !== 0 && (
+          <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, background: T.surface2, borderRadius: 12, padding: '10px 12px' }}>
+            {difC > 0
+              ? `Pones ${eur(difC)} más de lo que debería haber en el cajón (${eur(debeHaberC)}): se apuntará como sacado de la caja mayor.`
+              : `Pones ${eur(-difC)} menos de lo que debería haber en el cajón (${eur(debeHaberC)}): la diferencia cuenta como pasada a la caja mayor.`}
+          </div>
+        )}
+
         <button onClick={abrirCajon} style={{ ...btnSecundario, height: 46 }}>
           <Inbox size={16} style={{ marginRight: 6 }} /> Abrir cajón
         </button>
-        {/* Sin importe escrito no se puede abrir: quien venía buscando el
-            informe X o el Z aterrizaba aquí y un toque abría una caja a 0 €
-            sin querer — y deshacerla obligaba a un cierre entero con Z falso. */}
-        <button onClick={abrir} disabled={ocupado || importeC <= 0}
+        {/* 🔴 NUNCA SE ABRE UNA CAJA CON UN SOLO TOQUE. A esta pantalla se llega
+            sin querer: «Meter dinero», «Sacar dinero», «Estado de la caja»,
+            «Informe X» y «Cierre Z» abren esta ventana aunque no haya caja, y
+            también el «Continuar» de después de cerrar. Cuando la propuesta
+            abría directamente, quien buscaba el X o el Z abría una caja sin
+            querer, y deshacerla obliga a un cierre entero con un Z falso.
+
+            Por eso abrir es SOLO este botón: no se enciende hasta que hay una
+            cantidad puesta (tecleada o con «Poner») y siempre lleva escrito con
+            cuánto se abre. Además, en los cierres de antes de la caja mayor la
+            propuesta es la base, no lo que hay de verdad en el cajón. */}
+        <button onClick={() => abrir()} disabled={ocupado || importeC <= 0}
           style={{ ...btnAccion, height: 54, fontSize: 17, opacity: (ocupado || importeC <= 0) ? 0.4 : 1 }}>
           <Wallet size={18} style={{ marginRight: 8 }} />
-          {ocupado ? 'Abriendo…' : 'Comenzar'}
+          {ocupado ? 'Abriendo…' : importeC > 0 ? `Empezar con ${eur(importeC)}` : 'Escribe con cuánto empiezas'}
         </button>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={reimprimirUltimoZ} style={{ ...btnSecundario, flex: 1, height: 44 }}>
-            <Printer size={15} style={{ marginRight: 6 }} /> Último Z
-          </button>
-          {/* El fondo de hoy suele ser lo que quedó ayer. Teclearlo otra vez es
-              regalar una oportunidad de equivocarse en un dígito. */}
-          {ultimoCierre?.contado_final != null && (
-            <button onClick={() => { setContando(false); setImporteC(cents(ultimoCierre.contado_final)) }}
-              style={{ ...btnSecundario, flex: 1, height: 44 }}>
-              <Copy size={15} style={{ marginRight: 6 }} />
-              Copiar cierre: {eur(cents(ultimoCierre.contado_final))}
-            </button>
-          )}
-        </div>
+        <button onClick={reimprimirUltimoZ} style={{ ...btnSecundario, height: 44 }}>
+          <Printer size={15} style={{ marginRight: 6 }} /> Último Z
+        </button>
         <button onClick={abrirHistorial} style={{ ...btnSecundario, height: 42 }}>
           Cierres anteriores
         </button>
@@ -318,6 +465,14 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                 <div style={{ fontSize: 12, color: T.muted }}>
                   Contado {eur(cents(c.contado_final))} · esperado {eur(cents(c.esperado))}
                 </div>
+                {/* Lo retirado a la caja mayor, para que "contado 237" y "abrió
+                    con 50" al día siguiente no parezcan dinero perdido. */}
+                {Number(c.retirado_caja_mayor) > 0 && (
+                  <div style={{ fontSize: 12, color: T.muted }}>
+                    Pasó a la caja mayor {eur(cents(c.retirado_caja_mayor))}
+                    {c.fondo_siguiente != null && <> · quedó {eur(cents(c.fondo_siguiente))}</>}
+                  </div>
+                )}
               </div>
               <div style={{
                 fontSize: 13, fontWeight: 800, flexShrink: 0, fontVariantNumeric: 'tabular-nums',
@@ -369,6 +524,9 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
   if (vista === 'cierre') {
     const tecleado = importeC > 0 || contando
     const descuadre = importeC - esperado
+    // El reparto que hará el servidor al cerrar, para enseñarlo antes, con la
+    // base recién leída de `tpv_config`: la misma que usa `tpv_cerrar_caja`.
+    const repartoConfirm = repartoCierre(importeC, baseC)
 
     // Izquierda: el resumen del turno. Mientras no se ha tecleado nada solo se
     // ve el teórico; en cuanto entra un número aparecen real y diferencia, que
@@ -434,7 +592,7 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
         <button onClick={abrirCajon} style={{ ...btnSecundario, height: 46 }}>
           <Inbox size={16} style={{ marginRight: 6 }} /> Abrir cajón
         </button>
-        <button onClick={() => setConfirmando(true)} disabled={ocupado || !tecleado}
+        <button onClick={() => { leerBase(); setConfirmando(true) }} disabled={ocupado || !tecleado}
           style={{ ...btnAccion, height: 54, fontSize: 17, opacity: (ocupado || !tecleado) ? 0.4 : 1 }}>
           <Lock size={17} style={{ marginRight: 8 }} />
           {ocupado ? 'Cerrando…' : 'Finalizar'}
@@ -472,6 +630,22 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                   ? 'Cuadra con lo que debería haber.'
                   : `${descuadre > 0 ? 'Sobran' : 'Faltan'} ${eur(Math.abs(descuadre))} respecto a los ${eur(esperado)} que debería haber.`}
               </div>
+              {/* Qué pasa con ese dinero al pulsar Finalizar: lo que pasa de la
+                  base va a la caja mayor y la base se queda para mañana. */}
+              {repartoConfirm && (
+                <div style={{ background: T.surface2, borderRadius: 12, padding: 12, display: 'grid', gap: 6, textAlign: 'left' }}>
+                  <Fila etiqueta="Pasa a la caja mayor" valor={eur(repartoConfirm.aMayor)} />
+                  <Fila etiqueta="Se queda en el cajón para mañana" valor={eur(repartoConfirm.enCajon)} />
+                  <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+                    {importeC > baseC
+                      ? `La base del cajón es ${eur(baseC)}. `
+                      : importeC === baseC
+                        ? 'Es justo la base: todo se queda en el cajón. '
+                        : `No llega a la base de ${eur(baseC)}: todo se queda en el cajón. `}
+                    Lo de la caja mayor lo ves en Contabilidad → Tu dinero.
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setConfirmando(false)} style={{ ...btnSecundario, flex: 1, height: 48 }}>
                   Cancelar
@@ -595,6 +769,22 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
 
 // ── Piezas ───────────────────────────────────────────────────────────────────
 
+// Euros de la BD → céntimos, pero distinguiendo "no hay dato" de "0 €": una caja
+// de antes de la caja mayor no tiene `fondo_siguiente`, y tratarlo como 0
+// propondría abrir con un cajón vacío.
+function centsONull(euros) {
+  return euros == null || euros === '' ? null : cents(euros)
+}
+
+// Lo que se lleva la caja mayor y lo que se queda en el cajón, en céntimos. Es
+// la misma cuenta que hace `tpv_cerrar_caja`: max(contado − base, 0). Aquí solo
+// sirve para ENSEÑARLA; lo que queda guardado es lo que calcula el servidor.
+function repartoCierre(contadoC, baseC) {
+  if (baseC == null) return null
+  const aMayor = Math.max(contadoC - baseC, 0)
+  return { aMayor, enCajon: contadoC - aMayor }
+}
+
 function fechaHora(iso) {
   if (!iso) return '—'
   try {
@@ -663,13 +853,16 @@ function Teclado({ valor, onCambio }) {
   )
 }
 
+// `gap` y `nowrap` en la cifra: con etiquetas largas ("Se queda en el cajón para
+// mañana") en un móvil de 340 px, la etiqueta baja de renglón pero el importe no
+// se parte en "237,80" / "€".
 function Fila({ etiqueta: e, valor, fuerte }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-      <span style={{ fontSize: fuerte ? 14 : 13, color: fuerte ? T.text : T.muted, fontWeight: fuerte ? 700 : 400 }}>{e}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+      <span style={{ fontSize: fuerte ? 14 : 13, color: fuerte ? T.text : T.muted, fontWeight: fuerte ? 700 : 400, minWidth: 0 }}>{e}</span>
       <span style={{
         fontSize: fuerte ? 20 : 14, fontWeight: fuerte ? 800 : 600, color: T.text,
-        fontVariantNumeric: 'tabular-nums',
+        fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
       }}>{valor}</span>
     </div>
   )

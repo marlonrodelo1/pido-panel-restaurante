@@ -2,9 +2,12 @@
 //
 // 3 sep: «quiero un panorama completo del negocio, que no se escape absolutamente nada».
 // 15 sep: «lo veo muy enredado… tiene que ser intuitivo, como para un bebé». Por eso:
-//   - Se abre en EL DÍA (vendiste · pagaste · ganaste · cuánto hay en el cajón).
+//   - Se abre en EL DÍA (vendiste · pagaste · ganaste · tu dinero ahora).
 //   - Un solo botón para todo lo que sale: «Apuntar un pago». Una compra entra sola en el
-//     almacén y, si se pagó con el cajón, sale sola de la caja del TPV.
+//     almacén y el dinero sale solo del sitio con que se pagó (caja mayor, banco o cajón).
+//   - «Tu dinero» es DÓNDE está cada euro: el cajón del TPV, la caja mayor (lo que se retira
+//     al cerrar la caja), el banco y lo que debe Pidoo. Justo después de El día porque es la
+//     otra pregunta de cada noche: «¿cuánto tengo?».
 //   - «Cómo va» es la semana o el mes; Compras, Gastos, Platos y el informe de la gestoría
 //     quedan detrás, para cuando hagan falta.
 //
@@ -19,6 +22,7 @@ import { useRest } from '../context/RestContext'
 import { colors, ds, type } from '../lib/uiStyles'
 import { cargarArticulos, hoyCanariasIso } from '../lib/stock'
 import DiaTab from '../components/contabilidad/DiaTab'
+import DineroTab from '../components/contabilidad/DineroTab'
 import ResumenTab from '../components/contabilidad/ResumenTab'
 import PlatosTab from '../components/contabilidad/PlatosTab'
 import GastosTab from '../components/contabilidad/GastosTab'
@@ -28,6 +32,7 @@ import ComprasTab from '../components/almacen/ComprasTab'
 
 const PESTANAS = [
   { id: 'dia', label: 'El día' },
+  { id: 'dinero', label: 'Tu dinero' },
   { id: 'resumen', label: 'Cómo va' },
   { id: 'facturas', label: 'Compras' },
   { id: 'gastos', label: 'Gastos' },
@@ -104,7 +109,7 @@ export function ContabilidadVista({ restaurante, stockConfig }) {
           </div>
           <div style={{ fontSize: type.sm, color: colors.textMute, lineHeight: 1.5 }}>
             Lo que vendes, lo que pagas y lo que te queda. Cada vez que pagues algo —el pan, la luz,
-            una reparación— apúntalo con el botón: entra en el almacén y sale del cajón solo.
+            una reparación— apúntalo con el botón: entra en el almacén y se descuenta de tu dinero solo.
           </div>
         </div>
         <button onClick={() => apuntar()} style={{ ...ds.primaryBtn, height: 44, fontSize: type.base, padding: '0 20px' }}>
@@ -129,6 +134,9 @@ export function ContabilidadVista({ restaurante, stockConfig }) {
       {pestana === 'dia' && (
         <DiaTab estId={estId} fecha={fechaDia} onFecha={setFechaDia} recarga={refresco}
           onApuntar={apuntar} onIrA={setPestana} />
+      )}
+      {pestana === 'dinero' && (
+        <DineroTab estId={estId} recarga={refresco} onApuntar={apuntar} onIrA={setPestana} onIrADia={irADia} />
       )}
       {pestana === 'resumen' && (
         <ResumenTab estId={estId} onIrA={setPestana} onIrADia={irADia} recarga={refresco} />

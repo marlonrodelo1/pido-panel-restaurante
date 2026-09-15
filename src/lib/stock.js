@@ -332,8 +332,73 @@ export const marcarPagado = (tipo, id, pagadoCon) =>
 export const salidaNoEsGasto = (movimientoId, nota) =>
   rpc('contab_salida_no_es_gasto', { p_movimiento_id: movimientoId, p_nota: nota || null })
 
+/* ── Tu dinero: caja menor, caja mayor, banco y lo que debe Pidoo ─────────── */
+// Marlon, 15 sep: «del cierre se deja la base y lo demás pasa a la caja mayor; de ahí se
+// pagan los gastos». Casi todo se DERIVA en `contab_tesoreria` (cierres, compras, gastos,
+// datáfono, liquidaciones); solo se apunta a mano el recuento y el dinero que se mueve
+// sin ser gasto (llevarlo al banco, meter o sacar).
+
+// Dónde puede salir un pago. El orden es el de la pantalla: lo normal primero.
+export const PAGADO_CON = {
+  caja_mayor: { label: 'Caja mayor', corto: 'Caja mayor' },
+  banco: { label: 'Tarjeta o banco', corto: 'Banco' },
+  caja: { label: 'Cajón del TPV', corto: 'Cajón' },
+}
+
+export const tesoreria = (estId) =>
+  rpc('contab_tesoreria', { p_establecimiento_id: estId })
+
+// bolsillo: 'caja_mayor' | 'banco'
+export const contarBolsillo = (estId, bolsillo, importe, nota) =>
+  rpc('contab_tesoreria_contar', { p_establecimiento_id: estId, p_bolsillo: bolsillo, p_importe: importe, p_nota: nota || null })
+
+// movimiento: caja_mayor_a_banco · banco_a_caja_mayor · entrada_caja_mayor ·
+// salida_caja_mayor · entrada_banco · salida_banco
+export const moverDinero = (estId, movimiento, importe, nota) =>
+  rpc('contab_tesoreria_mover', { p_establecimiento_id: estId, p_movimiento: movimiento, p_importe: importe, p_nota: nota || null })
+
+export const borrarApunteDinero = (apunteId) =>
+  rpc('contab_tesoreria_borrar', { p_apunte_id: apunteId })
+
+// El cliente pidió en efectivo y pagó con datáfono (o al revés). Solo entre esos dos:
+// la tarjeta de la app ya la cobró Pidoo y el mostrador tiene ticket fiscal.
+export const cambiarFormaPago = (pedidoId, metodo, motivo) =>
+  rpc('pedido_cambiar_forma_pago', { p_pedido_id: pedidoId, p_metodo: metodo, p_motivo: motivo || null })
+
+// ¿Se le puede cambiar la forma de pago a este pedido? Misma regla que la RPC, para no
+// ofrecer un botón que va a fallar.
+//
+// El segundo argumento es opcional (el TPV no lo pasa) y solo cuenta para lo ENTREGADO: en
+// `pedido_cambiar_forma_pago` los 14 días (PD283) y la caja cerrada (PD282) solo miran
+// estado='entregado'; lo recogido se cambia siempre y lo cambia cualquiera.
+//   fecha, hoy      'AAAA-MM-DD' en hora de Canarias: el día del pedido y hoy.
+//   puedeEditar     `contab_tesoreria.puede_editar`. false = es del equipo, no el dueño.
+//                   Sin cargar todavía (undefined/null) no quita el botón: la RPC manda.
+//   enCajaCerrada   ya se sabe que su cobro cae en una caja cerrada, o que se cobró con la caja
+//                   cerrada y la caja que se abrió después ya está cerrada.
+//   enCajaAbierta   ya se sabe que su cobro cae en la caja que sigue abierta en el TPV.
+export function sePuedeCambiarPago(pedido, { fecha, hoy, puedeEditar, enCajaCerrada = false, enCajaAbierta = false } = {}) {
+  const via = pedido?.origen_pedido ?? pedido?.via
+  const pago = pedido?.metodo_pago ?? pedido?.pago
+  const estado = pedido?.estado
+  const base = ['efectivo', 'datafono'].includes(pago)
+    && via !== 'tpv'
+    && !pedido?.reembolsado_at
+    && !['cancelado', 'fallido', 'rechazado', 'pendiente_pago'].includes(estado)
+  if (!base || estado !== 'entregado') return base
+  // PD283: entregado hace más de 14 días. La RPC lo mide a la hora exacta, así que el día de
+  // hace 14 ya falla en parte: ese día tampoco se ofrece.
+  if (fecha && hoy && fecha <= sumarDias(hoy, -14)) return false
+  // PD282: una caja cerrada solo la corrige el dueño. Al equipo no se le ofrece si su cobro cae
+  // en una caja cerrada o la caja que se abrió después ya está cerrada, ni en un día anterior a
+  // hoy (esa caja pudo cerrarse), salvo que caiga en la caja que sigue abierta.
+  if (puedeEditar === false && !enCajaAbierta && (enCajaCerrada || (fecha && hoy && fecha < hoy))) return false
+  return true
+}
+
 // Lo que devuelve la RPC sobre el cajón, dicho para personas.
 export function textoCajon(cajon, importe) {
+  if (cajon === 'caja_mayor') return `Salen ${eur(importe)} de la caja mayor.`
   if (cajon === 'salida') return `Han salido ${eur(importe)} del cajón.`
   if (cajon === 'enlazada') return 'Queda explicada la salida del cajón.'
   if (cajon === 'sin_caja') return 'No había caja abierta en el TPV: el cajón no se ha tocado.'
@@ -391,7 +456,7 @@ const MENSAJES = {
   PD253: 'Esta preparación no tiene receta: añádesela antes de apuntar una tanda.',
   PD255: 'Una preparación no puede ser ingrediente de otra preparación.',
   PD256: 'Ese fijo ya estaba apuntado este mes.',
-  PD260: 'Dinos con qué lo pagaste: dinero del cajón o tarjeta/banco.',
+  PD260: 'Dinos con qué lo pagaste: caja mayor, banco o cajón del TPV.',
   PD261: 'Ese proveedor no es de tu negocio.',
   PD262: 'Añade al menos un artículo.',
   PD263: 'Revisa lo que pagaste: tiene que ser un importe mayor que cero.',
@@ -401,6 +466,8 @@ const MENSAJES = {
   PD267: 'Dinos en qué fue el gasto: luz, alquiler, una reparación…',
   PD268: 'Eso ya no existe: recarga la página.',
   PD269: 'Es una factura completa: ábrela en Compras para deshacerla.',
+  // PD272-PD279 y PD282-PD285 llevan el motivo exacto en el mensaje de la base de datos
+  // (cambio de forma de pago, caja mayor): se enseñan tal cual vienen.
 }
 
 function traducir(error) {
