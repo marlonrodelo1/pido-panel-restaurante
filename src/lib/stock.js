@@ -295,6 +295,77 @@ export const comisionPidoo = (estId) =>
 export const contabilizarFactura = (facturaId) =>
   rpc('stock_contabilizar_factura', { p_factura_id: facturaId })
 
+/* ── Contabilidad del día: un pago se apunta UNA vez ──────────────────────── */
+// Marlon, 15 sep: «compré 60 panes a 13,20: súmalos al inventario, cuéntalo como compra,
+// descuéntalo de lo vendido y dime cuánto queda en efectivo». Antes eran tres pantallas
+// (factura, contabilizar y salida en la caja del TPV). Ahora la RPC hace las tres cosas
+// a la vez o ninguna: entra en el almacén, pone el coste y saca el dinero del cajón.
+
+export const diaContable = (estId, fecha) =>
+  rpc('contab_dia', { p_establecimiento_id: estId, p_fecha: fecha || null })
+
+export const diasContables = (estId, desde, hasta) =>
+  rpc('contab_dias', { p_establecimiento_id: estId, p_desde: desde, p_hasta: hasta })
+
+// lineas: [{ articulo_id, cantidad, importe }] — «importe» es lo pagado por la línea entera.
+export const apuntarCompra = (estId, { lineas, pagadoCon, fecha, proveedorId, nota, cajaMovimientoId }) =>
+  rpc('contab_apuntar_compra', {
+    p_establecimiento_id: estId, p_lineas: lineas, p_pagado_con: pagadoCon,
+    p_fecha: fecha || null, p_proveedor_id: proveedorId || null, p_nota: nota || null,
+    p_caja_movimiento_id: cajaMovimientoId || null,
+  })
+
+export const apuntarGasto = (estId, { categoria, importe, pagadoCon, fecha, concepto, fijoId, cajaMovimientoId }) =>
+  rpc('contab_apuntar_gasto', {
+    p_establecimiento_id: estId, p_categoria: categoria || null, p_importe: importe,
+    p_pagado_con: pagadoCon, p_fecha: fecha || null, p_concepto: concepto || null,
+    p_fijo_id: fijoId || null, p_caja_movimiento_id: cajaMovimientoId || null,
+  })
+
+// tipo: 'compra' | 'gasto'
+export const deshacerPago = (tipo, id) =>
+  rpc('contab_deshacer_pago', { p_tipo: tipo, p_id: id })
+
+export const marcarPagado = (tipo, id, pagadoCon) =>
+  rpc('contab_marcar_pagado', { p_tipo: tipo, p_id: id, p_pagado_con: pagadoCon })
+
+export const salidaNoEsGasto = (movimientoId, nota) =>
+  rpc('contab_salida_no_es_gasto', { p_movimiento_id: movimientoId, p_nota: nota || null })
+
+// Lo que devuelve la RPC sobre el cajón, dicho para personas.
+export function textoCajon(cajon, importe) {
+  if (cajon === 'salida') return `Han salido ${eur(importe)} del cajón.`
+  if (cajon === 'enlazada') return 'Queda explicada la salida del cajón.'
+  if (cajon === 'sin_caja') return 'No había caja abierta en el TPV: el cajón no se ha tocado.'
+  if (cajon === 'devuelto') return 'El dinero vuelve a contar en el cajón.'
+  if (cajon === 'otro_dia') return 'Es de otro día: la caja de ese día ya se contó, el cajón no se toca.'
+  return ''
+}
+
+// El día de Canarias como 'AAAA-MM-DD'. Nada de toISOString(): recorta en UTC y de 00:00
+// a 01:00 daría el día anterior.
+export function hoyCanariasIso() {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'Atlantic/Canary', year: 'numeric', month: 'numeric', day: 'numeric' })
+      .formatToParts(new Date())
+      .map(x => [x.type, x.value])
+  )
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`
+}
+
+export function sumarDias(iso, n) {
+  const d = new Date(iso + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// «lunes 15 de septiembre»
+export function fechaLarga(iso, { diaSemana = true } = {}) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('es-ES', {
+    ...(diaSemana ? { weekday: 'long' } : {}), day: 'numeric', month: 'long',
+  })
+}
+
 export const descontabilizarFactura = (facturaId) =>
   rpc('stock_descontabilizar_factura', { p_factura_id: facturaId })
 
@@ -320,6 +391,16 @@ const MENSAJES = {
   PD253: 'Esta preparación no tiene receta: añádesela antes de apuntar una tanda.',
   PD255: 'Una preparación no puede ser ingrediente de otra preparación.',
   PD256: 'Ese fijo ya estaba apuntado este mes.',
+  PD260: 'Dinos con qué lo pagaste: dinero del cajón o tarjeta/banco.',
+  PD261: 'Ese proveedor no es de tu negocio.',
+  PD262: 'Añade al menos un artículo.',
+  PD263: 'Revisa lo que pagaste: tiene que ser un importe mayor que cero.',
+  PD264: 'Esa salida del cajón no es de tu negocio.',
+  PD265: 'Esa salida del cajón ya está explicada.',
+  // PD266 lleva el importe dentro del mensaje: se enseña tal cual viene.
+  PD267: 'Dinos en qué fue el gasto: luz, alquiler, una reparación…',
+  PD268: 'Eso ya no existe: recarga la página.',
+  PD269: 'Es una factura completa: ábrela en Compras para deshacerla.',
 }
 
 function traducir(error) {

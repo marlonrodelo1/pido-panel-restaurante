@@ -3,7 +3,10 @@ import { Plus, X, TriangleAlert } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type, col } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
-import { eur, UNIDADES, contabilizarFactura, descontabilizarFactura } from '../../lib/stock'
+import {
+  eur, UNIDADES, contabilizarFactura, descontabilizarFactura,
+  marcarPagado, textoCajon, hoyCanariasIso,
+} from '../../lib/stock'
 
 // El albarán: qué te ha traído el proveedor y a qué precio.
 //
@@ -13,16 +16,22 @@ import { eur, UNIDADES, contabilizarFactura, descontabilizarFactura } from '../.
 //
 // El total del papel se teclea aparte de las líneas a propósito: si no cuadran, hay
 // una línea de menos o un precio mal puesto, y eso vale más que un campo calculado.
+//
+// «¿Con qué la pagaste?» (15 sep 2026): si fue con el dinero del cajón, al contabilizar
+// sale de la caja abierta del TPV — solo si la factura es de hoy: la caja de otro día ya
+// se contó. Las compras rápidas no se descontabilizan aquí: se deshacen en «El día».
 export default function FacturaEditor({ estId, factura, articulos, proveedores, onCerrar, onGuardado }) {
   const nueva = !factura
   const bloqueada = !!factura?.contabilizada
+  const rapida = factura?.origen === 'rapida'
 
   const [cab, setCab] = useState({
     proveedor_id: factura?.proveedor_id || '',
     numero: factura?.numero || '',
-    fecha: factura?.fecha || new Date().toISOString().slice(0, 10),
+    fecha: factura?.fecha || hoyCanariasIso(),
     total: factura?.total != null ? String(factura.total).replace('.', ',') : '',
     notas: factura?.notas || '',
+    pagado_con: factura?.pagado_con || '',
   })
   const [lineas, setLineas] = useState([])
   const [nuevoProv, setNuevoProv] = useState('')
@@ -126,7 +135,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
   async function guardar() {
     const limpias = lineas.filter(l => l.articulo_id && num(l.cantidad) > 0)
     if (!limpias.length) return toast('Añade al menos una línea: elige el artículo y pon la cantidad.', 'error')
-    if (cab.fecha > new Date().toISOString().slice(0, 10)) {
+    if (cab.fecha > hoyCanariasIso()) {
       return toast('La fecha de la factura no puede estar en el futuro.', 'error')
     }
 
@@ -138,6 +147,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
         fecha: cab.fecha,
         total: totalPapel || Math.round(sumaLineas * 100) / 100,
         notas: cab.notas.trim() || null,
+        pagado_con: cab.pagado_con || null,
       }
       let id = factura?.id
       if (nueva) {
@@ -174,14 +184,31 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
   async function contabilizar() {
     if (!(await confirmar(
       'Al contabilizar, esta mercancía entra en tu almacén y cada artículo se queda con ' +
-      'el precio que has pagado en esta factura.\n\nDespués no podrás editar la factura sin descontabilizarla antes.'
+      'el precio que has pagado en esta factura.' +
+      (cab.pagado_con === 'caja' ? '\n\nComo la pagaste con el cajón, si es de hoy sale de la caja abierta.' : '') +
+      '\n\nDespués no podrás editar la factura sin descontabilizarla antes.'
     ))) return
     setGuardando(true)
     try {
       await contabilizarFactura(factura.id)
-      toast('Factura contabilizada. La mercancía está en el almacén y los costes ya están al día.', 'success')
+      let cajonTxt = ''
+      if (cab.pagado_con) {
+        const r = await marcarPagado('compra', factura.id, cab.pagado_con)
+        cajonTxt = textoCajon(r.cajon, factura.total)
+      }
+      toast(['Factura contabilizada: la mercancía está en el almacén.', cajonTxt].filter(Boolean).join(' '), 'success')
       onGuardado()
     } catch (e) { toast(e.message, 'error'); setGuardando(false) }
+  }
+
+  // Ya contabilizada, decir con qué se pagó va por RPC: si fue el cajón, sale de la caja.
+  async function cambiarPagadoBloqueada(valor) {
+    if (!valor || valor === cab.pagado_con) return
+    try {
+      const r = await marcarPagado('compra', factura.id, valor)
+      setCab(c => ({ ...c, pagado_con: valor }))
+      toast([`Apuntado: pagada ${valor === 'caja' ? 'con el cajón' : 'por banco'}.`, textoCajon(r.cajon, factura.total)].filter(Boolean).join(' '), 'success')
+    } catch (e) { toast(e.message, 'error') }
   }
 
   async function descontabilizar() {
@@ -202,12 +229,14 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
     <div style={ds.modal} onClick={onCerrar}>
       <div style={{ ...ds.modalContent, maxWidth: 940 }} onClick={e => e.stopPropagation()}>
         <h2 style={{ ...ds.h2, marginBottom: 2 }}>
-          {nueva ? 'Nueva factura de compra' : bloqueada ? 'Factura contabilizada' : 'Factura (borrador)'}
+          {nueva ? 'Nueva factura de compra' : rapida ? 'Compra rápida' : bloqueada ? 'Factura contabilizada' : 'Factura (borrador)'}
         </h2>
         <div style={{ ...ds.muted, marginBottom: 18 }}>
-          {bloqueada
-            ? 'Esta mercancía ya está en tu almacén. Para cambiarla, descontabilízala primero.'
-            : 'Todavía no ha entrado nada en el almacén ni ha cambiado ningún coste. Eso pasa al contabilizarla.'}
+          {rapida
+            ? 'Ya está en tu almacén. Si te equivocaste, deshazla en Contabilidad → El día: sale del almacén y vuelve el coste de antes.'
+            : bloqueada
+              ? 'Esta mercancía ya está en tu almacén. Para cambiarla, descontabilízala primero.'
+              : 'Todavía no ha entrado nada en el almacén ni ha cambiado ningún coste. Eso pasa al contabilizarla.'}
         </div>
 
         {cargando ? (
@@ -247,9 +276,21 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
               </div>
               <div style={{ flex: '1 1 140px' }}>
                 <label style={ds.label}>Fecha</label>
-                <input type="date" value={cab.fecha} disabled={bloqueada}
+                <input type="date" value={cab.fecha} disabled={bloqueada} max={hoyCanariasIso()}
                   onChange={e => setCab({ ...cab, fecha: e.target.value })}
                   style={ds.formInput} />
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={ds.label}>¿Con qué la pagaste?</label>
+                <select value={cab.pagado_con}
+                  onChange={e => bloqueada
+                    ? cambiarPagadoBloqueada(e.target.value)
+                    : setCab({ ...cab, pagado_con: e.target.value })}
+                  style={ds.select}>
+                  <option value="" disabled={bloqueada && !!cab.pagado_con}>— Sin decir / aún no —</option>
+                  <option value="caja">Dinero del cajón</option>
+                  <option value="banco">Tarjeta o banco</option>
+                </select>
               </div>
             </div>
 
@@ -430,7 +471,7 @@ export default function FacturaEditor({ estId, factura, articulos, proveedores, 
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 22, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: 10 }}>
-                {bloqueada && (
+                {bloqueada && !rapida && (
                   <button onClick={descontabilizar} disabled={guardando} style={ds.miniBtnDanger}>
                     Descontabilizar
                   </button>

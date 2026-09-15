@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Plus, CircleCheck } from 'lucide-react'
+import { Trash2, Plus, CircleCheck, Wallet, Landmark } from 'lucide-react'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import {
   eur, CATEGORIAS_GASTO,
-  cargarGastos, crearGasto, borrarGasto,
+  cargarGastos, borrarGasto, apuntarGasto, textoCajon, hoyCanariasIso,
   cargarFijos, crearFijo, borrarFijo, apuntarFijo, apuntarFijosMes,
 } from '../../lib/stock'
 
@@ -13,21 +13,21 @@ import {
 // PAGA, y quien sabe si el recibo salió es el dueño, no un cron — y debajo los
 // gastos sueltos de toda la vida (una reparación, la ferretería).
 //
-// Regla que se repite en pantalla porque se preguntó dos veces: las facturas de
-// compra (comida, bebida, envases, aseo) NO van aquí — van en Facturas, y ya
-// cuentan solas en el Resumen. Cada compra entra por UN solo sitio.
+// Cada gasto dice CON QUÉ se pagó: si fue con el dinero del cajón, sale de la caja
+// abierta del TPV en el mismo paso (15 sep 2026), y el «cuánto hay en el cajón» cuadra.
+//
+// Regla que se repite en pantalla porque se preguntó dos veces: las compras de
+// género (comida, bebida, envases, aseo) NO van aquí — van en Compras, y ya
+// cuentan solas. Cada compra entra por UN solo sitio.
 
-function fmt(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-export default function GastosTab({ estId }) {
-  const hoy = new Date()
-  const desde = fmt(new Date(hoy.getFullYear(), hoy.getMonth(), 1))
-  const hasta = fmt(hoy)
-  const mesNombre = `${MESES[hoy.getMonth()]} ${hoy.getFullYear()}`
+export default function GastosTab({ estId, recarga, onApuntar }) {
+  const hoy = hoyCanariasIso()
+  const desde = hoy.slice(0, 8) + '01'
+  const hasta = hoy
+  const mesNombre = `${MESES[Number(hoy.slice(5, 7)) - 1]} ${hoy.slice(0, 4)}`
 
   const [gastos, setGastos] = useState([])
   const [fijos, setFijos] = useState([])
@@ -50,7 +50,7 @@ export default function GastosTab({ estId }) {
       if (vivo) setCargando(false)
     })()
     return () => { vivo = false }
-  }, [estId, refresco])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [estId, refresco, recarga])  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (cargando) {
     return <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Cargando los gastos…</div>
@@ -64,20 +64,20 @@ export default function GastosTab({ estId }) {
   const totalMes = gastos.reduce((s, g) => s + Number(g.importe), 0)
 
   return (
-    <div style={{ display: 'grid', gap: 14, alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}>
+    <div style={{ display: 'grid', gap: 14, alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))' }}>
       <Fijos
         estId={estId} fijos={fijos} pendientes={pendientes} apuntadosIds={apuntadosIds}
         totalFijos={totalFijos} totalPendiente={totalPendiente} mesNombre={mesNombre}
-        onCambio={recargar}
+        onCambio={recargar} onApuntar={onApuntar}
       />
-      <Sueltos estId={estId} gastos={gastos} totalMes={totalMes} mesNombre={mesNombre} onCambio={recargar} />
+      <Sueltos estId={estId} gastos={gastos} totalMes={totalMes} mesNombre={mesNombre} hoy={hoy} onCambio={recargar} />
     </div>
   )
 }
 
 /* ── Los fijos del mes ────────────────────────────────────────────────────── */
 
-function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendiente, mesNombre, onCambio }) {
+function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendiente, mesNombre, onCambio, onApuntar }) {
   const [alta, setAlta] = useState(false)
   const [v, setV] = useState({ categoria: '', concepto: '', importe: '' })
   const [guardando, setGuardando] = useState(false)
@@ -97,7 +97,10 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
     setGuardando(false)
   }
 
+  // Con la ventana de pagos se pregunta con qué se pagó (y el importe real del recibo, que
+  // en la luz nunca es el de la plantilla). Sin ella, el apunte directo de siempre.
   async function apuntar(f) {
+    if (onApuntar) { onApuntar({ modo: 'gasto', fijo: f }); return }
     try {
       await apuntarFijo(f.id)
       toast(`${f.categoria} apuntado: ${eur(f.importe)}`, 'success')
@@ -108,7 +111,8 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
   async function apuntarTodos() {
     if (!(await confirmar(
       `¿Apuntar los ${pendientes.length} fijos que faltan de ${mesNombre} (${eur(totalPendiente)})?\n\n` +
-      `Hazlo solo si ya están pagados: un gasto se apunta cuando sale el dinero.`
+      `Hazlo solo si ya están pagados: un gasto se apunta cuando sale el dinero. ` +
+      `No se saca nada del cajón; si alguno lo pagaste con el cajón, apúntalo uno a uno.`
     ))) return
     try {
       const r = await apuntarFijosMes(estId)
@@ -135,7 +139,7 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
         <div style={{ ...ds.muted }}>{eur(totalFijos)} al mes</div>
       </div>
       <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 2, marginBottom: 12, lineHeight: 1.5 }}>
-        La plantilla de lo que pagas todos los meses. Cada uno se apunta{' '}
+        Lo que pagas todos los meses. Cada uno se apunta{' '}
         <strong>cuando se paga</strong> — y apuntado dos veces no entra: un fijo solo
         cuenta una vez al mes.
       </div>
@@ -182,7 +186,7 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
               {hecho ? (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: type.xxs, fontWeight: 700, color: colors.sage,
+                  fontSize: type.xxs, fontWeight: 700, color: colors.sage2,
                 }}>
                   <CircleCheck size={13} /> Este mes
                 </span>
@@ -238,32 +242,50 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
 
 /* ── Gastos sueltos del mes ───────────────────────────────────────────────── */
 
-function Sueltos({ estId, gastos, totalMes, mesNombre, onCambio }) {
-  const [v, setV] = useState({ fecha: fmt(new Date()), categoria: '', concepto: '', importe: '' })
+function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, onCambio }) {
+  const vacio = { fecha: hoy, categoria: '', concepto: '', importe: '', pagadoCon: '' }
+  const [v, setV] = useState(vacio)
   const [guardando, setGuardando] = useState(false)
 
   const importe = Number(String(v.importe).replace(',', '.'))
-  const valido = v.categoria.trim() && !Number.isNaN(importe) && importe > 0
+  const valido = v.categoria.trim() && !Number.isNaN(importe) && importe > 0 && v.pagadoCon
 
   async function guardar() {
     setGuardando(true)
     try {
-      await crearGasto(estId, { ...v, importe })
-      setV({ fecha: fmt(new Date()), categoria: '', concepto: '', importe: '' })
-      toast('Gasto apuntado', 'success')
+      const r = await apuntarGasto(estId, {
+        categoria: v.categoria, concepto: v.concepto, importe, fecha: v.fecha, pagadoCon: v.pagadoCon,
+      })
+      setV(vacio)
+      toast(['Gasto apuntado.', textoCajon(r.cajon, r.importe)].filter(Boolean).join(' '), 'success')
       onCambio()
     } catch (e) { toast(e.message, 'error') }
     setGuardando(false)
   }
 
   async function borrar(g) {
-    if (!(await confirmar(`¿Borrar el gasto de ${eur(g.importe)} en "${g.categoria}"?`))) return
+    const aviso = g.caja_movimiento_id
+      ? '\n\nSalió del cajón: si la caja sigue abierta, lo mejor es deshacerlo desde «El día», que devuelve el dinero al cajón.'
+      : ''
+    if (!(await confirmar(`¿Borrar el gasto de ${eur(g.importe)} en "${g.categoria}"?${aviso}`))) return
     try {
       await borrarGasto(g.id)
       toast('Gasto borrado', 'success')
       onCambio()
     } catch (e) { toast(e.message, 'error') }
   }
+
+  const botonPago = (id, Icono, texto) => (
+    <button onClick={() => setV(p => ({ ...p, pagadoCon: id }))} style={{
+      ...ds.filterBtn, height: 38,
+      background: v.pagadoCon === id ? colors.primary : colors.paper,
+      color: v.pagadoCon === id ? colors.cream : colors.textDim,
+      borderColor: v.pagadoCon === id ? colors.primary : colors.border,
+      fontWeight: v.pagadoCon === id ? 700 : 600,
+    }}>
+      <Icono size={14} /> {texto}
+    </button>
+  )
 
   return (
     <div style={{ ...ds.card, padding: 18 }}>
@@ -275,13 +297,13 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, onCambio }) {
       </div>
       <div style={{ ...ds.muted, fontSize: type.xs, marginTop: 2, marginBottom: 12, lineHeight: 1.5 }}>
         Pagos sueltos: una reparación, la ferretería, un recibo fuera de plantilla.
-        Las facturas de compra (comida, bebida, envases, aseo) NO van aquí: van en{' '}
-        <strong>Facturas</strong> y ya cuentan solas.
+        Las compras de género (comida, bebida, envases, aseo) NO van aquí: van en{' '}
+        <strong>Compras</strong> y ya cuentan solas.
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
         <Campo label="Día">
-          <input type="date" value={v.fecha} max={fmt(new Date())}
+          <input type="date" value={v.fecha} max={hoy}
             onChange={e => setV(p => ({ ...p, fecha: e.target.value }))}
             style={{ ...ds.formInput, width: 138 }} />
         </Campo>
@@ -303,6 +325,12 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, onCambio }) {
             onChange={e => setV(p => ({ ...p, importe: e.target.value }))}
             style={{ ...ds.formInput, width: 90, textAlign: 'right' }} />
         </Campo>
+        <Campo label="¿Con qué pagaste?">
+          <div style={{ display: 'flex', gap: 6 }}>
+            {botonPago('caja', Wallet, 'Cajón')}
+            {botonPago('banco', Landmark, 'Banco')}
+          </div>
+        </Campo>
         <button onClick={guardar} disabled={!valido || guardando}
           style={{ ...ds.primaryBtn, opacity: !valido || guardando ? 0.5 : 1 }}>
           Apuntar
@@ -313,7 +341,7 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, onCambio }) {
         <div style={{ ...ds.muted, fontSize: type.sm }}>Ningún gasto apuntado este mes.</div>
       ) : (
         <div style={tablaScroll}>
-          <div style={{ ...ds.tableHeader, ...filaMin(520) }}>
+          <div style={{ ...ds.tableHeader, ...filaMin(560) }}>
             <span style={col(64, 'left')}>Día</span>
             <span style={col(130, 'left')}>Categoría</span>
             <span style={{ flex: 1, minWidth: 0 }}>Concepto</span>
@@ -321,7 +349,7 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, onCambio }) {
             <span style={col(48)} />
           </div>
           {gastos.map(g => (
-            <div key={g.id} style={{ ...ds.tableRow, ...filaMin(520) }}>
+            <div key={g.id} style={{ ...ds.tableRow, ...filaMin(560) }}>
               <span style={{ ...col(64, 'left'), color: colors.textMute, fontSize: type.sm }}>
                 {new Date(g.fecha + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
               </span>
@@ -332,7 +360,8 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, onCambio }) {
                 flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap', color: colors.textMute, fontSize: type.sm,
               }}>
-                {g.concepto || '—'}{g.fijo_id ? ' · fijo' : ''}
+                {[g.concepto || '—', g.fijo_id ? 'fijo' : null,
+                  g.pagado_con === 'caja' ? 'cajón' : g.pagado_con === 'banco' ? 'banco' : null].filter(Boolean).join(' · ')}
               </span>
               <span style={{ ...col(84), fontWeight: 700 }}>{eur(g.importe)}</span>
               <span style={{ ...col(48), display: 'inline-flex', justifyContent: 'flex-end' }}>
