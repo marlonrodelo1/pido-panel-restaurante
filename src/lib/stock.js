@@ -34,6 +34,47 @@ export function cantidad(n, unidad = 'ud') {
   return `${s.replace('.', ',')} ${unidad}`
 }
 
+// En las RECETAS los pesos y los volúmenes se escriben como se cocinan: 7 g, 150 g, 30 ml
+// (Marlon, 15 sep 2026: «que se vea 7 g, no 0,007»). En base de datos todo sigue en la
+// unidad del artículo (kg, l, ud): el coste medio y el almacén van por kilo y por litro,
+// así que la conversión vive SOLO en la pantalla, al cargar y al guardar la receta.
+const UNIDAD_RECETA = { kg: { corto: 'g', factor: 1000 }, l: { corto: 'ml', factor: 1000 } }
+
+export const unidadReceta = (unidad) => UNIDAD_RECETA[unidad]?.corto || unidad || ''
+
+// Números como se escriben en España: la coma es el decimal y el punto separa miles
+// («1.303,5 g»). En gramos y mililitros, un «1.500» sin coma también es de miles (1500 g):
+// leerlo como 1,5 guardaría mil veces menos. En unidades («0.5 ud») el punto es decimal.
+function leerNumeroEs(texto, unidad) {
+  let s = String(texto ?? '').trim()
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
+  else if (UNIDAD_RECETA[unidad] && /^[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+  const v = Number(s)
+  return Number.isFinite(v) ? v : 0
+}
+
+// De la base de datos al campo: 0.007 kg → "7" · 1.3035 kg → "1303,5" · 0.0625 ud → "0,0625".
+// toPrecision quita el ruido de coma flotante (7.000000000000001) sin perder decimales reales.
+export function recetaATexto(cant, unidad) {
+  if (cant == null || cant === '') return ''
+  const f = UNIDAD_RECETA[unidad]?.factor || 1
+  const v = Number((Number(cant) * f).toPrecision(12))
+  return String(v).replace('.', ',')
+}
+
+// Del campo a la base de datos: "7" g → 0.007 kg · "1.303,5" g → 1.3035 kg · "2" ud → 2.
+export function textoAReceta(texto, unidad) {
+  const f = UNIDAD_RECETA[unidad]?.factor || 1
+  return Math.round((leerNumeroEs(texto, unidad) / f) * 1e6) / 1e6
+}
+
+// Menos de 1 g o 1 ml casi siempre es la costumbre de escribir en kilos («0,15» pensando
+// en 150 g): las pantallas de receta lo preguntan antes de guardar.
+export function recetaSospechosa(texto, unidad) {
+  const v = leerNumeroEs(texto, unidad)
+  return !!UNIDAD_RECETA[unidad] && v > 0 && v < 1
+}
+
 export function eur(n) {
   return `${Number(n || 0).toFixed(2).replace('.', ',')} €`
 }
@@ -259,7 +300,9 @@ export const recuentoLote = (lineas) =>
 export async function cargarElaboracion(elaboradoId) {
   const { data, error } = await supabase
     .from('stock_elaboracion_lineas')
-    .select('articulo_id, cantidad')
+    // La unidad de cada ingrediente viene pegada: la receta se enseña en g / ml y la
+    // conversión no puede depender de que la lista de artículos ya esté cargada.
+    .select('articulo_id, cantidad, stock_articulos!stock_elaboracion_lineas_articulo_id_fkey(unidad)')
     .eq('elaborado_id', elaboradoId)
   if (error) throw new Error(traducir(error))
   return data || []

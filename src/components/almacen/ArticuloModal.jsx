@@ -5,7 +5,7 @@ import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import {
   UNIDADES, FAMILIAS, cantidad, eurCoste, fijarCoste,
-  cargarElaboracion, guardarElaboracion,
+  cargarElaboracion, guardarElaboracion, recetaATexto, textoAReceta, unidadReceta, recetaSospechosa,
 } from '../../lib/stock'
 
 // Alta y edición de un artículo de almacén.
@@ -28,18 +28,36 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
   // La receta de una preparación: qué lleva CADA unidad de almacén. Vive aquí y no
   // en un modal aparte porque ser preparación ES parte de qué es el artículo.
   const [receta, setReceta] = useState([])
+  // Hasta que la receta de verdad no ha cargado, guardar NO la toca: una lista vacía por un
+  // fallo de red borraría la receta entera.
+  const [recetaCargada, setRecetaCargada] = useState(nuevo || !articulo?.es_elaborado)
   useEffect(() => {
     if (nuevo || !articulo?.es_elaborado) return
     let vivo = true
     cargarElaboracion(articulo.id)
-      .then(ls => { if (vivo) setReceta(ls.map(l => ({ articulo_id: l.articulo_id, cantidad: String(l.cantidad).replace('.', ',') }))) })
-      .catch(e => toast('No se ha podido cargar la receta: ' + e.message, 'error'))
+      // En pantalla en gramos / mililitros; la unidad viene pegada a cada línea.
+      .then(ls => {
+        if (!vivo) return
+        if (ls.some(l => !l.stock_articulos?.unidad)) {
+          toast('No se ha podido cargar la receta (falta la unidad de algún ingrediente). No se tocará al guardar.', 'error')
+          return
+        }
+        setReceta(ls.map(l => ({
+          articulo_id: l.articulo_id,
+          unidad: l.stock_articulos.unidad,
+          cantidad: recetaATexto(l.cantidad, l.stock_articulos.unidad),
+        })))
+        setRecetaCargada(true)
+      })
+      .catch(e => toast('No se ha podido cargar la receta: ' + e.message + '. No se tocará al guardar.', 'error'))
     return () => { vivo = false }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ingredientes posibles: artículos de compra activos. Nunca otra preparación
   // (PD255, sin ciclos) ni el propio artículo.
   const ingredientes = articulos.filter(x => x.activo && !x.es_elaborado && x.id !== articulo?.id)
+  // La unidad con la que se escribió cada línea (g / ml en pantalla, kg / l en base de datos).
+  const unidadIng = (l) => l.unidad ?? articulos.find(x => x.id === l.articulo_id)?.unidad
   // El coste va aparte del resto del formulario: no se guarda con un UPDATE (la
   // columna está congelada por PD233), se apunta en el libro con su propia RPC.
   const [coste, setCoste] = useState(
@@ -55,6 +73,17 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
   const valido = v.nombre.trim().length > 0
 
   async function guardar() {
+    // La receta se valida ANTES de guardar nada: una línea que se quedaría en 0 no se tira
+    // en silencio, y lo que baja de 1 g / 1 ml se pregunta (costumbre de escribir en kilos).
+    if (v.es_elaborado && recetaCargada) {
+      const conArticulo = receta.filter(l => l.articulo_id)
+      if (conArticulo.some(l => textoAReceta(l.cantidad, unidadIng(l)) <= 0)) {
+        return toast('Hay un ingrediente de la receta con cantidad 0. Pon cuánto lleva o quítalo.', 'error')
+      }
+      if (conArticulo.some(l => recetaSospechosa(l.cantidad, unidadIng(l))) && !(await confirmar(
+        'Hay ingredientes con menos de 1 g o 1 ml.\n\nLa receta va en gramos y mililitros: 833 g se escribe 833, no 0,833.\n\n¿Guardar así?'
+      ))) return
+    }
     setGuardando(true)
     const payload = {
       nombre: v.nombre.trim(),
@@ -87,9 +116,9 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
     }
     // La receta va DESPUÉS del artículo, como el coste: un fallo aquí no tira el resto.
     // Las líneas a medias (sin ingrediente o sin cantidad) se ignoran sin ruido.
-    if (v.es_elaborado) {
+    if (v.es_elaborado && recetaCargada) {
       const lineas = receta
-        .map(l => ({ articulo_id: l.articulo_id, cantidad: Number(String(l.cantidad).replace(',', '.')) }))
+        .map(l => ({ articulo_id: l.articulo_id, cantidad: textoAReceta(l.cantidad, unidadIng(l)) }))
         .filter(l => l.articulo_id && l.cantidad > 0)
       try { await guardarElaboracion(id, lineas) }
       catch (e) { toast('El artículo se guardó, pero la receta no: ' + e.message, 'error') }
@@ -205,8 +234,8 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
             </div>
             <div style={{ ...ds.muted, marginTop: 2, marginBottom: 10, lineHeight: 1.5 }}>
               Truco: haz una tanda apuntando lo que le echas y pesa lo que sale, y divide.
-              Si con 2 kg de pollo y 0,5 l de mayonesa te salen 2,4 kg de mezcla, cada kg
-              lleva 0,83 de pollo y 0,21 de mayonesa.
+              Si con 2 kg de pollo y 500 ml de mayonesa te salen 2,4 kg de mezcla, cada kg
+              lleva unos 833 g de pollo y 208 ml de mayonesa.
             </div>
 
             {receta.map((l, i) => {
@@ -216,14 +245,16 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
                   {/* flex:1 SIEMPRE con minWidth:0: un select toma como mínimo el ancho
                       de su opción más larga y revienta el modal (lección del EscandalloEditor). */}
                   <select value={l.articulo_id} style={{ ...ds.select, flex: 1, minWidth: 0 }}
-                    onChange={e => setReceta(rs => rs.map((x, j) => j === i ? { ...x, articulo_id: e.target.value } : x))}>
+                    onChange={e => setReceta(rs => rs.map((x, j) => j === i
+                      ? { ...x, articulo_id: e.target.value, unidad: ingredientes.find(y => y.id === e.target.value)?.unidad }
+                      : x))}>
                     <option value="">— Elige de tus artículos —</option>
                     {ingredientes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
                   </select>
-                  <input inputMode="decimal" value={l.cantidad} placeholder="0,00"
+                  <input inputMode="decimal" value={l.cantidad} placeholder="0"
                     onChange={e => setReceta(rs => rs.map((x, j) => j === i ? { ...x, cantidad: e.target.value.replace(/[^\d.,]/g, '') } : x))}
                     style={{ ...ds.formInput, width: 78, textAlign: 'right', flexShrink: 0 }} />
-                  <span style={{ ...ds.muted, width: 22, flexShrink: 0 }}>{ing?.unidad || ''}</span>
+                  <span style={{ ...ds.muted, width: 26, flexShrink: 0 }}>{unidadReceta(l.unidad ?? ing?.unidad)}</span>
                   <button onClick={() => setReceta(rs => rs.filter((_, j) => j !== i))}
                     title="Quitar ingrediente"
                     style={{ ...ds.miniBtn, flexShrink: 0, padding: '4px 7px' }}>
@@ -241,7 +272,7 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
             {(() => {
               const coste = receta.reduce((s, l) => {
                 const ing = ingredientes.find(x => x.id === l.articulo_id)
-                const c = Number(String(l.cantidad).replace(',', '.'))
+                const c = textoAReceta(l.cantidad, unidadIng(l))
                 return s + (ing && c > 0 ? c * Number(ing.coste_medio) : 0)
               }, 0)
               return coste > 0 ? (

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { Plus, X, ChevronDown, ChevronUp, Wand2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
-import { toast } from '../../App'
-import { eur, comisionPidoo, arranqueDesdeCarta } from '../../lib/stock'
+import { toast, confirmar } from '../../App'
+import {
+  eur, comisionPidoo, arranqueDesdeCarta, recetaATexto, textoAReceta, unidadReceta, recetaSospechosa,
+} from '../../lib/stock'
 
 // El escandallo de un plato: qué lleva y cuánto cuesta.
 //
@@ -29,6 +31,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const [guardando, setGuardando] = useState(false)
   const [comision, setComision] = useState(null)
   const [montando, setMontando] = useState(false)
+  const [errorCarga, setErrorCarga] = useState(null)
 
   const clave = (s) => (s || '').trim().toLowerCase()
   const porId = Object.fromEntries(articulos.map(a => [a.id, a]))
@@ -39,20 +42,33 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
       const [t, e, f, c] = await Promise.all([
         supabase.from('producto_tamanos').select('id, nombre, precio, precio_local')
           .eq('producto_id', producto.id).order('orden'),
-        supabase.from('escandallo_lineas').select('*').eq('producto_id', producto.id),
+        supabase.from('escandallo_lineas').select('*, stock_articulos(unidad)').eq('producto_id', producto.id),
         supabase.from('escandallo_tamanos').select('*').eq('producto_id', producto.id),
         comisionPidoo(estId).catch((e) => { console.warn('[almacen] comisión:', e.message); return null }),
       ])
       if (!vivo) return
+      // Si la receta no carga NO se enseña vacía: guardar una receta vacía borraría la de verdad.
+      const fallo = t.error || e.error || f.error
+      if (fallo || (e.data || []).some(l => !l.stock_articulos?.unidad)) {
+        setErrorCarga(fallo ? fallo.message : 'falta la unidad de algún ingrediente')
+        setCargando(false)
+        return
+      }
       setComision(c == null ? null : Number(c))
       setTamanos(t.data || [])
       const todas = e.data || []
-      setLineas(todas.filter(l => l.tamano_clave === '')
-        .map(l => ({ articulo_id: l.articulo_id, cantidad: String(l.cantidad).replace('.', ',') })))
+      // En pantalla la cantidad va en gramos / mililitros (7 g, no 0,007 kg). La unidad viene
+      // pegada a cada línea desde la base de datos: convertir con una unidad sacada de otro
+      // sitio podría guardar una cantidad mil veces más grande o más pequeña.
+      const aFila = (l) => {
+        const unidad = l.stock_articulos?.unidad
+        return { articulo_id: l.articulo_id, unidad, cantidad: recetaATexto(l.cantidad, unidad) }
+      }
+      setLineas(todas.filter(l => l.tamano_clave === '').map(aFila))
       const pr = {}
       for (const l of todas.filter(l => l.tamano_clave !== '')) {
         pr[l.tamano_clave] = pr[l.tamano_clave] || []
-        pr[l.tamano_clave].push({ articulo_id: l.articulo_id, cantidad: String(l.cantidad).replace('.', ',') })
+        pr[l.tamano_clave].push(aFila(l))
       }
       setPropias(pr)
       setFactores(Object.fromEntries((f.data || []).map(x => [x.tamano_clave, String(x.factor).replace('.', ',')])))
@@ -62,7 +78,12 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   }, [producto.id, estId])
 
   const num = (v) => Number(String(v ?? '').replace(',', '.')) || 0
-  const costeDe = (ls) => ls.reduce((s, l) => s + num(l.cantidad) * Number(porId[l.articulo_id]?.coste_medio || 0), 0)
+  // Lo escrito (7 g) pasado a la unidad del artículo (0,007 kg): así se guarda y se costea.
+  const unidadDe = (l) => l.unidad ?? porId[l.articulo_id]?.unidad
+  // Redondeado a 4 decimales, lo que guarda la base de datos (0,1 g): el coste que se ve es
+  // exactamente lo que se guarda y lo que descontará el almacén.
+  const base = (l) => Math.round(textoAReceta(l.cantidad, unidadDe(l)) * 1e4) / 1e4
+  const costeDe = (ls) => ls.reduce((s, l) => s + base(l) * Number(porId[l.articulo_id]?.coste_medio || 0), 0)
 
   const costeBase = costeDe(lineas)
   // En el local se sirve en plato de vidrio: la barra no gasta empaque (el almacén no lo
@@ -83,13 +104,18 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   const sobreCoste = (margen, coste) => (coste > 0 && margen != null
     ? `${Math.round((margen / coste) * 100)} % sobre el coste` : null)
 
+  // Al cambiar de ingrediente se queda el número escrito y se toma la unidad del nuevo:
+  // quien pone «30» y corrige el artículo quiere 30 g del nuevo, no la conversión del viejo.
+  const cambiarCampo = (l, campo, valor) => campo === 'articulo_id'
+    ? { ...l, articulo_id: valor, unidad: porId[valor]?.unidad }
+    : { ...l, [campo]: valor }
   function setLinea(i, campo, valor) {
-    setLineas(prev => prev.map((l, j) => j === i ? { ...l, [campo]: valor } : l))
+    setLineas(prev => prev.map((l, j) => j === i ? cambiarCampo(l, campo, valor) : l))
   }
   function setLineaPropia(k, i, campo, valor) {
     setPropias(prev => ({
       ...prev,
-      [k]: prev[k].map((l, j) => j === i ? { ...l, [campo]: valor } : l),
+      [k]: prev[k].map((l, j) => j === i ? cambiarCampo(l, campo, valor) : l),
     }))
   }
 
@@ -111,10 +137,19 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   async function guardar() {
     // Se valida antes de borrar nada: si algo está mal, el escandallo anterior sigue
     // en pie. Borrar primero y fallar después dejaría al plato sin receta.
-    const limpias = lineas.filter(l => l.articulo_id && num(l.cantidad) > 0)
-    if (lineas.some(l => l.articulo_id && num(l.cantidad) <= 0)) {
-      return toast('Hay un ingrediente con cantidad 0. Pon cuánto lleva o quítalo.', 'error')
+    // Todas las líneas, también las de los tamaños con receta propia: ninguna se tira sin avisar.
+    const conArticulo = [...lineas, ...Object.values(propias).flat()].filter(l => l.articulo_id)
+    const aCero = conArticulo.filter(l => base(l) <= 0)
+    if (aCero.length) {
+      return toast(aCero.some(l => textoAReceta(l.cantidad, unidadDe(l)) > 0)
+        ? 'Hay una cantidad demasiado pequeña: lo mínimo es 0,1 g o 0,1 ml.'
+        : 'Hay un ingrediente con cantidad 0. Pon cuánto lleva o quítalo.', 'error')
     }
+    // Menos de 1 g / 1 ml suele ser la costumbre de escribir en kilos: se pregunta.
+    if (conArticulo.some(l => recetaSospechosa(l.cantidad, unidadDe(l))) && !(await confirmar(
+      'Hay ingredientes con menos de 1 g o 1 ml.\n\nLas recetas van en gramos y mililitros: 150 g se escribe 150, no 0,15.\n\n¿Guardar así?'
+    ))) return
+    const limpias = lineas.filter(l => l.articulo_id && base(l) > 0)
     const dup = new Set()
     for (const l of limpias) {
       if (dup.has(l.articulo_id)) return toast('Has puesto el mismo ingrediente dos veces.', 'error')
@@ -132,13 +167,13 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
 
       const filas = limpias.map(l => ({
         establecimiento_id: estId, producto_id: producto.id, tamano_clave: '',
-        articulo_id: l.articulo_id, cantidad: num(l.cantidad),
+        articulo_id: l.articulo_id, cantidad: base(l),
       }))
       for (const [k, ls] of Object.entries(propias)) {
-        for (const l of ls.filter(x => x.articulo_id && num(x.cantidad) > 0)) {
+        for (const l of ls.filter(x => x.articulo_id && base(x) > 0)) {
           filas.push({
             establecimiento_id: estId, producto_id: producto.id, tamano_clave: k,
-            articulo_id: l.articulo_id, cantidad: num(l.cantidad),
+            articulo_id: l.articulo_id, cantidad: base(l),
           })
         }
       }
@@ -174,9 +209,16 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
 
         {cargando ? (
           <div style={{ ...ds.muted, padding: 30, textAlign: 'center' }}>Cargando…</div>
+        ) : errorCarga ? (
+          <div style={{ padding: '14px 0' }}>
+            <div style={{ fontSize: type.sm, color: colors.danger, lineHeight: 1.5 }}>
+              No se ha podido cargar la receta ({errorCarga}). Cierra y vuelve a abrirla.
+            </div>
+            <button onClick={onCerrar} style={{ ...ds.secondaryBtn, marginTop: 12 }}>Cerrar</button>
+          </div>
         ) : (
           <>
-            <div style={ds.label}>Ingredientes de una ración</div>
+            <div style={ds.label}>Ingredientes de una ración · en g, ml o ud</div>
             {lineas.map((l, i) => (
               <FilaIngrediente key={i} linea={l} articulos={articulos} porId={porId}
                 onCambio={(c, v) => setLinea(i, c, v)}
@@ -318,6 +360,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
 
 function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
   const art = porId[linea.articulo_id]
+  const unidad = linea.unidad ?? art?.unidad
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
       <select value={linea.articulo_id} onChange={e => onCambio('articulo_id', e.target.value)}
@@ -330,9 +373,9 @@ function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
       <input inputMode="decimal" value={linea.cantidad} placeholder="0"
         onChange={e => onCambio('cantidad', e.target.value.replace(/[^\d.,]/g, ''))}
         style={{ ...ds.input, width: 90, height: 36, textAlign: 'right' }} />
-      <div style={{ width: 34, ...ds.muted }}>{art?.unidad || ''}</div>
+      <div style={{ width: 34, ...ds.muted }}>{unidadReceta(unidad)}</div>
       <div style={{ width: 76, textAlign: 'right', ...ds.muted, fontVariantNumeric: 'tabular-nums' }}>
-        {art ? eur(Number(String(linea.cantidad || 0).replace(',', '.')) * Number(art.coste_medio)) : ''}
+        {art ? eur(textoAReceta(linea.cantidad, unidad) * Number(art.coste_medio)) : ''}
       </div>
       <button onClick={onQuitar} style={{ ...ds.miniBtn, width: 28, padding: 0 }} aria-label="Quitar">
         <X size={12} />
