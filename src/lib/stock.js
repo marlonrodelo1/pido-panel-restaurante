@@ -47,6 +47,7 @@ export const unidadReceta = (unidad) => UNIDAD_RECETA[unidad]?.corto || unidad |
 // leerlo como 1,5 guardaría mil veces menos. En unidades («0.5 ud») el punto es decimal.
 function leerNumeroEs(texto, unidad) {
   let s = String(texto ?? '').trim()
+  if (/,.*\./.test(s)) return 0   // «1,303.5» (formato inglés): no se adivina, se pide que lo corrija
   if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
   else if (UNIDAD_RECETA[unidad] && /^[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
   const v = Number(s)
@@ -69,10 +70,11 @@ export function textoAReceta(texto, unidad) {
 }
 
 // Menos de 1 g o 1 ml casi siempre es la costumbre de escribir en kilos («0,15» pensando
-// en 150 g): las pantallas de receta lo preguntan antes de guardar.
+// en 150 g), y 5 kg o más un punto de más («12.500» pensando en 12,5 g): las pantallas de
+// receta lo preguntan antes de guardar.
 export function recetaSospechosa(texto, unidad) {
   const v = leerNumeroEs(texto, unidad)
-  return !!UNIDAD_RECETA[unidad] && v > 0 && v < 1
+  return !!UNIDAD_RECETA[unidad] && v > 0 && (v < 1 || v >= 5000)
 }
 
 export function eur(n) {

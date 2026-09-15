@@ -30,16 +30,19 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
   const [receta, setReceta] = useState([])
   // Hasta que la receta de verdad no ha cargado, guardar NO la toca: una lista vacía por un
   // fallo de red borraría la receta entera.
-  const [recetaCargada, setRecetaCargada] = useState(nuevo || !articulo?.es_elaborado)
+  const [recetaCargada, setRecetaCargada] = useState(nuevo)
+  const [recetaError, setRecetaError] = useState(null)
   useEffect(() => {
-    if (nuevo || !articulo?.es_elaborado) return
+    // Se carga SIEMPRE en un artículo existente, sea o no preparación: si se vuelve a encender
+    // el interruptor, su receta antigua tiene que verse, no borrarse sin enseñarla.
+    if (nuevo) return
     let vivo = true
     cargarElaboracion(articulo.id)
       // En pantalla en gramos / mililitros; la unidad viene pegada a cada línea.
       .then(ls => {
         if (!vivo) return
         if (ls.some(l => !l.stock_articulos?.unidad)) {
-          toast('No se ha podido cargar la receta (falta la unidad de algún ingrediente). No se tocará al guardar.', 'error')
+          setRecetaError('falta la unidad de algún ingrediente')
           return
         }
         setReceta(ls.map(l => ({
@@ -49,7 +52,7 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
         })))
         setRecetaCargada(true)
       })
-      .catch(e => toast('No se ha podido cargar la receta: ' + e.message + '. No se tocará al guardar.', 'error'))
+      .catch(e => { if (vivo) setRecetaError(e.message) })
     return () => { vivo = false }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -81,7 +84,7 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
         return toast('Hay un ingrediente de la receta con cantidad 0. Pon cuánto lleva o quítalo.', 'error')
       }
       if (conArticulo.some(l => recetaSospechosa(l.cantidad, unidadIng(l))) && !(await confirmar(
-        'Hay ingredientes con menos de 1 g o 1 ml.\n\nLa receta va en gramos y mililitros: 833 g se escribe 833, no 0,833.\n\n¿Guardar así?'
+        'Hay cantidades raras: menos de 1 g o más de 5 kg.\n\nLa receta va en gramos y mililitros: 833 g se escribe 833, no 0,833.\n\n¿Guardar así?'
       ))) return
     }
     setGuardando(true)
@@ -238,6 +241,15 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
               lleva unos 833 g de pollo y 208 ml de mayonesa.
             </div>
 
+            {/* Hasta que la receta de verdad no ha cargado no se deja escribir: lo tecleado se
+                perdería al llegar la carga, o se tiraría al guardar con un «guardado» falso. */}
+            {!recetaCargada ? (
+              <div style={{ ...ds.muted, lineHeight: 1.5, ...(recetaError ? { color: colors.danger } : {}) }}>
+                {recetaError
+                  ? `No se ha podido cargar la receta (${recetaError}). Cierra y vuelve a abrir el artículo; al guardar no se tocará.`
+                  : 'Cargando la receta…'}
+              </div>
+            ) : <>
             {receta.map((l, i) => {
               const ing = ingredientes.find(x => x.id === l.articulo_id)
               return (
@@ -283,6 +295,7 @@ export default function ArticuloModal({ estId, articulo, familiasUsadas = [], ar
                 </div>
               ) : null
             })()}
+            </>}
           </div>
         )}
 

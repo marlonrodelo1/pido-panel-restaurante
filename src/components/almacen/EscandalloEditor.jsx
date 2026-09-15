@@ -81,8 +81,9 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   // Lo escrito (7 g) pasado a la unidad del artículo (0,007 kg): así se guarda y se costea.
   const unidadDe = (l) => l.unidad ?? porId[l.articulo_id]?.unidad
   // Redondeado a 4 decimales, lo que guarda la base de datos (0,1 g): el coste que se ve es
-  // exactamente lo que se guarda y lo que descontará el almacén.
-  const base = (l) => Math.round(textoAReceta(l.cantidad, unidadDe(l)) * 1e4) / 1e4
+  // exactamente lo que se guarda y lo que descontará el almacén. En dos pasos, para que el
+  // ruido de coma flotante (0,15 g = 1,4999…) no decida hacia dónde redondea.
+  const base = (l) => Math.round(Math.round(textoAReceta(l.cantidad, unidadDe(l)) * 1e7) / 1e3) / 1e4
   const costeDe = (ls) => ls.reduce((s, l) => s + base(l) * Number(porId[l.articulo_id]?.coste_medio || 0), 0)
 
   const costeBase = costeDe(lineas)
@@ -145,9 +146,14 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
         ? 'Hay una cantidad demasiado pequeña: lo mínimo es 0,1 g o 0,1 ml.'
         : 'Hay un ingrediente con cantidad 0. Pon cuánto lleva o quítalo.', 'error')
     }
-    // Menos de 1 g / 1 ml suele ser la costumbre de escribir en kilos: se pregunta.
+    // La columna admite hasta 9.999.999.999 kg: más que eso haría fallar el guardado a medias.
+    if (conArticulo.some(l => base(l) >= 1e10)) {
+      return toast('Hay una cantidad demasiado grande. Revísala.', 'error')
+    }
+    // Menos de 1 g / 1 ml suele ser la costumbre de escribir en kilos, y 5 kg o más un punto
+    // de más («12.500»): se pregunta.
     if (conArticulo.some(l => recetaSospechosa(l.cantidad, unidadDe(l))) && !(await confirmar(
-      'Hay ingredientes con menos de 1 g o 1 ml.\n\nLas recetas van en gramos y mililitros: 150 g se escribe 150, no 0,15.\n\n¿Guardar así?'
+      'Hay cantidades raras: menos de 1 g o más de 5 kg.\n\nLas recetas van en gramos y mililitros: 150 g se escribe 150, no 0,15.\n\n¿Guardar así?'
     ))) return
     const limpias = lineas.filter(l => l.articulo_id && base(l) > 0)
     const dup = new Set()
@@ -220,7 +226,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
           <>
             <div style={ds.label}>Ingredientes de una ración · en g, ml o ud</div>
             {lineas.map((l, i) => (
-              <FilaIngrediente key={i} linea={l} articulos={articulos} porId={porId}
+              <FilaIngrediente key={i} linea={l} articulos={articulos} porId={porId} baseDe={base}
                 onCambio={(c, v) => setLinea(i, c, v)}
                 onQuitar={() => setLineas(prev => prev.filter((_, j) => j !== i))} />
             ))}
@@ -325,7 +331,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
                       {abierta === k && propias[k] && (
                         <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${colors.border}` }}>
                           {propias[k].map((l, i) => (
-                            <FilaIngrediente key={i} linea={l} articulos={articulos} porId={porId}
+                            <FilaIngrediente key={i} linea={l} articulos={articulos} porId={porId} baseDe={base}
                               onCambio={(c, v) => setLineaPropia(k, i, c, v)}
                               onQuitar={() => setPropias({ ...propias, [k]: propias[k].filter((_, j) => j !== i) })} />
                           ))}
@@ -358,7 +364,7 @@ export default function EscandalloEditor({ estId, producto, articulos, onCerrar,
   )
 }
 
-function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
+function FilaIngrediente({ linea, articulos, porId, baseDe, onCambio, onQuitar }) {
   const art = porId[linea.articulo_id]
   const unidad = linea.unidad ?? art?.unidad
   return (
@@ -375,7 +381,7 @@ function FilaIngrediente({ linea, articulos, porId, onCambio, onQuitar }) {
         style={{ ...ds.input, width: 90, height: 36, textAlign: 'right' }} />
       <div style={{ width: 34, ...ds.muted }}>{unidadReceta(unidad)}</div>
       <div style={{ width: 76, textAlign: 'right', ...ds.muted, fontVariantNumeric: 'tabular-nums' }}>
-        {art ? eur(textoAReceta(linea.cantidad, unidad) * Number(art.coste_medio)) : ''}
+        {art ? eur(baseDe(linea) * Number(art.coste_medio)) : ''}
       </div>
       <button onClick={onQuitar} style={{ ...ds.miniBtn, width: 28, padding: 0 }} aria-label="Quitar">
         <X size={12} />

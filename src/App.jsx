@@ -985,7 +985,7 @@ function ConfirmModal() {
   return (
     <div onClick={() => responder(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--c-surface)', borderRadius: 16, padding: '24px 20px', width: '100%', maxWidth: 340, border: '1px solid var(--c-border)', boxShadow: 'var(--c-shadow-lg)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-text)', marginBottom: 20, lineHeight: 1.5, textAlign: 'center' }}>{state.mensaje}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-text)', marginBottom: 20, lineHeight: 1.5, textAlign: 'center', whiteSpace: 'pre-line' }}>{state.mensaje}</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => responder(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
           <button onClick={() => responder(true)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: 'none', background: 'var(--c-danger)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Confirmar</button>
