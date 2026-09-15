@@ -716,6 +716,10 @@ export function generarComandaModificacion(pedido, lineas, restaurante, titulo =
     // de este papel, y pegado al nombre se comia media linea de las 24.
     bytes.push(...lineaPlato(signo))
     bytes.push(...lineaPlato(`${l.cantidad} x ${l.nombre}${l.tamano ? ' (' + l.tamano + ')' : ''}`))
+    // Los extras de la línea (text[] de `pedido_items`). Sin ellos, «ANADE 1 x
+    // Hamburguesa» no dice que es la del huevo y la plancha la hace sola.
+    const extrasLinea = Array.isArray(l.extras) ? l.extras : (l.extras ? [l.extras] : [])
+    if (extrasLinea.length) bytes.push(...lineaExtras(extrasLinea.join(', ')))
     if (l.notas) bytes.push(...lineaNota(l.notas))
   }
 

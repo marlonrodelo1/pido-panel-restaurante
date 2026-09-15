@@ -44,7 +44,8 @@ import TpvCaja from '../components/TpvCaja'
 import TpvTickets from '../components/TpvTickets'
 import TpvNuevoPedido from '../components/TpvNuevoPedido'
 import { BotonCategoria, TarjetaProducto } from '../components/TpvCartaPiezas'
-import { etiquetaBloque } from '../lib/tpvCarta'
+import TpvModalExtras from '../components/TpvModalExtras'
+import { etiquetaBloque, pideVentanaAlTocar, centimosExtras } from '../lib/tpvCarta'
 import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
 import { prepararLogo } from '../lib/logoTicket'
 import TpvStock from '../components/TpvStock'
@@ -590,34 +591,79 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const totalCarrito = carrito.reduce((s, l) => s + l.precio_c * l.cantidad, 0)
   const totalUnidades = carrito.reduce((s, l) => s + l.cantidad, 0)
 
+  // Una línea de la carta con su tamaño y sus extras. La clave lleva la firma de
+  // tamaño y extras: dos cafés iguales se agrupan, pero uno con bacon y otro sin
+  // él son dos líneas distintas.
+  function lineaDeCarta(producto, tam, extrasElegidos) {
+    return {
+      clave: [producto.id, tam?.nombre || '', ...extrasElegidos.map((o) => o.id).sort()].join('|'),
+      producto_id: producto.id,
+      nombre: producto.nombre,
+      // El id del tamaño ADEMÁS del nombre: el servidor casaba solo por
+      // nombre y renombrar un tamaño con el TPV abierto cobraba el precio
+      // base sin avisar. Con el id, el precio es el de ESE tamaño siempre.
+      tamano_id: tam?.id || null,
+      tamano: tam?.nombre || null,
+      extras: extrasElegidos.map((o) => o.id),
+      extrasTexto: extrasElegidos.map((o) => o.nombre).join(', '),
+      precio_c: precioBarra(producto, tam) + centimosExtras(extrasElegidos),
+      cantidad: 1,
+      notas: null,
+    }
+  }
+
   function anadir(producto, tam = null, extrasElegidos = []) {
     if (bloqueadaPorCobro()) return
-    // La clave lleva la firma de tamaño y extras: dos cafés iguales se agrupan, pero
-    // uno con bacon y otro sin él son dos líneas distintas.
-    const firma = [producto.id, tam?.nombre || '', ...extrasElegidos.map((o) => o.id).sort()].join('|')
-    const extrasC = extrasElegidos.reduce((s, o) => s + Math.max(0, cents(o.precio)), 0)
+    const nueva = lineaDeCarta(producto, tam, extrasElegidos)
     setCarrito((prev) => {
-      const i = prev.findIndex((l) => l.clave === firma)
+      const i = prev.findIndex((l) => l.clave === nueva.clave)
       if (i >= 0) {
         const copia = [...prev]
-        copia[i] = { ...copia[i], cantidad: copia[i].cantidad + 1 }
+        // Una unidad más de algo ya comandado vuelve a estar pendiente, igual que
+        // con el «+»: si no, la segunda hamburguesa no llegaba nunca a cocina.
+        copia[i] = { ...copia[i], cantidad: copia[i].cantidad + 1, comandada: false }
         return copia
       }
-      return [...prev, {
-        clave: firma,
-        producto_id: producto.id,
-        nombre: producto.nombre,
-        // El id del tamaño ADEMÁS del nombre: el servidor casaba solo por
-        // nombre y renombrar un tamaño con el TPV abierto cobraba el precio
-        // base sin avisar. Con el id, el precio es el de ESE tamaño siempre.
-        tamano_id: tam?.id || null,
-        tamano: tam?.nombre || null,
-        extras: extrasElegidos.map((o) => o.id),
-        extrasTexto: extrasElegidos.map((o) => o.nombre).join(', '),
-        precio_c: precioBarra(producto, tam) + extrasC,
-        cantidad: 1,
-        notas: null,
-      }]
+      return [...prev, nueva]
+    })
+  }
+
+  // Los extras de UNA línea, desde su botón «Extras». Si la línea lleva varias
+  // unidades se SEPARA una: «dos hamburguesas, una con huevo» es lo normal, no que
+  // las dos lleven huevo. Si con el cambio queda igual que otra línea (misma firma
+  // y misma nota), se juntan.
+  function cambiarExtrasLinea(claveLinea, producto, tam, extrasElegidos) {
+    if (bloqueadaPorCobro()) return
+    const base = lineaDeCarta(producto, tam, extrasElegidos)
+    const vieja = carrito.find((l) => l.clave === claveLinea)
+    // Se compara la FIRMA, sin el sufijo «#uuid» que llevan las líneas separadas
+    // por tener otra nota: con él, guardar sin tocar nada rehacía la línea y la
+    // volvía a mandar a cocina.
+    if (!vieja || base.clave === vieja.clave.split('#')[0]) return
+    // Ya en cocina: al comandar saldrá otra vez, con el cambio. Hay que decirles que
+    // es la misma, o harán una de más.
+    if (vieja.comandada) toast('Eso ya estaba en cocina: al comandar saldrá con el cambio. Avisa de que es el mismo.', 'error')
+    setCarrito((prev) => {
+      const i = prev.findIndex((l) => l.clave === claveLinea)
+      if (i < 0) return prev
+      const v = prev[i]
+      const lista = [...prev]
+      if (v.cantidad > 1) lista[i] = { ...v, cantidad: v.cantidad - 1 }
+      else lista.splice(i, 1)
+      const j = lista.findIndex((l) => l.clave === base.clave && (l.notas || null) === (v.notas || null))
+      if (j >= 0) {
+        lista[j] = { ...lista[j], cantidad: lista[j].cantidad + 1, comandada: false }
+        return lista
+      }
+      // Misma firma pero con otra nota: va aparte, y necesita clave propia porque la
+      // clave es la identidad de la línea.
+      const ocupada = lista.some((l) => l.clave === base.clave)
+      const nueva = {
+        ...base, notas: v.notas || null, comandada: false,
+        ...(ocupada ? { clave: `${base.clave}#${uuidv4()}` } : null),
+      }
+      lista.splice(v.cantidad > 1 ? i + 1 : i, 0, nueva)
+      return lista
     })
   }
 
@@ -662,11 +708,23 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setModalLibre(false)
   }
 
+  // Tocar un producto lo mete DIRECTO en la venta; los extras se ponen luego desde
+  // su línea (Marlon, 15 sep 2026). La ventana solo sale sola si hay que elegir
+  // tamaño o algo obligatorio.
   function tocarProducto(p) {
     const tams = tamanosDe[p.id] || []
     const grs = gruposDe[p.id] || []
-    if (tams.length || grs.length) { setConfigurando({ producto: p, tamanos: tams, grupos: grs }); return }
+    if (pideVentanaAlTocar(tams, grs)) { setConfigurando({ producto: p, tamanos: tams, grupos: grs }); return }
     anadir(p)
+  }
+
+  // La ventana de extras de una línea que ya está en la venta.
+  function abrirExtrasLinea(l) {
+    const producto = productos.find((p) => p.id === l.producto_id)
+    if (!producto) { toast('Ese producto ya no está en la carta: recárgala desde el menú.', 'error'); return }
+    setConfigurando({
+      producto, tamanos: tamanosDe[producto.id] || [], grupos: gruposDe[producto.id] || [], linea: l,
+    })
   }
 
   // Al añadir unidades a algo que ya se mandó a cocina, la línea vuelve a contar
@@ -1440,6 +1498,22 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
                       <div style={{ fontSize: 12, color: T.accent, fontWeight: 600 }}>! {l.notas}</div>
                     )}
                     <div style={{ fontSize: 12, color: T.muted }}>{eur(l.precio_c)} / ud.</div>
+                    {/* Los extras se ponen AQUÍ, en la línea ya añadida, y no al
+                        tocar el producto: la mayoría de ventas no llevan ninguno. Va
+                        debajo del nombre para no quitarle ancho a la fila en el
+                        teléfono. */}
+                    {l.producto_id && (gruposDe[l.producto_id] || []).length > 0 && (
+                      <button onClick={() => abrirExtrasLinea(l)} style={{
+                        marginTop: 5, height: 30, padding: '0 10px', borderRadius: 8, cursor: 'pointer',
+                        fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        border: `1px solid ${l.extras?.length ? T.accent : T.border}`,
+                        background: l.extras?.length ? 'rgba(255,107,44,0.14)' : T.surface2,
+                        color: l.extras?.length ? T.accent : T.text,
+                      }}>
+                        <Plus size={13} /> {l.extras?.length ? 'Cambiar extras' : 'Extras'}
+                      </button>
+                    )}
                   </div>
                   <button onClick={() => setEditandoNota({ clave: l.clave, texto: l.notas || '' })}
                     title="Nota para cocina"
@@ -1548,11 +1622,21 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       )}
 
       {configurando && (
-        <ModalProducto
-          {...configurando}
-          precioBarra={precioBarra}
+        <TpvModalExtras
+          producto={configurando.producto}
+          tamanos={configurando.tamanos}
+          grupos={configurando.grupos}
+          // Desde la línea: llega con lo que ya lleva marcado y guarda sobre ella.
+          inicial={configurando.linea
+            ? { tamano_id: configurando.linea.tamano_id, tamano: configurando.linea.tamano, extras: configurando.linea.extras }
+            : null}
+          precioBase={precioBarra}
           onCerrar={() => setConfigurando(null)}
-          onAceptar={(tam, extras) => { anadir(configurando.producto, tam, extras); setConfigurando(null) }}
+          onAceptar={(tam, extras) => {
+            if (configurando.linea) cambiarExtrasLinea(configurando.linea.clave, configurando.producto, tam, extras)
+            else anadir(configurando.producto, tam, extras)
+            setConfigurando(null)
+          }}
         />
       )}
 
@@ -1892,77 +1976,6 @@ function PuertaTurno({ restaurante, onAbrirCaja, onSaltar, onVerPedidos }) {
   )
 }
 
-// ── Modal de tamaño + extras ────────────────────────────────────────────────
-function ModalProducto({ producto, tamanos, grupos, precioBarra, onCerrar, onAceptar }) {
-  const [tam, setTam] = useState(tamanos.length === 1 ? tamanos[0] : null)
-  const [sel, setSel] = useState({})   // { grupo_id: [opcion, ...] }
-
-  // `tipo` no tiene CHECK en la base: conviven 'unico' (grupos viejos) y 'single'
-  // (lo que guarda Carta.jsx hoy). Por eso la pregunta se hace al reves — multiple
-  // es lo unico que admite varias — y asi coincide con lo que valida el servidor.
-  const esMultiple = (g) => g.tipo === 'multiple'
-  const topeDe = (g) => {
-    if (!esMultiple(g)) return 1
-    const m = Number(g.max_selecciones)
-    return Number.isFinite(m) && m > 0 ? m : Infinity   // 0 guardado = sin limite
-  }
-
-  // Los grupos de elección única se tratan como obligatorios: no hay columna que lo
-  // diga, pero "el punto de la carne" es una pregunta que hay que responder.
-  const faltan = grupos.filter((g) => !esMultiple(g) && !(sel[g.id] || []).length)
-  const listo = (!tamanos.length || tam) && !faltan.length
-
-  function alternar(grupo, opcion) {
-    setSel((prev) => {
-      const actuales = prev[grupo.id] || []
-      if (!esMultiple(grupo)) return { ...prev, [grupo.id]: [opcion] }
-      const ya = actuales.some((o) => o.id === opcion.id)
-      if (ya) return { ...prev, [grupo.id]: actuales.filter((o) => o.id !== opcion.id) }
-      if (actuales.length >= topeDe(grupo)) return prev   // el servidor también lo frena
-      return { ...prev, [grupo.id]: [...actuales, opcion] }
-    })
-  }
-
-  const extras = Object.values(sel).flat()
-  // Mismo clamp a 0 que hace el servidor: si alguien guardara un extra en negativo,
-  // la pantalla y el ticket dirian cosas distintas delante del cliente.
-  const totalC = (tam || !tamanos.length ? precioBarra(producto, tam) : 0) +
-    extras.reduce((s, o) => s + Math.max(0, cents(o.precio)), 0)
-
-  return (
-    <Modal titulo={producto.nombre} onCerrar={onCerrar}>
-      {tamanos.length > 0 && (
-        <Bloque titulo="Tamaño" obligatorio>
-          {tamanos.map((t) => (
-            <Opcion key={t.id} activa={tam?.id === t.id} onClick={() => setTam(t)}
-              nombre={t.nombre} precio={eur(precioBarra(producto, t))} />
-          ))}
-        </Bloque>
-      )}
-
-      {grupos.map((g) => (
-        <Bloque key={g.id} titulo={g.nombre} obligatorio={g.tipo !== 'multiple'}
-          nota={g.tipo === 'multiple' && Number(g.max_selecciones) > 0 ? `hasta ${g.max_selecciones}` : null}>
-          {(g.extras_opciones || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((o) => (
-            <Opcion key={o.id}
-              activa={(sel[g.id] || []).some((x) => x.id === o.id)}
-              onClick={() => alternar(g, { ...o, grupo_id: g.id })}
-              nombre={o.nombre}
-              precio={Number(o.precio) > 0 ? '+' + eur(cents(o.precio)) : ''} />
-          ))}
-        </Bloque>
-      ))}
-
-      <button onClick={() => onAceptar(tam, extras)} disabled={!listo} style={{
-        ...btnAccion, width: '100%', height: 54, fontSize: 16, marginTop: 6,
-        opacity: listo ? 1 : 0.4, cursor: listo ? 'pointer' : 'not-allowed',
-      }}>
-        {listo ? `Añadir · ${eur(totalC)}` : `Elige ${faltan[0]?.nombre || 'el tamaño'}`}
-      </button>
-    </Modal>
-  )
-}
-
 // ── Modal de cobro ──────────────────────────────────────────────────────────
 // Solo efectivo: la tarjeta no pasa por aquí porque no hay cambio que calcular.
 function ModalEfectivo({ total_c, cobrando, abreCajon = true, onCerrar, onCobrar }) {
@@ -2120,19 +2133,6 @@ function Modal({ titulo, children, onCerrar, ancho = 440, altoFijo = false, cerr
   )
 }
 
-function Bloque({ titulo, obligatorio, nota, children }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{titulo}</span>
-        {obligatorio && <span style={{ fontSize: 11, color: T.accent, fontWeight: 700 }}>obligatorio</span>}
-        {nota && <span style={{ fontSize: 11, color: T.muted }}>{nota}</span>}
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}>{children}</div>
-    </div>
-  )
-}
-
 function Pestana({ activa, onClick, icono, texto, contador, esMovil, esMonitor }) {
   const compacto = esMovil || esMonitor
   return (
@@ -2207,21 +2207,6 @@ function OpcionMenu({ icono, texto, nota, onClick }) {
         <span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>{texto}</span>
         {nota && <span style={{ display: 'block', fontSize: 12, color: T.muted, marginTop: 2 }}>{nota}</span>}
       </span>
-    </button>
-  )
-}
-
-function Opcion({ activa, onClick, nombre, precio }) {
-  return (
-    <button onClick={onClick} style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      height: 48, padding: '0 14px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 15,
-      borderRadius: 12, border: `1px solid ${activa ? T.accent : T.border}`,
-      background: activa ? 'rgba(255,107,44,0.14)' : T.surface2,
-      color: activa ? T.accent : T.text, fontWeight: activa ? 700 : 500,
-    }}>
-      <span>{nombre}</span>
-      <span style={{ fontSize: 13, color: activa ? T.accent : T.muted }}>{precio}</span>
     </button>
   )
 }

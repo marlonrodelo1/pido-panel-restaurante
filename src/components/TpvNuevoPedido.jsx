@@ -27,7 +27,8 @@ import AddressInput from './AddressInput'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { useEsMonitor, useEsMovil } from '../lib/tamanoPantalla'
 import { BotonCategoria, TarjetaProducto } from './TpvCartaPiezas'
-import { etiquetaBloque } from '../lib/tpvCarta'
+import TpvModalExtras from './TpvModalExtras'
+import { etiquetaBloque, pideVentanaAlTocar, centimosExtras } from '../lib/tpvCarta'
 import { imprimirPedido, imprimirModificacion, impresoraConfigurada } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
@@ -67,6 +68,11 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
   const [notaAbierta, setNotaAbierta] = useState(null)
   // El «Libre» del mostrador: lo que el cliente pide y no está en la carta.
   const [modalLibre, setModalLibre] = useState(false)
+  // Los extras de la carta: los grupos, qué grupos lleva cada producto, y la
+  // ventana de extras abierta ({ producto, grupos, linea? }) o null.
+  const [grupos, setGrupos] = useState([])
+  const [vinculos, setVinculos] = useState([])
+  const [configurando, setConfigurando] = useState(null)
 
   const [telefono, setTelefono] = useState('')
   const [nombre, setNombre] = useState('')
@@ -104,6 +110,10 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       nombre: it.nombre_producto || it.nombre,
       tamano: it.tamano || null,
       notas: it.notas || null,
+      // Los extras que ya lleva: los ids para marcarlos en la ventana y el texto
+      // de la fila («Huevo (+1.00€)») para enseñarlos.
+      extras: Array.isArray(it.extras_ids) ? it.extras_ids : [],
+      extrasTexto: Array.isArray(it.extras) ? it.extras.join(', ') : '',
       precio_c: cents(it.precio_unitario),
       cantidad: it.cantidad,
     })))
@@ -129,10 +139,24 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       supabase.from('categorias')
         .select('id, nombre, orden')
         .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
-    ]).then(([prods, cats]) => {
+      supabase.from('grupos_extras')
+        .select('id, nombre, tipo, max_selecciones, extras_opciones(id, nombre, precio, orden)')
+        .eq('establecimiento_id', restaurante.id),
+    ]).then(async ([prods, cats, gru]) => {
       if (!vivo) return
       // Igual que el mostrador: lo agotado por stock se sigue vendiendo en el TPV.
       const aLaVenta = (prods.data || []).filter((p) => p.disponible !== false || p.agotado_por_stock)
+      // Qué grupos lleva cada producto, ANTES de pintar la carta: si la carta
+      // saliera primero, un toque en ese hueco a un producto con grupo obligatorio
+      // entraría sin preguntar. Se filtra por GRUPO (unos pocos) y no por producto:
+      // cientos de ids no caben en la URL de un GET.
+      const idsGrupo = (gru.data || []).map((g) => g.id)
+      const vin = idsGrupo.length
+        ? (await supabase.from('producto_extras').select('producto_id, grupo_id').in('grupo_id', idsGrupo)).data
+        : []
+      if (!vivo) return
+      setGrupos(gru.data || [])
+      setVinculos(vin || [])
       setProductos(aLaVenta)
       setCategorias(cats.data || [])
       // Se entra con la PRIMERA categoría que tenga algo a la venta ya elegida. El
@@ -286,16 +310,78 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
   // todo se comporta exactamente igual que antes.
   const clave = (l) => l.k || l.producto_id
 
-  const anadir = (p) => setCarrito((prev) => {
-    const i = prev.findIndex((l) => l.producto_id === p.id)
+  // Qué grupos de extras lleva cada producto.
+  const gruposDe = useMemo(() => {
+    const m = {}
+    for (const v of vinculos) {
+      const g = grupos.find((x) => x.id === v.grupo_id)
+      if (g) (m[v.producto_id] ||= []).push(g)
+    }
+    return m
+  }, [vinculos, grupos])
+
+  // La firma de los extras: mismo producto y mismos extras = misma línea.
+  const firmaExtras = (ids) => [...(ids || [])].map(String).sort().join(',')
+
+  // Una línea de la carta a precio de DOMICILIO más sus extras. Orientativo: lo que
+  // se cobra lo calcula `tpv-pedido` con la misma cuenta.
+  const lineaDeCarta = (p, extrasElegidos = []) => ({
+    k: 'n:' + p.id + '|' + firmaExtras(extrasElegidos.map((o) => o.id)),
+    producto_id: p.id, nombre: p.nombre, tamano: null, notas: null,
+    extras: extrasElegidos.map((o) => o.id),
+    extrasTexto: extrasElegidos.map((o) => o.nombre).join(', '),
+    precio_c: cents(p.precio) + centimosExtras(extrasElegidos), cantidad: 1,
+  })
+
+  const anadir = (p, extrasElegidos = []) => setCarrito((prev) => {
+    const nueva = lineaDeCarta(p, extrasElegidos)
+    const firma = firmaExtras(nueva.extras)
+    const i = prev.findIndex((l) => l.producto_id === p.id && firmaExtras(l.extras) === firma)
     if (i >= 0) {
       const c = [...prev]; c[i] = { ...c[i], cantidad: c[i].cantidad + 1 }; return c
     }
-    return [...prev, {
-      k: 'n:' + p.id, producto_id: p.id, nombre: p.nombre,
-      tamano: null, notas: null, precio_c: cents(p.precio), cantidad: 1,
-    }]
+    return [...prev, nueva]
   })
+
+  // Tocar un producto lo mete DIRECTO en la comanda; los extras se ponen luego
+  // desde su línea (Marlon, 15 sep 2026). La ventana solo sale sola si el producto
+  // tiene un grupo obligatorio. Tamaños: este flujo no los maneja, igual que antes.
+  const tocar = (p) => {
+    const grs = gruposDe[p.id] || []
+    if (pideVentanaAlTocar([], grs)) { setConfigurando({ producto: p, grupos: grs }); return }
+    anadir(p)
+  }
+
+  // Los extras de UNA línea. Con varias unidades se SEPARA una («dos hamburguesas,
+  // una con huevo»). Una línea que ya estaba en el pedido deja de ser la misma: se
+  // quita y entra otra nueva, que el servidor tasa a la carta de hoy, y cocina
+  // recibe el cambio.
+  function cambiarExtrasLinea(k, p, extrasElegidos) {
+    const base = lineaDeCarta(p, extrasElegidos)
+    setCarrito((prev) => {
+      const i = prev.findIndex((l) => clave(l) === k)
+      if (i < 0) return prev
+      const v = prev[i]
+      if (firmaExtras(v.extras) === firmaExtras(base.extras)) return prev
+      const lista = [...prev]
+      if (v.cantidad > 1) lista[i] = { ...v, cantidad: v.cantidad - 1 }
+      else lista.splice(i, 1)
+      // Se junta con otra línea NUEVA igual y con la misma nota; nunca con una que
+      // ya estaba, que conserva el precio que se le dijo al cliente.
+      const j = lista.findIndex((l) => !l.linea_id && l.producto_id === p.id &&
+        firmaExtras(l.extras) === firmaExtras(base.extras) && (l.notas || null) === (v.notas || null) &&
+        (l.tamano || null) === (v.tamano || null))
+      if (j >= 0) {
+        const c = lista[j]; lista[j] = { ...c, cantidad: c.cantidad + 1 }; return lista
+      }
+      // Conserva la nota y el TAMAÑO de la línea de la que sale: un pedido de la IA
+      // puede traer tamaño, y este flujo no deja elegirlo.
+      const nueva = { ...base, notas: v.notas || null, tamano: v.tamano || null }
+      if (lista.some((l) => clave(l) === nueva.k)) nueva.k += '#' + uuidv4()
+      lista.splice(v.cantidad > 1 ? i + 1 : i, 0, nueva)
+      return lista
+    })
+  }
 
   const cambiar = (k, d) => setCarrito((prev) => prev
     .map((l) => (clave(l) === k ? { ...l, cantidad: l.cantidad + d } : l))
@@ -393,6 +479,8 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             ...(l.linea_id ? { id: l.linea_id } : null),
             producto_id: l.producto_id || null, tamano: l.tamano || null,
             cantidad: l.cantidad, notas: l.notas || null,
+            // Solo cuentan en las líneas NUEVAS: las que ya estaban conservan los suyos.
+            extras: l.extras || [],
             // Una línea libre NUEVA lleva su nombre y su importe. Las que ya
             // estaban se reconocen por el `id` y conservan los suyos.
             ...(!l.producto_id && !l.linea_id ? { nombre: l.nombre, precio_unitario: l.precio_c / 100 } : null),
@@ -488,8 +576,9 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
           // pero esta pantalla nunca se la mandaba.
           // La línea libre viaja con su nombre y su importe, igual que en el
           // mostrador; las de la carta, solo con el producto.
+          // Los extras viajan como IDS: su precio lo lee el servidor.
           lineas: carrito.map((l) => (l.producto_id
-            ? { producto_id: l.producto_id, cantidad: l.cantidad, notas: l.notas || null }
+            ? { producto_id: l.producto_id, cantidad: l.cantidad, notas: l.notas || null, extras: l.extras || [] }
             : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
         }),
       })
@@ -503,6 +592,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
           calcular_envio_timeout: 'No se pudo calcular el envío. Vuelve a intentarlo.',
           generar_codigo_failed: 'El servidor no respondió. Vuelve a intentarlo.',
           producto_no_encontrado: 'Un producto de la comanda ya no existe en la carta. Quítalo y vuelve a añadirlo.',
+          extra_no_encontrado: 'Un extra de la comanda ya no existe. Quítalo y vuelve a elegirlo.',
           forbidden: 'Esta cuenta no puede crear pedidos en este restaurante.',
         })[body?.error] || body?.detalle || body?.error || 'No se pudo crear el pedido')
       }
@@ -778,12 +868,12 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             key={p.id}
             p={p}
             tams={[]}
-            tieneExtras={false}
+            tieneExtras={(gruposDe[p.id] || []).length > 0}
             yaLleva={enCarritoPorProducto[p.id] || 0}
             esMovil={compacto}
             tam={tamCarta}
             precioBarra={precioDomicilio}
-            onClick={() => anadir(p)}
+            onClick={() => tocar(p)}
           />
         ))}
         {visibles.length === 0 && (
@@ -838,6 +928,31 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
               <button onClick={() => quitar(clave(l))} style={{ ...btnMini, borderColor: 'transparent' }}
                 aria-label={`Quitar ${l.nombre} de la comanda`}><Trash2 size={13} /></button>
             </div>
+
+            {/* Los extras se ponen AQUÍ, en la línea ya añadida, y no al tocar el
+                producto (Marlon, 15 sep 2026): la mayoría de pedidos no llevan ninguno. */}
+            {(l.extrasTexto || (l.producto_id && (gruposDe[l.producto_id] || []).length > 0)) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingBottom: 6, paddingLeft: 2 }}>
+                {l.extrasTexto && (
+                  <span style={{ fontSize: 12, color: T.accent }}>+ {l.extrasTexto}</span>
+                )}
+                {/* Una línea vieja con extras SOLO en texto (sin ids) no se puede
+                    editar sin perderlos: se enseñan, pero no se ofrece el botón. */}
+                {l.producto_id && (gruposDe[l.producto_id] || []).length > 0 &&
+                  !(l.extrasTexto && !(l.extras || []).length) && (
+                  <button onClick={() => abrirExtrasLinea(l)} aria-label={`Extras de ${l.nombre}`} style={{
+                    height: 28, padding: '0 10px', borderRadius: 8, cursor: 'pointer',
+                    fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    border: `1px solid ${l.extras?.length ? T.accent : T.border}`,
+                    background: l.extras?.length ? 'rgba(255,107,44,0.14)' : T.surface,
+                    color: l.extras?.length ? T.accent : T.text,
+                  }}>
+                    <Plus size={12} /> {l.extras?.length ? 'Cambiar extras' : 'Extras'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {l.notas && (
               <div onClick={() => setNotaAbierta({ k: clave(l), nombre: l.nombre, texto: l.notas })}
@@ -918,6 +1033,30 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
     />
   )
 
+  // La ventana de extras de una línea ya añadida.
+  function abrirExtrasLinea(l) {
+    const producto = productos.find((p) => p.id === l.producto_id)
+    if (!producto) { toast('Ese producto ya no está en la carta.', 'error'); return }
+    setConfigurando({ producto, grupos: gruposDe[producto.id] || [], linea: l })
+  }
+
+  // A z 1300, como la nota y el libre: queda encima del modal del pedido (900).
+  const modalExtrasNodo = configurando && (
+    <TpvModalExtras
+      producto={configurando.producto}
+      grupos={configurando.grupos}
+      inicial={configurando.linea ? { extras: configurando.linea.extras || [] } : null}
+      precioBase={precioDomicilio}
+      zIndex={1300}
+      onCerrar={() => setConfigurando(null)}
+      onAceptar={(_tam, extras) => {
+        if (configurando.linea) cambiarExtrasLinea(clave(configurando.linea), configurando.producto, extras)
+        else anadir(configurando.producto, extras)
+        setConfigurando(null)
+      }}
+    />
+  )
+
   // Teléfono y tablet: apilado, exactamente el mismo orden de siempre.
   if (!esMonitor) {
     return (
@@ -927,6 +1066,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
         {bloqueComanda}
         {modalNota}
         {modalLibreNodo}
+        {modalExtrasNodo}
       </div>
     )
   }
@@ -941,6 +1081,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
       <Columna titulo="La comanda" sinBorde>{bloqueComanda}</Columna>
       {modalNota}
       {modalLibreNodo}
+        {modalExtrasNodo}
     </div>
   )
 }

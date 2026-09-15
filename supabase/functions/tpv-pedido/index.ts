@@ -1,4 +1,5 @@
-// tpv-pedido v6 (14-sep-2026) — v6: LINEA LIBRE, la del mostrador: {nombre, precio_unitario, cantidad, notas?} sin producto_id, importe de mas de 0 y hasta 500 EUR.
+// tpv-pedido v7 (15-sep-2026) — v7: EXTRAS en las lineas de la carta ({producto_id, cantidad, extras: [ids de extras_opciones]}), validados igual que en el mostrador (`tpv-venta`). Precio de la linea = precio de domicilio + extras, y se guardan `extras` (texto legado) y `extras_ids` (con eso el almacen descuenta los ingredientes de los extras). Una linea sin extras se inserta EXACTAMENTE igual que en la v6.
+// v6 (14-sep-2026) — LINEA LIBRE, la del mostrador: {nombre, precio_unitario, cantidad, notas?} sin producto_id, importe de mas de 0 y hasta 500 EUR.
 // v5 (3-sep-2026) — los items de la respuesta llevan producto_id (para partir la comanda entre cocina y barra).
 // v4 (3-sep-2026) — crear un REPARTO o una RECOGIDA desde el TPV,
 // con los productos de la carta.
@@ -33,7 +34,7 @@
 // teclea quien atiende, con tope.
 //
 // Body: { establecimiento_id, modo: 'reparto'|'recogida',
-//         lineas: [{ producto_id, cantidad, tamano?, notas? }
+//         lineas: [{ producto_id, cantidad, tamano?, notas?, extras?: uuid[] }
 //                  | { nombre, precio_unitario, cantidad, notas? }],
 //         cliente: { telefono, nombre?, direccion?, lat?, lng? },
 //         metodo_pago: 'efectivo'|'datafono'|'pagado_local',
@@ -192,10 +193,22 @@ Deno.serve(async (req) => {
 
   // ── Productos de ESTA carta ──
   const idsProducto = [...new Set(lineasRaw.map((l: any) => l?.producto_id).filter(Boolean))]
+
+  // v7: los EXTRAS de las lineas de la carta. Llegan IDS, nunca importes: el precio
+  // de cada extra se lee aqui de la base de datos, igual que en `tpv-venta`.
+  const extrasDeLinea = (l: any): string[] =>
+    [...new Set((Array.isArray(l?.extras) ? l.extras : []).map(String))]
+  const idsOpcion = [...new Set(lineasRaw.filter((l: any) => l?.producto_id).flatMap(extrasDeLinea))]
+  if (idsOpcion.length > 500 || idsOpcion.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) {
+    return json({ error: 'validacion', campo: 'extras' }, 400)
+  }
+
   let productos: any[] = []
+  let vinculos: any[] = []
+  let opciones: any[] = []
   if (idsProducto.length) {
     const { data: prods, error } = await sb.from('productos')
-      .select('id, nombre, establecimiento_id').in('id', idsProducto)
+      .select('id, nombre, precio, establecimiento_id').in('id', idsProducto)
     if (error) return json({ error: 'productos_error', detalle: error.message }, 500)
     productos = prods || []
     if (productos.some((p) => p.establecimiento_id !== establecimiento_id)) {
@@ -203,6 +216,24 @@ Deno.serve(async (req) => {
     }
     if (productos.length !== idsProducto.length) return json({ error: 'producto_no_encontrado' }, 400)
   }
+  if (idsOpcion.length) {
+    const [vincs, ops] = await Promise.all([
+      sb.from('producto_extras').select('producto_id, grupo_id').in('producto_id', idsProducto),
+      sb.from('extras_opciones')
+        .select('id, nombre, precio, grupo_id, grupos_extras!inner(id, nombre, tipo, max_selecciones, establecimiento_id)')
+        .in('id', idsOpcion),
+    ])
+    if (vincs.error || ops.error) {
+      return json({ error: 'extras_error', detalle: (vincs.error || ops.error)?.message }, 500)
+    }
+    vinculos = vincs.data || []
+    opciones = ops.data || []
+    if (opciones.length !== idsOpcion.length) return json({ error: 'extra_no_encontrado' }, 400)
+    if (opciones.some((o: any) => o.grupos_extras?.establecimiento_id !== establecimiento_id)) {
+      return json({ error: 'extra_de_otro_restaurante' }, 400)
+    }
+  }
+  const fallosExtras: string[] = []
 
   const lineas = lineasRaw.map((l: any) => {
     const cantidad = Math.min(100, Math.max(1, Math.round(Number(l?.cantidad) || 1)))
@@ -210,7 +241,23 @@ Deno.serve(async (req) => {
     if (l?.producto_id) {
       const prod = productos.find((p) => p.id === l.producto_id)
       if (!prod) return null
-      return {
+      const elegidas = extrasDeLinea(l).map((id) => opciones.find((o: any) => o.id === id)).filter(Boolean)
+      // Cada opcion tiene que ser de un grupo VINCULADO A ESTE PRODUCTO, y dentro
+      // del tope del grupo. `tipo` no tiene CHECK ('unico' y 'single' conviven):
+      // multiple es lo unico que admite varias; 0 o menos de tope = sin limite.
+      const porGrupo: Record<string, any[]> = {}
+      for (const o of elegidas) (porGrupo[o.grupo_id] ||= []).push(o)
+      for (const [gid, ops] of Object.entries(porGrupo)) {
+        if (!vinculos.some((v) => v.producto_id === prod.id && v.grupo_id === gid)) {
+          fallosExtras.push(`"${ops[0].nombre}" no es un extra de ${prod.nombre}`)
+          continue
+        }
+        const g = ops[0].grupos_extras
+        const max = Number(g?.max_selecciones)
+        const tope = g?.tipo === 'multiple' ? (Number.isFinite(max) && max > 0 ? max : Infinity) : 1
+        if (ops.length > tope) fallosExtras.push(`En "${g?.nombre}" solo puedes elegir ${tope}`)
+      }
+      const linea: any = {
         producto_id: prod.id,
         nombre_producto: prod.nombre,
         tamano: l?.tamano ? String(l.tamano) : null,
@@ -218,6 +265,21 @@ Deno.serve(async (req) => {
         cantidad,
         notas: notasLinea,
       }
+      if (elegidas.length) {
+        // Con extras la linea vale domicilio + extras, y eso se calcula aqui: el
+        // trigger solo sube al suelo, no suma extras. Sigue siendo la red: nunca
+        // deja una linea por debajo de su precio. Clamp a 0 como en el mostrador.
+        const sumaExtras = elegidas.reduce((s: number, o: any) => s + Math.max(0, Number(o.precio) || 0), 0)
+        linea.precio_unitario = Math.round(((Number(prod.precio) || 0) + sumaExtras) * 100) / 100
+        // `extras_ids` es lo que usa el almacen para descontar los ingredientes
+        // de los extras; `extras`, el texto legado que leen comanda y ticket.
+        linea.extras_ids = elegidas.map((o: any) => o.id)
+        linea.extras = elegidas.map((o: any) => {
+          const p = Math.max(0, Number(o.precio) || 0)
+          return p > 0 ? `${o.nombre} (+${p.toFixed(2)}€)` : String(o.nombre)
+        })
+      }
+      return linea
     }
     // v6: LINEA LIBRE, la misma del mostrador (`tpv-venta`): lo que el cliente
     // pide y no esta en la carta. Sin producto_id no hay suelo que aplicar
@@ -239,6 +301,9 @@ Deno.serve(async (req) => {
   })
   if (lineas.some((l) => l === null)) {
     return json({ error: 'validacion', campo: 'lineas', detalle: 'Hay una linea sin producto de la carta o con un importe libre que no es de mas de 0 y hasta 500 EUR' }, 400)
+  }
+  if (fallosExtras.length) {
+    return json({ error: 'extras_invalidos', detalle: fallosExtras.join('. ') }, 400)
   }
 
   // ── Reparto: repartidores en linea y coste del envio ──

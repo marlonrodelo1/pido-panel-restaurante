@@ -1,4 +1,10 @@
-// tpv-pedido-editar v3 (14-sep-2026) — EDITAR un pedido telefonico ya creado.
+// tpv-pedido-editar v4 (15-sep-2026) — EDITAR un pedido telefonico ya creado.
+// v4: EXTRAS. Las lineas NUEVAS de la carta pueden llevar `extras` (ids de
+// extras_opciones), validados como en `tpv-pedido` v7: precio = domicilio +
+// extras, y se guardan `extras` y `extras_ids`. Una linea que ya estaba conserva
+// los suyos. Cambiarle los extras a una linea existente lo hace la pantalla como
+// QUITAR + ANADIR (la nueva se tasa a la carta de hoy). El DELTA de cocina
+// distingue por extras e imprime los extras.
 // v3: LINEAS SIN PRODUCTO. Se pueden anadir lineas libres (las del mostrador) y
 // las que ya estaban sin producto_id (libres, o de un producto borrado de la
 // carta) se conservan con su nombre y su precio en vez de tumbar la edicion con
@@ -28,7 +34,7 @@
 //     que al crear. Aqui no viaja ni un importe... salvo el de una linea libre
 //     NUEVA (v3), que no tiene carta detras y lleva tope de 0-500 EUR.
 //
-// Body: { pedido_id, lineas: [{ id?, producto_id, tamano?, cantidad, notas? }
+// Body: { pedido_id, lineas: [{ id?, producto_id, tamano?, cantidad, notas?, extras?: uuid[] }
 //                             | { id?, nombre, precio_unitario, cantidad, notas? }],
 //         modo?: 'reparto'|'recogida',
 //         cliente?: { telefono?, nombre?, direccion?, lat?, lng? },
@@ -71,7 +77,10 @@ const ESTADOS_EDITABLES = ['preparando', 'listo']
 // v3: una linea SIN producto se distingue por su NOMBRE. Antes todas compartian la
 // clave '|' y el papel de modificacion fundia «bolsa» y «extra de huevo» en una
 // sola, con el nombre de la primera (o no sacaba papel).
-const firma = (l: any) => `${l.producto_id || 'libre:' + (l.nombre_producto || l.nombre || '')}|${l.tamano || ''}`
+// v4: y por sus EXTRAS: «hamburguesa» y «hamburguesa con huevo» son dos cosas
+// distintas para la plancha.
+const extrasDe = (l: any) => (Array.isArray(l?.extras) ? l.extras : []).map(String).slice().sort().join(',')
+const firma = (l: any) => `${l.producto_id || 'libre:' + (l.nombre_producto || l.nombre || '')}|${l.tamano || ''}|${extrasDe(l)}`
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
@@ -158,11 +167,22 @@ Deno.serve(async (req) => {
   // v3: las lineas que ya tiene el pedido van PRIMERO. Una linea que ya existe
   // se reconoce por su `id` y manda la FILA, no lo que diga la pantalla.
   const { data: actualesRaw } = await sb.from('pedido_items')
-    .select('id, producto_id, nombre_producto, tamano, cantidad, notas, precio_unitario, extras')
+    .select('id, producto_id, nombre_producto, tamano, cantidad, notas, precio_unitario, extras, extras_ids')
     .eq('pedido_id', ped.id)
   const actuales = actualesRaw || []
   const porId = new Map(actuales.map((l: any) => [l.id, l]))
   const esExistente = (l: any) => !!(l?.id && porId.has(l.id))
+
+  // v4: los EXTRAS de las lineas NUEVAS de la carta. Llegan IDS, nunca importes:
+  // el precio de cada extra se lee de la base de datos. Las que ya estaban
+  // conservan los suyos y aqui no se miran.
+  const extrasDeLinea = (l: any): string[] =>
+    [...new Set((Array.isArray(l?.extras) ? l.extras : []).map(String))]
+  const idsOpcion = [...new Set(lineasRaw
+    .filter((l: any) => !esExistente(l) && l?.producto_id).flatMap(extrasDeLinea))]
+  if (idsOpcion.length > 500 || idsOpcion.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) {
+    return json({ error: 'validacion', campo: 'extras' }, 400)
+  }
 
   // Solo se buscan en la carta los productos de las lineas NUEVAS. Antes entraban
   // tambien los de las que ya estaban: si alguien borraba ese producto de la
@@ -171,15 +191,58 @@ Deno.serve(async (req) => {
   const idsProducto = [...new Set(lineasRaw
     .filter((l: any) => !esExistente(l)).map((l: any) => l?.producto_id).filter(Boolean))]
   let productos: any[] = []
+  let vinculos: any[] = []
+  let opciones: any[] = []
   if (idsProducto.length) {
     const { data: prods, error: pErr } = await sb.from('productos')
-      .select('id, nombre, establecimiento_id').in('id', idsProducto)
+      .select('id, nombre, precio, establecimiento_id').in('id', idsProducto)
     if (pErr) return json({ error: 'productos_error', detalle: pErr.message }, 500)
     productos = prods || []
     if (productos.some((p) => p.establecimiento_id !== ped.establecimiento_id)) {
       return json({ error: 'producto_de_otro_restaurante' }, 400)
     }
     if (productos.length !== idsProducto.length) return json({ error: 'producto_no_encontrado' }, 400)
+  }
+  if (idsOpcion.length) {
+    const [vincs, ops] = await Promise.all([
+      sb.from('producto_extras').select('producto_id, grupo_id').in('producto_id', idsProducto),
+      sb.from('extras_opciones')
+        .select('id, nombre, precio, grupo_id, grupos_extras!inner(id, nombre, tipo, max_selecciones, establecimiento_id)')
+        .in('id', idsOpcion),
+    ])
+    if (vincs.error || ops.error) {
+      return json({ error: 'extras_error', detalle: (vincs.error || ops.error)?.message }, 500)
+    }
+    vinculos = vincs.data || []
+    opciones = ops.data || []
+    if (opciones.length !== idsOpcion.length) {
+      return err('extra_no_encontrado', 'Un extra de la comanda ya no existe. Quítalo y vuelve a elegirlo.', 400)
+    }
+    if (opciones.some((o: any) => o.grupos_extras?.establecimiento_id !== ped.establecimiento_id)) {
+      return json({ error: 'extra_de_otro_restaurante' }, 400)
+    }
+  }
+  const fallosExtras: string[] = []
+
+  // Los extras elegidos de una linea NUEVA, validados como en el mostrador: de un
+  // grupo VINCULADO a ese producto y dentro del tope del grupo. `tipo` no tiene
+  // CHECK ('unico' y 'single' conviven): multiple es lo unico que admite varias;
+  // tope 0 o menos = sin limite.
+  const extrasValidados = (l: any, prod: any) => {
+    const elegidas = extrasDeLinea(l).map((id) => opciones.find((o: any) => o.id === id)).filter(Boolean)
+    const porGrupo: Record<string, any[]> = {}
+    for (const o of elegidas) (porGrupo[o.grupo_id] ||= []).push(o)
+    for (const [gid, ops] of Object.entries(porGrupo)) {
+      if (!vinculos.some((v) => v.producto_id === prod.id && v.grupo_id === gid)) {
+        fallosExtras.push(`"${ops[0].nombre}" no es un extra de ${prod.nombre}`)
+        continue
+      }
+      const g = ops[0].grupos_extras
+      const max = Number(g?.max_selecciones)
+      const tope = g?.tipo === 'multiple' ? (Number.isFinite(max) && max > 0 ? max : Infinity) : 1
+      if (ops.length > tope) fallosExtras.push(`En "${g?.nombre}" solo puedes elegir ${tope}`)
+    }
+    return elegidas
   }
 
   // Lo que pide el TPV, ya saneado. `id` presente = linea que ya existia.
@@ -200,11 +263,16 @@ Deno.serve(async (req) => {
         cantidad,
         notas,
         precio_unitario: vieja.precio_unitario,
+        // v4: sus extras, los de la fila. Aqui solo sirven para el DELTA y el rastro.
+        extras: vieja.extras,
+        extras_ids: vieja.extras_ids,
       }
     }
     if (l?.producto_id) {
       const prod = productos.find((p) => p.id === l.producto_id)
       if (!prod) return null
+      const elegidas = extrasValidados(l, prod)
+      const sumaExtras = elegidas.reduce((s: number, o: any) => s + Math.max(0, Number(o.precio) || 0), 0)
       return {
         id: null,
         producto_id: prod.id,
@@ -212,7 +280,19 @@ Deno.serve(async (req) => {
         tamano: l?.tamano ? String(l.tamano) : null,
         cantidad,
         notas,
-        precio_unitario: 0,   // nueva de la carta: el precio lo pone el trigger
+        // Nueva de la carta sin extras: 0, y el precio lo pone el trigger. Con
+        // extras (v4): domicilio + extras, calculado aqui porque el trigger solo
+        // sube al suelo y no suma extras.
+        precio_unitario: elegidas.length
+          ? Math.round(((Number(prod.precio) || 0) + sumaExtras) * 100) / 100
+          : 0,
+        extras: elegidas.length
+          ? elegidas.map((o: any) => {
+            const p = Math.max(0, Number(o.precio) || 0)
+            return p > 0 ? `${o.nombre} (+${p.toFixed(2)}€)` : String(o.nombre)
+          })
+          : null,
+        extras_ids: elegidas.length ? elegidas.map((o: any) => o.id) : null,
       }
     }
     // NUEVA y sin producto: es una linea libre. Manda el importe tecleado, con el
@@ -233,6 +313,7 @@ Deno.serve(async (req) => {
   if (deseadas.some((l) => l === null)) {
     return json({ error: 'validacion', campo: 'lineas', mensaje: 'Hay una linea sin producto de la carta o con un importe libre que no es de mas de 0 y hasta 500 EUR' }, 400)
   }
+  if (fallosExtras.length) return err('extras_invalidos', fallosExtras.join('. '), 400)
 
   // ── Reparto o recogida ────────────────────────────────────────────────────
   const eraReparto = ped.modo_entrega === 'delivery'
@@ -306,6 +387,7 @@ Deno.serve(async (req) => {
     lineas: actuales.map((l: any) => ({
       id: l.id, producto_id: l.producto_id, nombre: l.nombre_producto,
       tamano: l.tamano, cantidad: l.cantidad, notas: l.notas, precio_unitario: l.precio_unitario,
+      extras: l.extras,
     })),
   }
 
@@ -338,9 +420,13 @@ Deno.serve(async (req) => {
     producto_id: l.producto_id,
     nombre_producto: l.nombre_producto,
     tamano: l.tamano,
-    precio_unitario: l.producto_id ? 0 : l.precio_unitario,
+    // v4: la nueva de la carta sin extras llega a 0 (la sube el trigger); con
+    // extras trae domicilio + extras; la libre, su importe.
+    precio_unitario: l.precio_unitario,
     cantidad: l.cantidad,
     notas: l.notas,
+    extras: l.extras,
+    extras_ids: l.extras_ids,
   }))
   if (aInsertar.length) {
     const { error: iErr } = await sb.from('pedido_items').insert(aInsertar)
@@ -427,7 +513,7 @@ Deno.serve(async (req) => {
       const k = firma(l)
       const prev = m.get(k)
       if (prev) prev.cantidad += l.cantidad
-      else m.set(k, { producto_id: l.producto_id, nombre: l.nombre_producto || l.nombre, tamano: l.tamano, cantidad: l.cantidad })
+      else m.set(k, { producto_id: l.producto_id, nombre: l.nombre_producto || l.nombre, tamano: l.tamano, extras: l.extras, cantidad: l.cantidad })
     }
     return m
   }
@@ -454,7 +540,7 @@ Deno.serve(async (req) => {
       // ese papel es de cocina o de barra.
       notasCambiadas.push({
         producto_id: l.producto_id, nombre: l.nombre_producto,
-        tamano: l.tamano, cantidad: l.cantidad, notas: l.notas,
+        tamano: l.tamano, extras: l.extras, cantidad: l.cantidad, notas: l.notas,
       })
     }
   }
@@ -470,6 +556,7 @@ Deno.serve(async (req) => {
     lineas: (itemsFinal || []).map((l: any) => ({
       id: l.id, producto_id: l.producto_id, nombre: l.nombre_producto,
       tamano: l.tamano, cantidad: l.cantidad, notas: l.notas, precio_unitario: l.precio_unitario,
+      extras: l.extras,
     })),
   }
 
