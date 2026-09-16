@@ -47,7 +47,7 @@ function hora(ts) {
   return new Date(ts).toLocaleTimeString('es-ES', { timeZone: 'Atlantic/Canary', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIrA }) {
+export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIrA, tarjetaDirecta = false }) {
   const hoy = hoyCanariasIso()
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
@@ -155,7 +155,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
             <ContenidoDia
               d={d} fecha={fecha} hoy={hoy} esHoy={esHoy}
               estId={estId} recargaDinero={`${recarga}-${vuelta}`} onRecargar={recargar}
-              onApuntar={onApuntar} onIrA={onIrA}
+              onApuntar={onApuntar} onIrA={onIrA} tarjetaDirecta={tarjetaDirecta}
               onDeshacer={deshacer} onMarcar={marcar} onNoEsGasto={noEsGasto}
             />
           )}
@@ -165,7 +165,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
   )
 }
 
-function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, onApuntar, onIrA, onDeshacer, onMarcar, onNoEsGasto }) {
+function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, onApuntar, onIrA, tarjetaDirecta, onDeshacer, onMarcar, onNoEsGasto }) {
   const res = d.resumen || {}
   const c = d.cobro || {}
   const g = res.ganancia || {}
@@ -316,7 +316,9 @@ function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, 
       <div style={{ display: 'grid', gap: 12, marginTop: 14, alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))' }}>
         <TuDineroAhora estId={estId} recarga={recargaDinero} hoy={hoy} esHoy={esHoy} cajonDia={d.cajon} onIrA={onIrA}
           onPuedeEditar={setPuedeEditar} />
-        <DondeEstaLoVendido cobro={c} esHoy={esHoy} cajas={d.cajas_dia || []} />
+        {/* Tarjeta directa (Duende) sale de `stock_config`, que ya está en memoria: sin esperar a
+            la tesorería, «Tarjeta (app)» nunca dice que la paga Pidoo el lunes. */}
+        <DondeEstaLoVendido cobro={c} esHoy={esHoy} cajas={d.cajas_dia || []} tarjetaDirecta={tarjetaDirecta} />
       </div>
 
       {/* ── Todo lo que pasó ────────────────────────────────────────────── */}
@@ -413,8 +415,9 @@ function TuDineroAhora({ estId, recarga, hoy, esHoy, cajonDia, onIrA, onPuedeEdi
           <Destino icono={<Vault size={16} />} label="Caja mayor" valor={t.caja_mayor?.saldo}
             donde={t.caja_mayor?.contada ? 'Lo que retiras al cerrar la caja' : 'Todavía sin contar'} />
           <Destino icono={<Landmark size={16} />} label="Banco" valor={t.banco?.saldo}
-            donde={t.banco?.contado ? 'Datáfono y lo que te paga Pidoo' : 'Todavía sin poner el saldo'} />
-          {debesPidoo ? (
+            donde={!t.banco?.contado ? 'Todavía sin poner el saldo'
+              : t.pidoo?.directa ? 'Datáfono y tarjeta de la app (Stripe)' : 'Datáfono y lo que te paga Pidoo'} />
+          {t.pidoo?.directa ? null : debesPidoo ? (
             <Destino icono={<Smartphone size={16} />} label="Le debes a Pidoo" valor={Math.abs(saldoPidoo)}
               donde="Es la comisión de los pedidos que cobraste tú (efectivo o datáfono). Se descuenta en la liquidación del lunes." />
           ) : (
@@ -463,7 +466,7 @@ function cajonDelDia(c) {
   return null
 }
 
-function DondeEstaLoVendido({ cobro, esHoy, cajas }) {
+function DondeEstaLoVendido({ cobro, esHoy, cajas, tarjetaDirecta }) {
   const efectivo = Number(cobro.efectivo || 0)
   const datafono = Number(cobro.datafono || 0)
   const tarjeta = Number(cobro.tarjeta || 0)
@@ -477,7 +480,8 @@ function DondeEstaLoVendido({ cobro, esHoy, cajas }) {
         <>
           {efectivo > 0 && <Destino icono={<Wallet size={16} />} label="Efectivo" valor={efectivo} donde="Va al cajón" />}
           {datafono > 0 && <Destino icono={<Landmark size={16} />} label="Datáfono" valor={datafono} donde="Va a tu banco" />}
-          {tarjeta > 0 && <Destino icono={<Landmark size={16} />} label="Tarjeta (app)" valor={tarjeta} donde="Te lo ingresa Pidoo en la liquidación del lunes" />}
+          {tarjeta > 0 && <Destino icono={<Landmark size={16} />} label="Tarjeta (app)" valor={tarjeta}
+            donde={tarjetaDirecta ? 'Lo cobras tú en Stripe: va a tu banco' : 'Te lo ingresa Pidoo en la liquidación del lunes'} />}
           {otros > 0 && <Destino icono={<Landmark size={16} />} label="Otras formas de pago" valor={otros} donde="" />}
         </>
       )}

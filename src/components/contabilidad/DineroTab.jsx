@@ -89,7 +89,7 @@ const MOVIMIENTOS = {
 
 const ICONO_MOV = {
   cierre: Wallet, apertura: Wallet, compra: ShoppingCart, gasto: Receipt,
-  apunte: ArrowLeftRight, datafono: CreditCard, pidoo: Smartphone,
+  apunte: ArrowLeftRight, datafono: CreditCard, tarjeta: CreditCard, pidoo: Smartphone,
 }
 
 export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }) {
@@ -133,6 +133,9 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
   const cma = t.caja_mayor || {}
   const bco = t.banco || {}
   const pid = t.pidoo || {}
+  // Tarjeta directa (Duende): la tarjeta de la app la cobra el dueño en Stripe y va al banco.
+  // No hay liquidación, así que «Te debe Pidoo» no existe (`stock_config.tarjeta_directa`).
+  const directa = pid.directa === true
   const total = Number(t.total || 0)
   // Contar, mover y deshacer los toca solo el dueño (o Pidoo): la base de datos se lo rechaza al
   // equipo con PD285. El equipo puede ver la pantalla, pero sin botones que acaban en error
@@ -171,7 +174,9 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
           Tienes {eur(total)}
         </div>
         <div style={{ fontSize: type.sm, color: colors.textMute, marginTop: 4, lineHeight: 1.5 }}>
-          {debesPidoo
+          {directa
+            ? 'Sumando el cajón, la caja mayor y el banco (con lo que tienes en Stripe).'
+            : debesPidoo
             ? 'Sumando el cajón, la caja mayor y el banco, y restando lo que le debes a Pidoo.'
             : 'Sumando el cajón, la caja mayor, el banco y lo que te debe Pidoo.'}
         </div>
@@ -230,11 +235,15 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         </Bolsillo>
 
         <Bolsillo icono={<Landmark size={17} />} titulo="Banco" saldo={bco.saldo}
-          frase="El datáfono y lo que te paga Pidoo, menos lo que pagas por banco.">
+          frase={directa
+            ? 'El datáfono y la tarjeta de la app (Stripe), menos lo que pagas por banco.'
+            : 'El datáfono y lo que te paga Pidoo, menos lo que pagas por banco.'}>
           {!bco.contado ? (
             <Aviso
               texto={puede
-                ? 'Todavía no has puesto cuánto tienes: mira el saldo de tu cuenta del banco y ponlo aquí.'
+                ? (directa
+                  ? 'Todavía no has puesto cuánto tienes: mira tu cuenta del banco, súmale lo tuyo que aún está en Stripe y ponlo aquí.'
+                  : 'Todavía no has puesto cuánto tienes: mira el saldo de tu cuenta del banco y ponlo aquí.')
                 : 'Todavía no ha puesto el dueño el saldo del banco: hasta entonces esta cifra no es exacta.'}
               boton={puede ? 'Poner saldo del banco' : null} onBoton={() => setVentana({ tipo: 'contar', bolsillo: 'banco' })} />
           ) : (
@@ -246,7 +255,9 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
             <Nota aviso>
               {bco.contado
                 ? (puede
-                  ? 'Sale en negativo: revisa el saldo de tu cuenta y vuelve a ponerlo.'
+                  ? (directa
+                    ? 'Sale en negativo: revisa tu banco y lo que hay en Stripe y vuelve a ponerlo.'
+                    : 'Sale en negativo: revisa el saldo de tu cuenta y vuelve a ponerlo.')
                   : 'Sale en negativo: avísale al dueño para que revise el saldo del banco.')
                 : (puede
                   ? 'Sale en negativo porque aún no has puesto cuánto había en la cuenta: ponlo.'
@@ -268,7 +279,7 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
           )}
         </Bolsillo>
 
-        <TarjetaPidoo pid={pid} />
+        {!directa && <TarjetaPidoo pid={pid} />}
       </div>
 
       {/* ── Movimientos ─────────────────────────────────────────────────── */}
@@ -285,6 +296,7 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         estId={estId} bolsillo={ventana.bolsillo}
         calculado={ventana.bolsillo === 'banco' ? bco.saldo : cma.saldo}
         yaContado={ventana.bolsillo === 'banco' ? !!bco.contado : !!cma.contada}
+        directa={directa}
         onGuardado={recargar}
         onCerrar={() => setVentana(null)}
       />
@@ -556,7 +568,7 @@ function Movimientos({ cma, bco, hoy, puede, onDeshecho }) {
 // No se cierran al pulsar fuera (igual que «Apuntar un pago»): con el importe tecleado, un
 // clic perdido lo borraba.
 
-function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir, onGuardado, onCerrar }) {
+function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir, directa = false, onGuardado, onCerrar }) {
   const banco = bolsillo === 'banco'
   // Se congela al abrir: tras «Guardar» se recarga la tesorería y el bolsillo ya sale contado,
   // así que la primera vez acabaría enseñando la «diferencia» que se quería evitar.
@@ -641,8 +653,12 @@ function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir
       </>
     }>
       <div style={{ fontSize: type.sm, color: colors.textDim, lineHeight: 1.5 }}>
+        {/* Tarjeta directa: la tarjeta de la app entra en Stripe y aquí suma al banco. Si solo se
+            pone el banco, lo que Stripe aún no ha ingresado desaparecería de «Tu dinero». */}
         {banco
-          ? 'Mira en la app de tu banco cuánto hay en la cuenta del negocio y ponlo aquí.'
+          ? (directa
+            ? 'Mira cuánto hay en tu cuenta del banco, súmale lo de tu restaurante que aún está en Stripe (lo que todavía no te ha llegado al banco) y pon el total aquí.'
+            : 'Mira en la app de tu banco cuánto hay en la cuenta del negocio y ponlo aquí.')
           : 'Cuenta los billetes y las monedas de la caja mayor y pon cuánto hay.'}
       </div>
       <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4 }}>
@@ -653,14 +669,14 @@ function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <label style={ds.label}>{banco ? '¿Cuánto hay en el banco?' : '¿Cuánto has contado?'}</label>
+        <label style={ds.label}>{banco ? (directa ? '¿Cuánto hay en el banco y en Stripe?' : '¿Cuánto hay en el banco?') : '¿Cuánto has contado?'}</label>
         <InputEuros value={importe} onChange={setImporte} grande autoFocus onEnter={guardar} />
         {malEscrito && <AvisoImporte />}
       </div>
       <div style={{ marginTop: 12 }}>
         <label style={ds.label}>Nota (opcional)</label>
         <input value={nota} onChange={e => setNota(e.target.value)} maxLength={140}
-          placeholder={banco ? 'Saldo de la app del banco' : 'Contado por la noche'} style={ds.formInput} />
+          placeholder={banco ? (directa ? 'Banco + lo que hay en Stripe' : 'Saldo de la app del banco') : 'Contado por la noche'} style={ds.formInput} />
       </div>
       <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 12, lineHeight: 1.5 }}>
         Desde ese momento {banco ? 'el banco' : 'la caja mayor'} parte de lo que pongas.

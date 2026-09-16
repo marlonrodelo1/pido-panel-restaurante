@@ -133,7 +133,7 @@ export function ContabilidadVista({ restaurante, stockConfig }) {
 
       {pestana === 'dia' && (
         <DiaTab estId={estId} fecha={fechaDia} onFecha={setFechaDia} recarga={refresco}
-          onApuntar={apuntar} onIrA={setPestana} />
+          onApuntar={apuntar} onIrA={setPestana} tarjetaDirecta={stockConfig?.tarjeta_directa === true} />
       )}
       {pestana === 'dinero' && (
         <DineroTab estId={estId} recarga={refresco} onApuntar={apuntar} onIrA={setPestana} onIrADia={irADia} />
