@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { toast } from '../App'
 import { colors, type, ds } from '../lib/uiStyles'
+import {
+  comisionPidooDePedido, esTelefonicoTarifaFija, gananciaSocioDePedido, parseCorteTelefonico,
+  telefonicoComoApp, fmtCorteTelefonico,
+} from '../lib/informeVentas'
 
 const RANGOS = [
   { id: 'hoy', label: 'Hoy' },
@@ -64,6 +68,9 @@ export default function FinanzasRiders() {
   const [rango, setRango] = useState('semana_actual')
   const [pedidos, setPedidos] = useState([])
   const [sociosMap, setSociosMap] = useState({})
+  // Comisión de la plataforma, para calcular la de Pidoo con la misma regla que la
+  // liquidación de los lunes (lib/informeVentas.js → comisionPidooDePedido).
+  const [cfg, setCfg] = useState({ pct: 10, feeTelefonico: 1, corteTelefonico: null })
   const [resenas, setResenas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -83,7 +90,7 @@ export default function FinanzasRiders() {
     try {
       const { data: peds, error: e1 } = await supabase
         .from('pedidos')
-        .select('id, codigo, subtotal, coste_envio, propina, total, descuento, promo_titulo, metodo_pago, estado, entregado_at, created_at, minutos_preparacion, canal, modo_entrega, origen_pedido, socio_id, rider_account_id')
+        .select('id, codigo, subtotal, coste_envio, propina, total, descuento, promo_titulo, metodo_pago, estado, entregado_at, created_at, minutos_preparacion, canal, modo_entrega, origen_pedido, socio_id, rider_account_id, comision_pidoo_pct_override, socio_liq_envio, socio_liq_comision, socio_liq_propina, socio_liq_total')
         .eq('establecimiento_id', restaurante.id)
         .eq('canal', 'pido')
         .gte('created_at', desde.toISOString())
@@ -92,21 +99,41 @@ export default function FinanzasRiders() {
       if (e1) throw e1
       setPedidos(peds || [])
 
-      // Info de socios + comisión PACTADA por socio para este restaurante.
+      // Info de socios + PACTO de cada socio con este restaurante (tarifa y comisión).
       // (Antes leía `rider_earnings`, tabla que ya no existe → la sección quedaba
-      // siempre vacía. Ahora se calcula en vivo desde `pedidos`, como la app del socio.)
+      // siempre vacía. Ahora sale de `pedidos`: lo congelado al entregar, y si no
+      // hay, el pacto con la misma regla que la base de datos.)
       const socioIds = [...new Set((peds || []).map(p => p.socio_id).filter(Boolean))]
       const map = {}
       if (socioIds.length > 0) {
         const [{ data: socios }, { data: vinc }] = await Promise.all([
           supabase.from('socios').select('id, nombre_comercial, logo_url').in('id', socioIds),
-          supabase.from('socio_establecimiento').select('socio_id, comision_pct')
+          supabase.from('socio_establecimiento').select('socio_id, estado, tarifa_modo, tarifa_fija, comision_pct')
             .eq('establecimiento_id', restaurante.id).in('socio_id', socioIds),
         ])
-        ;(socios || []).forEach(s => { map[s.id] = { nombre: s.nombre_comercial, logo: s.logo_url, comision_pct: 10 } })
-        ;(vinc || []).forEach(v => { if (map[v.socio_id]) map[v.socio_id].comision_pct = Number(v.comision_pct ?? 10) })
+        ;(socios || []).forEach(s => { map[s.id] = { nombre: s.nombre_comercial, logo: s.logo_url, comision_pct: 10, pacto: {} } })
+        // Si hay varias filas del mismo socio, manda la activa (igual que en la BD).
+        const vincOrdenado = [...(vinc || [])].sort((a, b) => (a.estado === 'activa' ? 1 : 0) - (b.estado === 'activa' ? 1 : 0))
+        vincOrdenado.forEach(v => {
+          if (!map[v.socio_id]) return
+          map[v.socio_id].comision_pct = Number(v.comision_pct ?? 10)
+          map[v.socio_id].pacto = { tarifa_modo: v.tarifa_modo, tarifa_fija: v.tarifa_fija, comision_pct: v.comision_pct }
+        })
       }
       setSociosMap(map)
+
+      const { data: conf } = await supabase
+        .from('configuracion_plataforma')
+        .select('clave, valor')
+        .in('clave', ['comision_pidoo_pct', 'comision_pedido_telefonico_eur', 'comision_telefonico_pct_desde'])
+      if (conf) {
+        const c = Object.fromEntries(conf.map(r => [r.clave, r.valor]))
+        setCfg({
+          pct: Number(c.comision_pidoo_pct ?? 10) || 0,
+          feeTelefonico: Number(c.comision_pedido_telefonico_eur ?? 1) || 0,
+          corteTelefonico: parseCorteTelefonico(c.comision_telefonico_pct_desde),
+        })
+      }
 
       const { data: resenasData } = await supabase
         .from('resenas').select('*')
@@ -131,13 +158,20 @@ export default function FinanzasRiders() {
     const ventasComida = entregados.reduce((s, p) => s + Number(p.subtotal || 0), 0)
     // Lo que pagó el cliente (incluye envío + propina del rider): NO es ingreso del restaurante.
     const cobradoCliente = entregados.reduce((s, p) => s + Number(p.total || 0), 0)
-    // Pidoo retiene el 10% del subtotal — EXCEPTO pedidos telefónicos, que pagan
-    // 1 € fijo por envío gestionado (sin % sobre la comida).
-    const telefonicos = entregados.filter(p => p.origen_pedido === 'telefonico')
-    const ventasNoTelefonicas = entregados.filter(p => p.origen_pedido !== 'telefonico')
-      .reduce((s, p) => s + Number(p.subtotal || 0), 0)
-    const comisionPido = ventasNoTelefonicas * 0.10 + telefonicos.length * 1.00
-    const pedTelefonicos = telefonicos.length
+    // Pidoo retiene el % congelado en cada pedido sobre la comida (hoy 10 %), también
+    // en los telefónicos desde el corte (`comision_telefonico_pct_desde`). Los
+    // telefónicos anteriores al corte, o todos si aún no hay corte, pagan su tarifa
+    // fija. Local propio (exento): 0.
+    const confPidoo = { ...cfg, exento: !!restaurante?.exento_comision }
+    const comisionPido = entregados.reduce((s, p) => s + comisionPidooDePedido(p, confPidoo), 0)
+    const pedTelefonicos = confPidoo.exento ? 0
+      : entregados.filter(p => esTelefonicoTarifaFija(p, cfg.corteTelefonico)).length
+    // Para el rótulo: si todos los pedidos con % llevan el mismo, se dice cuál.
+    const pcts = new Set(entregados
+      .filter(p => !['tpv', 'mesa'].includes(p.origen_pedido) && !esTelefonicoTarifaFija(p, cfg.corteTelefonico))
+      .map(p => (p.comision_pidoo_pct_override != null ? Number(p.comision_pidoo_pct_override) : cfg.pct)))
+    const pctRotulo = pcts.size === 0 ? `${cfg.pct}%`
+      : (pcts.size === 1 ? `${[...pcts][0]}%` : 'el % de cada pedido')
     const cobradoTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').reduce((s, p) => s + Number(p.total || 0), 0)
     const cobradoEfectivo = entregados.filter(p => p.metodo_pago === 'efectivo').reduce((s, p) => s + Number(p.total || 0), 0)
     const pedTarjeta = entregados.filter(p => p.metodo_pago === 'tarjeta').length
@@ -147,8 +181,8 @@ export default function FinanzasRiders() {
     const tiempos = entregados.filter(p => p.minutos_preparacion).map(p => p.minutos_preparacion)
     const tiempoMedio = tiempos.length > 0 ? Math.round(tiempos.reduce((s, t) => s + t, 0) / tiempos.length) : 0
     const propinas = entregados.reduce((s, p) => s + Number(p.propina || 0), 0)
-    return { ventasComida, cobradoCliente, comisionPido, pedTelefonicos, cobradoTarjeta, cobradoEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
-  }, [entregados])
+    return { ventasComida, cobradoCliente, comisionPido, pedTelefonicos, pctRotulo, exento: confPidoo.exento, cobradoTarjeta, cobradoEfectivo, pedTarjeta, pedEfectivo, ticketMedio, tiempoMedio, propinas }
+  }, [entregados, cfg, restaurante?.exento_comision])
 
   const socioRows = useMemo(() => {
     const grouped = {}
@@ -157,12 +191,10 @@ export default function FinanzasRiders() {
       const key = p.socio_id
       const info = sociosMap[key] || {}
       const comisionPct = Number(info.comision_pct ?? 10)
-      const isDelivery = p.modo_entrega === 'delivery'
-      const envio = isDelivery ? Number(p.coste_envio || 0) : 0
-      const propina = isDelivery ? Number(p.propina || 0) : 0
-      // Pedido telefónico: el socio cobra SOLO el envío pactado, sin % del subtotal.
-      const comision = p.origen_pedido === 'telefonico' ? 0 : Number(p.subtotal || 0) * comisionPct / 100
-      const neto = envio + comision + propina
+      // Lo que se lleva el socio: lo congelado al entregar o, si no hay, el pacto
+      // (envío o tarifa fija + comisión pactada + propina). El telefónico, igual que la
+      // app si ya hay corte; sin corte, solo envío + propina, como la BD de hoy.
+      const { envio, propina, comision, total: neto } = gananciaSocioDePedido(p, info.pacto || {}, cfg.corteTelefonico)
       if (!grouped[key]) {
         grouped[key] = {
           key,
@@ -192,7 +224,14 @@ export default function FinanzasRiders() {
         new Date(b.pedido.entregado_at || b.pedido.created_at) - new Date(a.pedido.entregado_at || a.pedido.created_at))
     }
     return Object.values(grouped).sort((a, b) => b.total_neto - a.total_neto)
-  }, [entregados, sociosMap])
+  }, [entregados, sociosMap, cfg.corteTelefonico])
+
+  // Los textos que hablan del teléfono dicen lo que pasa HOY:
+  //   · Pidoo: tarifa fija hasta el corte (se decide por la fecha de creación).
+  //   · Socio: solo envío + propina mientras no exista la clave del cambio; con ella,
+  //     lo pactado (calc_ganancia_socio no mira fechas: congela al entregar).
+  const telComoApp = telefonicoComoApp(cfg.corteTelefonico)
+  const telSocioComoApp = !!cfg.corteTelefonico
 
   const porDia = useMemo(() => {
     const map = new Map()
@@ -318,7 +357,9 @@ export default function FinanzasRiders() {
               color: '#fff', marginTop: 6, letterSpacing: '-0.02em',
             }}>{fmtMoney(stats.ventasComida)}</div>
             <div style={{ fontSize: 12, opacity: 0.92, marginTop: 6, lineHeight: 1.5 }}>
-              Comisión Pido: −{fmtMoney(stats.comisionPido)}{stats.pedTelefonicos > 0 ? ` (10% app + ${stats.pedTelefonicos} telefónico${stats.pedTelefonicos > 1 ? 's' : ''} × 1 €)` : ' (10%)'} · Cobrado al cliente: {fmtMoney(stats.cobradoCliente)}
+              Comisión Pido: −{fmtMoney(stats.comisionPido)}{stats.exento
+                ? ' (local propio, sin comisión)'
+                : ` (${stats.pctRotulo} de la comida${stats.pedTelefonicos > 0 ? ` + ${stats.pedTelefonicos} telefónico${stats.pedTelefonicos > 1 ? 's' : ''}${cfg.corteTelefonico ? ` de antes del ${fmtCorteTelefonico(cfg.corteTelefonico)}` : ''} × ${fmtMoney(cfg.feeTelefonico)}` : ''})`} · Cobrado al cliente: {fmtMoney(stats.cobradoCliente)}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
               <span style={{
@@ -335,7 +376,13 @@ export default function FinanzasRiders() {
               }}>💵 Cobrado efectivo · {fmtMoney(stats.cobradoEfectivo)} · {stats.pedEfectivo} pedidos</span>
             </div>
             <div style={{ fontSize: 11, opacity: 0.8, marginTop: 12 }}>
-              Tu neto real se liquida al 80% del subtotal (Pidoo 10% · rider/socio 10% + envío + propina). Consúltalo en «Liquidación con Pido».
+              {telComoApp
+                ? 'Pidoo se queda su % de la comida, también en los pedidos por teléfono.'
+                : `Pidoo se queda su % de la comida (en los pedidos por teléfono, ${fmtMoney(cfg.feeTelefonico)} fijo${cfg.corteTelefonico ? ` hasta el ${fmtCorteTelefonico(cfg.corteTelefonico)}` : ''}).`}
+              {telSocioComoApp
+                ? ' Al socio le pagas lo pactado (envío o tarifa fija + su comisión + propina), también en los telefónicos.'
+                : ' Al socio le pagas lo pactado (envío o tarifa fija + su comisión + propina; en los telefónicos, solo envío + propina).'}
+              {' '}Tu liquidación exacta está en «Liquidación con Pido».
             </div>
           </div>
 
@@ -633,7 +680,9 @@ export default function FinanzasRiders() {
           }}>
             <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>ⓘ</span>
             <div>
-              <b>Recomendación Pidoo:</b> paga al socio <b>10% del subtotal + 100% del envío + 100% de la propina</b>. Tú decides cómo y cuándo le pagas (Bizum, transferencia, efectivo). Pidoo no procesa estos pagos.
+              <b>Lo que le debes al socio</b> es lo que pactasteis: <b>el envío (o su tarifa fija) + su comisión sobre la comida + el 100% de la propina</b>{telSocioComoApp
+                ? ', igual en los pedidos de la app que en los telefónicos'
+                : ' (en los pedidos por teléfono, solo el envío y la propina)'}. Tú decides cómo y cuándo le pagas (Bizum, transferencia, efectivo). Pidoo no procesa estos pagos.
             </div>
           </div>
         </>

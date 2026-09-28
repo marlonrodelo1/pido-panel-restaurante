@@ -4,6 +4,8 @@ import { useRest } from '../context/RestContext'
 import { toast, confirmar } from '../App'
 import { colors, type, ds, chip, chipDot } from '../lib/uiStyles'
 import AddressInput from '../components/AddressInput'
+import { comisionPidoo } from '../lib/stock'
+import { leerConfigComision, telefonicoComoApp } from '../lib/informeVentas'
 import { PhoneCall, Bike, Send, RotateCcw, ClipboardList, User, MapPin, Euro, StickyNote } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 
@@ -245,6 +247,25 @@ export default function CrearEnvio() {
     if (asigModo === 'socio' && socios === null && restaurante?.id) cargarSocios()
   }, [asigModo]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Lo que cobra Pidoo por este pedido (solo para el resumen) ──
+  // Desde el corte (`comision_telefonico_pct_desde`) el telefónico paga el % de la
+  // app de ESTE restaurante (el que congela la BD al crearlo) y el socio cobra lo
+  // pactado. Antes del corte, o si aún no hay corte, la tarifa fija de siempre.
+  // Si no se puede leer, no se enseña ningún coste: mejor nada que un precio falso.
+  const [costePidoo, setCostePidoo] = useState(null) // { corte, fee, pct }
+  useEffect(() => {
+    if (!restaurante?.id) return
+    let cancel = false
+    Promise.all([
+      leerConfigComision(supabase),
+      comisionPidoo(restaurante.id).catch(() => null),
+    ]).then(([cfg, pct]) => {
+      if (cancel || !cfg) return
+      setCostePidoo({ corte: cfg.corteTelefonico, fee: cfg.feeTelefonico, pct: pct == null ? null : Number(pct) })
+    }).catch(() => { /* sin dato no se enseña coste */ })
+    return () => { cancel = true }
+  }, [restaurante?.id])
+
   // ── Validación ──
   const telValido = !!normalizarTelefonoES(telefono)
   const importeNum = Number(String(importe).replace(',', '.'))
@@ -317,6 +338,28 @@ export default function CrearEnvio() {
 
   const totalPedido = envio?.envio != null && importeValido ? importeNum + envio.envio : null
   const fmtEur = (n) => `${Number(n).toFixed(2).replace('.', ',')} €`
+
+  // Frase del coste para el resumen ('' = no se sabe). Dos relojes, igual que la BD:
+  //   · Pidoo: el % desde el corte (por fecha de creación); antes, la tarifa fija.
+  //   · Socio: lo pactado en cuanto existe la clave (calc_ganancia_socio no mira fechas).
+  const textoCostePidoo = (() => {
+    if (!costePidoo) return ''
+    let pidoo
+    if (telefonicoComoApp(costePidoo.corte)) {
+      if (costePidoo.pct == null) return ''
+      if (costePidoo.pct <= 0) pidoo = 'Sin comisión de Pidoo.'
+      else {
+        const pctTxt = String(costePidoo.pct).replace('.', ',')
+        const importeCom = Number.isFinite(importeNum) ? ` (${fmtEur(importeNum * costePidoo.pct / 100)})` : ''
+        pidoo = `Comisión Pidoo: ${pctTxt} % de la comida${importeCom}, como en la app.`
+      }
+    } else if (restaurante?.exento_comision) {
+      pidoo = 'Sin comisión de Pidoo (local propio).'
+    } else {
+      pidoo = `Coste Pidoo: ${fmtEur(costePidoo.fee)} por envío telefónico.`
+    }
+    return costePidoo.corte ? `${pidoo} Al socio le pagas lo pactado, igual que en los pedidos de la app.` : pidoo
+  })()
 
   // ═══════════════ Vista de éxito ═══════════════
   if (resultado) {
@@ -637,7 +680,7 @@ export default function CrearEnvio() {
             {metodoCobro === 'efectivo'
               ? `El repartidor cobrará ${fmtEur(totalPedido)} al cliente.`
               : 'El repartidor no cobra nada al cliente.'}
-            {' '}Coste Pidoo: 1,00 € por envío telefónico.
+            {textoCostePidoo ? ` ${textoCostePidoo}` : ''}
           </div>
         </div>
       )}

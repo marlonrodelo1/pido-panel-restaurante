@@ -14,7 +14,7 @@ import {
   ESTADOS_VENTA, ESTADOS_NO_VENTA, LABEL_PAGO, LABEL_ORIGEN,
   hoyStr, ayerStr, lunesEstaSemana, primerDiaMes, inicioDe, finDe,
   fechaEfectiva, tituloPeriodo, fmt,
-  calcularResumen, agruparProductos, contarUdsPorPedido,
+  calcularResumen, agruparProductos, contarUdsPorPedido, parseCorteTelefonico, fmtCorteTelefonico,
 } from '../lib/informeVentas'
 import { construirInformeVentasPDF } from '../lib/informeVentasPdf'
 
@@ -37,7 +37,7 @@ export default function Finanzas() {
 
   const [pedidos, setPedidos] = useState([])
   const [items, setItems] = useState([])
-  const [config, setConfig] = useState({ pct: 10, feeTelefonico: 1 })
+  const [config, setConfig] = useState({ pct: 10, feeTelefonico: 1, corteTelefonico: null })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [generando, setGenerando] = useState(false)
@@ -50,19 +50,22 @@ export default function Finanzas() {
     else if (id === 'mes') { setDesde(primerDiaMes()); setHasta(hoyStr()) }
   }
 
-  // Comisión vigente de la plataforma (tabla de lectura pública)
+  // Comisión vigente de la plataforma (tabla de lectura pública). La tarifa fija
+  // del teléfono solo vale ya para los telefónicos anteriores al cambio
+  // (`comision_telefonico_pct_desde`); los nuevos pagan su % como la app.
   useEffect(() => {
     let cancel = false
     ;(async () => {
       const { data } = await supabase
         .from('configuracion_plataforma')
         .select('clave, valor')
-        .in('clave', ['comision_pidoo_pct', 'comision_pedido_telefonico_eur'])
+        .in('clave', ['comision_pidoo_pct', 'comision_pedido_telefonico_eur', 'comision_telefonico_pct_desde'])
       if (cancel || !data) return
       const map = Object.fromEntries(data.map(r => [r.clave, r.valor]))
       setConfig({
         pct: Number(map.comision_pidoo_pct ?? 10) || 0,
         feeTelefonico: Number(map.comision_pedido_telefonico_eur ?? 1) || 0,
+        corteTelefonico: parseCorteTelefonico(map.comision_telefonico_pct_desde),
       })
     })()
     return () => { cancel = true }
@@ -306,8 +309,11 @@ export default function Finanzas() {
                 <Fila label={exento ? 'Sin comisión (local propio)' : `Comisión ${config.pct}% sobre la comida`} valor={fmt(resumen.comisionPct)}
                   sub={`Base ${fmt(resumen.baseComisionable)}`} />
                 {resumen.nTelefonicos > 0 && (
-                  <Fila label="Pedidos por teléfono" valor={fmt(resumen.comisionTel)}
-                    sub={`${resumen.nTelefonicos} × ${fmt(config.feeTelefonico)}`} />
+                  // Sin corte todo telefónico va con tarifa fija (como la BD de hoy);
+                  // con corte, solo los que se hicieron antes de esa fecha.
+                  <Fila label={config.corteTelefonico ? 'Pedidos por teléfono con tarifa fija' : 'Pedidos por teléfono'}
+                    valor={fmt(resumen.comisionTel)}
+                    sub={`${resumen.nTelefonicos} × ${fmt(config.feeTelefonico)}${config.corteTelefonico ? ` · hechos antes del ${fmtCorteTelefonico(config.corteTelefonico)}` : ''}`} />
                 )}
               </div>
             </div>

@@ -10,6 +10,7 @@ import { colors, type, ds } from '../lib/uiStyles'
 // pasaba de rojo suave a rojo solido). `color-mix` no necesita saber que hay dentro.
 const mezcla = (color, pct = 33) => `color-mix(in srgb, ${color} ${pct}%, transparent)`
 import { formatTarifa, compararTarifas, formatCuentaAtras, formatFechaCorta, fmtPct } from '../lib/tarifas'
+import { leerConfigComision } from '../lib/informeVentas'
 
 const SUPABASE_URL = 'https://rmrbxrabngdmpgpfmjbo.supabase.co'
 
@@ -99,7 +100,7 @@ function ModalMotivo({ titulo, textoBoton, onClose, onConfirm }) {
   )
 }
 
-function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onResponderTarifa, accionando }) {
+function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDesvincular, onResponderTarifa, accionando, corteTelefonico }) {
   const socio = row.socios || {}
   const estadoInfo = ESTADOS[row.estado] || ESTADOS.pendiente
   // Feedback de clic: hay una acción en curso sobre ESTA tarjeta.
@@ -269,6 +270,17 @@ function SocioCard({ row, rider, expanded, onToggle, onAceptar, onRechazar, onDe
               </div>
               <div style={{ fontSize: type.sm, color: colors.text, fontWeight: 600, marginTop: 4 }}>
                 Comisión del socio: <span style={{ color: colors.terracotta }}>{fmtPct(row.comision_pct ?? 10)}</span> del pedido
+                {row.tarifa_modo === 'fija' && (
+                  <span style={{ color: colors.textMute, fontWeight: 500 }}> (en los repartos con tarifa fija no se suma)</span>
+                )}
+              </div>
+              {/* El telefónico deja de ser «solo envío» en cuanto existe la clave del cambio
+                  (`comision_telefonico_pct_desde`): la BD (calc_ganancia_socio) ya no lo
+                  exime y el socio cobra lo pactado, como en la app. Sin clave, como siempre. */}
+              <div style={{ fontSize: type.xxs, color: colors.textMute, marginTop: 4 }}>
+                {corteTelefonico
+                  ? 'Vale igual para los pedidos de la app y para los telefónicos.'
+                  : 'En los pedidos por teléfono cobra solo el envío y la propina.'}
               </div>
               {row.tarifa_aceptada_en && formatTarifa(row) && (
                 <div style={{ fontSize: type.xxs, color: colors.textFaint, marginTop: 4 }}>
@@ -334,6 +346,17 @@ export default function SociosYRepartidores() {
   const [modalRechazar, setModalRechazar] = useState(null)
   const [modalDesvincular, setModalDesvincular] = useState(null)
   const [accionando, setAccionando] = useState(null) // { id, tipo } acción en curso (feedback de clic)
+  // Corte del teléfono (`comision_telefonico_pct_desde`): decide qué dice la tarjeta del
+  // socio sobre los pedidos telefónicos. Sin leerlo, se dice lo de siempre.
+  const [corteTelefonico, setCorteTelefonico] = useState(null)
+
+  useEffect(() => {
+    let cancel = false
+    leerConfigComision(supabase)
+      .then(c => { if (!cancel && c) setCorteTelefonico(c.corteTelefonico) })
+      .catch(() => { /* se queda el texto de siempre */ })
+    return () => { cancel = true }
+  }, [])
 
   const cargar = useCallback(async () => {
     if (!restaurante?.id) return
@@ -572,6 +595,7 @@ export default function SociosYRepartidores() {
               onDesvincular={(id) => setModalDesvincular({ id })}
               onResponderTarifa={handleResponderTarifa}
               accionando={accionando}
+              corteTelefonico={corteTelefonico}
             />
           ))}
         </div>
