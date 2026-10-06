@@ -78,7 +78,7 @@ function Campo({ label, hint, error, children }) {
   )
 }
 
-// Segmented táctil de 2 opciones que envuelve bien en pantallas estrechas.
+// Segmented táctil de varias opciones que envuelve bien en pantallas estrechas.
 function Segmented({ value, onChange, opciones }) {
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -274,6 +274,17 @@ export default function CrearEnvio() {
     && envio?.envio != null && (asigModo === 'auto' || socioSel)
   const sinRiders = onlineCount === 0
 
+  // Qué le falta al formulario, dicho en claro bajo el botón (antes se quedaba gris
+  // sin explicar nada y el restaurante no sabía qué tocar).
+  const faltan = []
+  if (!telValido) faltan.push(telefono.trim() ? 'un teléfono válido (9 cifras)' : 'el teléfono')
+  if (!direccion.trim()) faltan.push('la dirección')
+  else if (!coords) faltan.push('tocar la dirección en la lista para situarla')
+  else if (envio?.error) faltan.push('una dirección dentro de tu zona de reparto')
+  else if (envio?.envio == null && !envioLoading) faltan.push('calcular el envío (vuelve a elegir la dirección)')
+  if (!importeValido) faltan.push(String(importe).trim() ? 'un importe entre 0,50 y 500 €' : 'el importe de la comida')
+  if (asigModo === 'socio' && !socioSel) faltan.push('elegir el repartidor')
+
   // ── Crear el envío ──
   async function crearEnvio() {
     if (!formValido || creando) return
@@ -383,7 +394,8 @@ export default function CrearEnvio() {
             {fmtEur(resultado.pedido?.subtotal || 0)} comida + {fmtEur(resultado.pedido?.coste_envio || 0)} envío
             <br />
             <b style={{ color: colors.ink, fontSize: 16 }}>{fmtEur(resultado.pedido?.total || 0)}</b>
-            {metodoCobro === 'efectivo' ? ' · cobra el repartidor' : ' · ya pagado'}
+            {metodoCobro === 'efectivo' ? ' · cobra el repartidor en efectivo'
+              : metodoCobro === 'datafono' ? ' · cobra el repartidor con tarjeta' : ' · ya pagado'}
           </div>
 
           {asig?.ok ? (
@@ -519,7 +531,7 @@ export default function CrearEnvio() {
       <Seccion Icon={MapPin} titulo="Entrega">
         <Campo
           label="Dirección"
-          hint={!direccion && !clienteConocido ? 'Empieza a escribir y elige la dirección exacta de Google' : null}
+          hint={!direccion && !clienteConocido ? 'Escribe calle, número y municipio, y toca la dirección en la lista' : null}
           error={envio?.error || null}
         >
           <AddressInput
@@ -531,6 +543,7 @@ export default function CrearEnvio() {
             }}
             placeholder="Calle, número, municipio…"
             style={inputBase}
+            cerca={restaurante?.latitud != null ? { lat: restaurante.latitud, lng: restaurante.longitud } : null}
           />
           {envioLoading && <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 6 }}>Calculando envío…</div>}
           {envio?.envio != null && (
@@ -545,7 +558,7 @@ export default function CrearEnvio() {
           )}
           {direccion && !coords && !envioLoading && !envio && (
             <div style={{ fontSize: type.xxs, color: '#8B6126', marginTop: 6 }}>
-              Elige la dirección en el desplegable de Google para fijar el punto exacto
+              Toca la dirección en la lista (o «Buscar esta dirección») para situarla en el mapa
             </div>
           )}
         </Campo>
@@ -569,14 +582,17 @@ export default function CrearEnvio() {
         <Campo
           label="Cobro"
           hint={metodoCobro === 'efectivo'
-            ? 'El repartidor cobra el total (comida + envío) al entregar.'
-            : 'El cliente ya te pagó (bizum, en el local…). El repartidor solo entrega.'}
+            ? 'El repartidor cobra el total (comida + envío) en efectivo al entregar.'
+            : metodoCobro === 'datafono'
+              ? 'El repartidor cobra el total con tarjeta en la puerta. El dinero entra en Pidoo y te llega con la liquidación del lunes.'
+              : 'El cliente ya te pagó (bizum, en el local…). El repartidor solo entrega.'}
         >
           <Segmented
             value={metodoCobro}
             onChange={setMetodoCobro}
             opciones={[
               { id: 'efectivo', label: 'Efectivo' },
+              { id: 'datafono', label: 'Datáfono' },
               { id: 'pagado_local', label: 'Ya pagado' },
             ]}
           />
@@ -679,7 +695,9 @@ export default function CrearEnvio() {
           <div style={{ fontSize: type.xxs, color: colors.stone, marginTop: 2, lineHeight: 1.5 }}>
             {metodoCobro === 'efectivo'
               ? `El repartidor cobrará ${fmtEur(totalPedido)} al cliente.`
-              : 'El repartidor no cobra nada al cliente.'}
+              : metodoCobro === 'datafono'
+                ? `El repartidor cobrará ${fmtEur(totalPedido)} con tarjeta al cliente.`
+                : 'El repartidor no cobra nada al cliente.'}
             {textoCostePidoo ? ` ${textoCostePidoo}` : ''}
           </div>
         </div>
@@ -698,6 +716,11 @@ export default function CrearEnvio() {
         <Bike size={18} strokeWidth={2.2} />
         {creando ? 'Creando envío…' : sinRiders ? 'Sin repartidores en línea' : 'Crear envío'}
       </button>
+      {!creando && !sinRiders && faltan.length > 0 && (
+        <div style={{ fontSize: type.xs, color: '#8B6126', textAlign: 'center', marginTop: -4, lineHeight: 1.5 }}>
+          Falta {faltan.length === 1 ? faltan[0] : `${faltan.slice(0, -1).join(', ')} y ${faltan[faltan.length - 1]}`}.
+        </div>
+      )}
     </div>
   )
 }

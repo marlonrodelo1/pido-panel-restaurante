@@ -753,11 +753,13 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             }}
             placeholder="Calle, número, municipio…"
             style={inputOscuro}
+            oscuro
+            cerca={restaurante?.latitud != null ? { lat: restaurante.latitud, lng: restaurante.longitud } : null}
           />
           <div style={{ ...aviso, color: coords ? T.ok : T.muted }}>
             {coords
               ? <><Check size={14} /> Situada en el mapa · el envío lo calcula Pidoo al crear</>
-              : 'Elige una de las sugerencias de Google para situarla en el mapa'}
+              : 'Toca la dirección en la lista (o «Buscar esta dirección») para situarla en el mapa'}
           </div>
         </div>
       )}
