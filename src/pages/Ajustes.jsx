@@ -441,7 +441,16 @@ export default function Ajustes() {
       } catch (e) { console.warn('Geocoding failed:', e) }
     }
 
-    await updateRestaurante(updates)
+    // Si el servidor rechaza el guardado (p. ej. PD334 al apagar la tarjeta, o
+    // dejar el restaurante sin ninguna forma de cobro) no se sigue ni se dice «Guardado».
+    const { error: errGuardar } = (await updateRestaurante(updates)) || {}
+    if (errGuardar) {
+      setGuardando(false)
+      toast(errGuardar.code === '23514'
+        ? 'Tienes que dejar al menos una forma de pago activa.'
+        : (errGuardar.message || 'No se ha podido guardar. Inténtalo de nuevo.'))
+      return
+    }
     setHorarioOriginal(JSON.stringify(horario ?? null))
     // Config de reparto (algoritmo + tarifa por distancia) — guardado unificado.
     // En modo 'distancia' se fuerza override_activo para que calcular_envio use estos valores.
@@ -762,25 +771,47 @@ export default function Ajustes() {
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Métodos de pago</h3>
         <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14 }}>
-          Elige qué métodos puede usar el cliente al pagar. Solo se mostrarán los activos.
+          El pago con tarjeta en la app está siempre activo. El efectivo y el datáfono son
+          opcionales: si los activas, el cobro al cliente corre de tu cuenta.
         </div>
+        {/* La tarjeta en la app no se puede apagar (regla de Pidoo, trigger
+            trg_tarjeta_app_siempre_activa / PD334). Los restaurantes antiguos que la
+            tenían apagada ven el interruptor solo para poder encenderla. */}
+        {restaurante?.acepta_tarjeta_online !== false ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: '1px solid var(--c-border)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-text)' }}>Pago con tarjeta en la app</div>
+              <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 2, lineHeight: 1.4 }}>
+                El cliente paga al hacer el pedido y Pidoo te lo transfiere el lunes, descontada su comisión.
+                Es la forma más segura: el pedido ya está pagado antes de salir de tu cocina.
+              </div>
+            </div>
+            <span style={{
+              flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+              background: 'rgba(139,157,122,0.18)', color: '#5E6E50',
+            }}>
+              Siempre activo
+            </span>
+          </div>
+        ) : (
+          <PayToggle
+            label="Pago con tarjeta en la app"
+            sub="El cliente paga al hacer el pedido y Pidoo te lo transfiere el lunes, descontada su comisión. Una vez activado ya no se puede desactivar."
+            value={aceptaTarjetaOnline}
+            onChange={setAceptaTarjetaOnline}
+          />
+        )}
         <PayToggle
-          label="Pago en efectivo"
-          sub="El rider cobra el total al cliente al entregar. Pidoo retiene su 10% del subtotal igual que en tarjeta (se ajusta en la liquidación semanal)."
-          value={aceptaEfectivo}
-          onChange={setAceptaEfectivo}
-        />
-        <PayToggle
-          label="Datáfono"
-          sub="El cliente paga con tarjeta en mano: el repartidor lleva el TPV a la puerta, o lo cobras tú en el local si viene a recoger. El dinero no pasa por Pidoo, así que se liquida igual que el efectivo. Actívalo solo si de verdad hay un datáfono."
+          label="Datáfono (tarjeta al entregar)"
+          sub="El cliente paga con tarjeta al recibir el pedido. En reparto lo cobra el repartidor con su móvil y el dinero entra en Pidoo, que te lo transfiere el lunes; en recogida lo cobras tú. Si el cliente no aparece o no paga, la responsabilidad es tuya, no de Pidoo."
           value={aceptaDatafono}
           onChange={setAceptaDatafono}
         />
         <PayToggle
-          label="Pago online (tarjeta)"
-          sub="Cobro inmediato con Stripe en el checkout. Pidoo retiene 10% del subtotal."
-          value={aceptaTarjetaOnline}
-          onChange={setAceptaTarjetaOnline}
+          label="Efectivo"
+          sub="El repartidor cobra en la puerta (o tú en el local si es recogida). La comisión de Pidoo se ajusta en la liquidación de los lunes. Si el cliente no aparece o no paga, la responsabilidad es tuya, no de Pidoo."
+          value={aceptaEfectivo}
+          onChange={setAceptaEfectivo}
         />
         {!aceptaEfectivo && !aceptaTarjetaOnline && !aceptaDatafono && (
           <div style={{
