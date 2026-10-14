@@ -809,7 +809,7 @@ export function generarInformeDiaTpv(resumen, restaurante) {
 function nombreVia(clave) {
   return ({
     tpv: 'Mostrador', telefonico: 'Telefono', pido: 'App Pidoo',
-    tienda_publica: 'Web del local', mesa: 'Mesa (QR)',
+    tienda_publica: 'Web del local', mesa: 'Mesa (QR)', kiosko: 'Kiosko',
   })[clave] || clave
 }
 

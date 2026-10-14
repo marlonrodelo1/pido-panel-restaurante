@@ -55,6 +55,45 @@ async function imprimirPedidoAceptadoSolo(p, restaurante) {
   }
 }
 
+// ── KIOSKO (14 oct 2026): la comanda sale en cuanto el cliente confirma ─────────
+//
+// `kiosko-pedido` crea el pedido ya en 'preparando' (es interno del local, nadie lo
+// acepta), así que no pasa por el camino de 'nuevo' de abajo. Y la pantalla de
+// Pedidos, que es la que imprime los de mesa, en el TPV casi nunca está montada:
+// por eso se imprime AQUÍ, que vive por encima del router y siempre escucha.
+//
+// 🔴 Las líneas se insertan en una segunda llamada, DESPUÉS del pedido: el INSERT
+// puede llegar por realtime antes que ellas. Se reintenta unos segundos; una
+// comanda sin platos no sirve para nada en la plancha.
+//
+// La reserva de `ticketsImpresos` es la misma que usa Pedidos para la mesa: si las
+// dos pantallas ven el INSERT, solo una saca papel.
+async function imprimirPedidoKiosko(p, restaurante) {
+  if (!reservarImpresion(p.id)) return
+  try {
+    let items = []
+    for (let intento = 0; intento < 6 && !items.length; intento++) {
+      if (intento) await new Promise((r) => setTimeout(r, 700))
+      const { data } = await supabase.from('pedido_items').select('*').eq('pedido_id', p.id)
+      items = data || []
+    }
+    if (!items.length) {
+      soltarImpresion(p.id)
+      toast(`El pedido ${p.codigo || ''} del kiosko llegó sin productos: revísalo en Pedidos`, 'error')
+      return
+    }
+    const destinoDe = await crearDestinoDe(p.establecimiento_id)
+    const r = await imprimirPedido(p, items, restaurante, destinoDe)
+    if (!r?.cocina) {
+      soltarImpresion(p.id)
+      toast(`La comanda del kiosko ${p.codigo || ''} no ha salido por la impresora`, 'error')
+    }
+  } catch {
+    soltarImpresion(p.id)
+    toast('No se pudo imprimir un pedido del kiosko', 'error')
+  }
+}
+
 export function PedidoAlertProvider({ children, onNuevoPedido }) {
   const { restaurante } = useRest()
   const [pedidosNuevos, setPedidosNuevos] = useState([])
@@ -105,6 +144,13 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         filter: `establecimiento_id=eq.${restaurante.id}`,
       }, payload => {
         if (payload.new.canal !== 'pido') return
+        // Kiosko: nace en cocina. Suena el aviso corto (no la alarma, que no se calla
+        // hasta que alguien acepta y aquí no hay nada que aceptar) y sale la comanda.
+        if (payload.new.kiosko && payload.new.origen_pedido === 'mesa') {
+          if (esApp) notificarNuevoPedido(payload.new.codigo)
+          if (hayImpresoraNativa) imprimirPedidoKiosko(payload.new, restaurante)
+          return
+        }
         // Solo pedidos PAGADOS (estado 'nuevo'). Un pedido con tarjeta se inserta
         // primero como 'pendiente_pago' y NO debe avisar al restaurante ni sonar
         // la alarma hasta que el pago se confirme (pasa a 'nuevo' vía UPDATE).

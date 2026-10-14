@@ -158,7 +158,7 @@ export default function TpvPedidos({
     if (desde.getHours() < 5) desde.setDate(desde.getDate() - 1)
     desde.setHours(5, 0, 0, 0)
 
-    const campos = 'id, codigo, estado, modo_entrega, origen_pedido, total, created_at, guest_nombre, metodo_pago'
+    const campos = 'id, codigo, estado, modo_entrega, origen_pedido, total, created_at, guest_nombre, metodo_pago, kiosko'
     // 🔴 En DOS consultas: lo EN CURSO entero y lo cerrado del día con tope.
     // Antes iba todo junto con `limit(120)` aplicado DESPUÉS de ordenar por
     // fecha: en un viernes de 130 pedidos, un 'preparando' de mediodía caía
@@ -691,7 +691,10 @@ function Listado({ pedidos, onClick, apagado, esMonitor = false }) {
           }}>
             <Icono size={16} color={T.accent} />
             <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: T.text }}>{p.codigo}</span>
+              <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: T.text }}>
+                {p.codigo}
+                {p.kiosko && <MarcaKiosko nombre={p.guest_nombre} />}
+              </span>
               <span style={{ display: 'block', fontSize: 12, color: T.muted }}>
                 {ETIQUETA_ESTADO[p.estado] || p.estado} · {hora(p.created_at)}
                 {pendienteDeCobro(p) && (
@@ -724,6 +727,9 @@ function Tarjeta({ p, onClick, activa = false, apagado = false }) {
         <span style={{ fontSize: 13, fontWeight: 600 }}>{p.codigo}</span>
         <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700 }}>{eur(cents(p.total))}</span>
       </div>
+      {p.kiosko && (
+        <div style={{ marginTop: 4 }}><MarcaKiosko nombre={p.guest_nombre} /></div>
+      )}
       <div style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>
         {hora(p.created_at)}
         {/* Un pedido que hay que cobrar y uno ya pagado se pintaban IGUAL. */}
@@ -736,6 +742,20 @@ function Tarjeta({ p, onClick, activa = false, apagado = false }) {
 }
 
 const hora = (iso) => new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+
+// Pedido hecho en el KIOSKO del local: va como recogida (para llevar) y se cobra en
+// caja. La chapa lleva el nombre porque es por lo que se llama al cliente.
+function MarcaKiosko({ nombre }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6,
+      padding: '1px 6px', borderRadius: 5, background: T.border, color: T.accent,
+      fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', verticalAlign: 'middle',
+    }}>
+      KIOSKO{nombre ? <span style={{ color: T.text, letterSpacing: 0 }}>· {nombre}</span> : null}
+    </span>
+  )
+}
 
 // ── Piezas de la pantalla de escritorio ─────────────────────────────────────
 
@@ -982,6 +1002,7 @@ function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvCon
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icono size={18} color={T.accent} />
             <span style={{ fontSize: 19, fontWeight: 800, color: T.text }}>{p.codigo}</span>
+            {p.kiosko && <MarcaKiosko nombre={p.guest_nombre} />}
           </div>
           <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
             {ETIQUETA_ESTADO[p.estado] || p.estado} · {hora(p.created_at)}

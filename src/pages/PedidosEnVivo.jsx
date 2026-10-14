@@ -350,6 +350,12 @@ export default function PedidosEnVivo() {
         setItemsMap(prev => ({ ...prev, [p.id]: lineas }))
         setActivos(prev => (prev.some(x => x.id === p.id) ? prev : [p, ...prev]))
 
+        // Los del KIOSKO también son de mesa, pero su comanda la saca
+        // `PedidoAlertContext`, que espera a que lleguen las líneas. Si se
+        // reservara aquí con la lista aún vacía, saldría un papel sin platos y
+        // la reserva impediría sacar el bueno.
+        if (p.kiosko) return
+
         if (hayImpresoraNativa) {
           notificarNuevoPedido(p.codigo)
           // La impresora vive en la red local del bar: solo la alcanza la

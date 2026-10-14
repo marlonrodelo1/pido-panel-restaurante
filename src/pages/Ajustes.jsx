@@ -12,6 +12,7 @@ import SuscripcionCard from '../components/SuscripcionCard'
 import TpvConfigCard from '../components/TpvConfigCard'
 import AutoAceptarCard from '../components/AutoAceptarCard'
 import StockConfigCard from '../components/StockConfigCard'
+import KioskoConfigCard from '../components/KioskoConfigCard'
 
 export default function Ajustes() {
   const { restaurante, updateRestaurante, logout } = useRest()
@@ -666,6 +667,9 @@ export default function Ajustes() {
 
         {/* Almacen: solo se pinta si Pidoo le ha dado de alta el modulo */}
         <StockConfigCard />
+
+        {/* Kiosko de autopedido: idem, solo con el modulo dado de alta */}
+        <KioskoConfigCard />
       </div>
 
       {/* ── URL pública de la tienda (gratis para todos los restaurantes) ── */}

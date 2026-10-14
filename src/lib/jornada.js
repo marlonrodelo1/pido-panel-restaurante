@@ -47,7 +47,13 @@ export const VIAS = {
   pido: 'App Pidoo',
   tienda_publica: 'Web del local',
   mesa: 'Mesa (QR)',
+  // El kiosko entra en la BD como origen 'mesa' con la marca `kiosko` (misma economía
+  // que la mesa). Aquí se le da nombre propio con `viaDe`, igual que en la caja.
+  kiosko: 'Kiosko',
 }
+
+// La puerta de un pedido tal como se cuenta en los informes.
+export const viaDe = (p) => (p?.kiosko ? 'kiosko' : p?.origen_pedido)
 
 // Como se llama cada forma de pago en pantalla y en el papel.
 export const PAGOS = {
@@ -93,7 +99,7 @@ export async function resumenJornada(establecimientoId, desde = inicioJornada())
   const { data, error } = await supabase.from('pedidos')
     // `modo_entrega` hace falta para el cruce: sin él, un reparto a domicilio se
     // contaría como recogida y el desglose mentiría en la mitad de las líneas.
-    .select('total, subtotal, coste_envio, propina, metodo_pago, origen_pedido, modo_entrega')
+    .select('total, subtotal, coste_envio, propina, metodo_pago, origen_pedido, modo_entrega, kiosko')
     .eq('establecimiento_id', establecimientoId)
     .eq('estado', 'entregado')
     .is('reembolsado_at', null)
@@ -108,7 +114,7 @@ export async function resumenJornada(establecimientoId, desde = inicioJornada())
 
   const porVia = {}
   for (const clave of Object.keys(VIAS)) {
-    const suyas = filas.filter((p) => p.origen_pedido === clave)
+    const suyas = filas.filter((p) => viaDe(p) === clave)
     if (suyas.length) {
       porVia[clave] = {
         etiqueta: VIAS[clave],
@@ -124,10 +130,11 @@ export async function resumenJornada(establecimientoId, desde = inicioJornada())
   const cruce = new Map()
   for (const p of filas) {
     const modo = p.modo_entrega === 'delivery' ? 'delivery' : 'recogida'
-    const k = `${p.origen_pedido}|${modo}|${p.metodo_pago}`
+    const via = viaDe(p)
+    const k = `${via}|${modo}|${p.metodo_pago}`
     const prev = cruce.get(k)
     if (prev) { prev.pedidos += 1; prev.total += Number(p.total || 0) }
-    else cruce.set(k, { origen: p.origen_pedido, modo, pago: p.metodo_pago, pedidos: 1, total: Number(p.total || 0) })
+    else cruce.set(k, { origen: via, modo, pago: p.metodo_pago, pedidos: 1, total: Number(p.total || 0) })
   }
   const desglose = [...cruce.values()].sort((a, b) =>
     (a.origen + a.modo + a.pago).localeCompare(b.origen + b.modo + b.pago))
