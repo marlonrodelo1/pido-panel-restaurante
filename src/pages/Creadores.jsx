@@ -36,15 +36,16 @@ const ESTADOS = {
   pendiente_validacion: { label: 'Por revisar', bg: colors.warningSoft,    color: colors.warning },
 }
 
-// Plazo de cortesía. Si el dueño no revisa un vídeo de mesa, entra solo: la
-// pantalla no existe en la app del panel (solo en el navegador), así que si
-// dependiera de él, el cliente que grabó en la mesa se quedaría esperando por
-// algo que no depende de él. Cuadra con `creadores_autoaprobar_mesa`.
-const HORAS_CORTESIA = 72
+// Plazo de cortesía. Si el dueño no revisa, entra solo: la pantalla no existe en
+// la app del panel (solo en el navegador), así que si dependiera de él, el
+// cliente se quedaría esperando por algo que no depende de él. Cuadra con
+// `creadores_autoaprobar_pendientes` (cron cada hora): 48 h las HISTORIAS, que a
+// las 24 h ya no existen, y 72 h los vídeos de mesa.
+const horasCortesia = (p) => (p.formato === 'historia' ? 48 : 72)
 
-function horasPara(creado) {
-  const pasadas = (Date.now() - new Date(creado).getTime()) / 3600000
-  return Math.max(0, Math.ceil(HORAS_CORTESIA - pasadas))
+function horasPara(p) {
+  const pasadas = (Date.now() - new Date(p.created_at).getTime()) / 3600000
+  return Math.max(0, Math.ceil(horasCortesia(p) - pasadas))
 }
 
 const TIPOS = [
@@ -62,6 +63,8 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('es-ES')
 function traducirError(err) {
   const m = err?.message || ''
   if (m.includes('PD130') || m.includes('lo activa Pidoo')) return 'El programa lo activa Pidoo. Tú puedes pausarlo y reanudarlo.'
+  if (m.includes('PD174')) return 'Si es de historias o de vídeos lo decide Pidoo.'
+  if (m.includes('PD162')) return 'El nombre del premio dice una cifra distinta del importe. Pon la misma, o quita la cifra del texto.'
   if (m.includes('coste de este premio')) return m
   if (m.includes('choca con el nivel')) return m
   if (m.includes('no es de este restaurante')) return 'Ese producto no es de tu carta.'
@@ -74,6 +77,7 @@ export default function Creadores() {
   const { restaurante } = useRest()
   const [cfg, setCfg] = useState(null)
   const [escalera, setEscalera] = useState([])
+  const [premioHistoria, setPremioHistoria] = useState(null)
   const [parts, setParts] = useState([])
   const [productos, setProductos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -86,16 +90,21 @@ export default function Creadores() {
 
   const cargar = useCallback(async () => {
     if (!estId) return
-    const [c, e, p, pr] = await Promise.all([
+    const [c, e, p, pr, h] = await Promise.all([
       supabase.from('creadores_config').select('*').eq('establecimiento_id', estId).maybeSingle(),
       supabase.from('escalera_premios').select('*').eq('establecimiento_id', estId).order('nivel'),
+      // `usuarios!..._usuario_id_fkey` y no `usuarios(nombre)`: la tabla apunta a
+      // `usuarios` dos veces (`usuario_id` y `validado_por`) y el embed a secas
+      // es ambiguo.
       supabase.from('participaciones_creador')
-        .select('id, estado, origen, red, share_url, usuario_red, views_actual, nivel_alcanzado, created_at, motivo_rechazo, validado_at, validado_por, usuario_id, usuarios(nombre)')
+        .select('id, estado, origen, formato, red, share_url, usuario_red, views_actual, nivel_alcanzado, created_at, motivo_rechazo, validado_at, validado_por, usuario_id, usuarios!participaciones_creador_usuario_id_fkey(nombre)')
         .eq('establecimiento_id', estId).order('created_at', { ascending: false }).limit(120),
       supabase.from('productos').select('id, nombre, precio').eq('establecimiento_id', estId).eq('disponible', true).order('nombre'),
+      supabase.from('creadores_premio_historia').select('*').eq('establecimiento_id', estId).maybeSingle(),
     ])
     setCfg(c.data || null)
     setEscalera(e.data || [])
+    setPremioHistoria(h.data || null)
     setParts(p.data || [])
     setProductos(pr.data || [])
     setTopeInput(c.data?.tope_mensual_euros != null ? String(c.data.tope_mensual_euros) : '')
@@ -179,8 +188,35 @@ export default function Creadores() {
     await guardarEscalera(escalera.filter(e => e.id !== id), 'Premio eliminado')
   }
 
+  // El premio de las HISTORIAS: uno solo, fijo. Va por su propio RPC, que pasa
+  // por las mismas reglas que la escalera (PD131 coste, PD133 producto, PD162
+  // texto que no promete otra cifra).
+  async function guardarPremioHistoria() {
+    const f = form
+    if (!f.descripcion?.trim()) return toast('Ponle un nombre al premio, es lo que verá el cliente')
+    setBusy(true)
+    const { error } = await supabase.rpc('creadores_guardar_premio_historia', {
+      p_establecimiento_id: estId,
+      p_premio: {
+        tipo_premio: f.tipo_premio,
+        valor: (f.tipo_premio === 'descuento_fijo' || f.tipo_premio === 'porcentaje') ? Number(f.valor) : null,
+        producto_id: f.tipo_premio === 'producto_gratis' ? (f.producto_id || null) : null,
+        descripcion: f.descripcion.trim(),
+        coste_estimado: Number(f.coste_estimado),
+        activo: true,
+      },
+    })
+    setBusy(false)
+    if (error) return toast(traducirError(error))
+    toast('Premio guardado', 'success')
+    setForm(null)
+    cargar()
+  }
+
   async function rechazar(p) {
-    const motivo = window.prompt('¿Por qué rechazas este vídeo? (lo verá Pidoo)')
+    const motivo = window.prompt(p.formato === 'historia'
+      ? `¿Por qué la rechazas? (lo verá el cliente)\n\nPor ejemplo: "No me ha llegado la mención de @${p.usuario_red}".`
+      : '¿Por qué rechazas este vídeo? (lo verá Pidoo)')
     if (motivo === null) return
     if (motivo.trim().length < 3) return toast('Explica un poco el motivo')
     setBusy(true)
@@ -189,7 +225,7 @@ export default function Creadores() {
     })
     setBusy(false)
     if (error) return toast(traducirError(error))
-    toast('Vídeo rechazado', 'success')
+    toast(p.formato === 'historia' ? 'Historia rechazada' : 'Vídeo rechazado', 'success')
     cargar()
   }
 
@@ -201,13 +237,19 @@ export default function Creadores() {
   // Al aceptar, el servidor entrega el premio EN EL ACTO si ya tiene
   // visualizaciones suficientes: mientras esperaba, el contador seguía subiendo
   // pero no podía ganar nada.
+  // En una HISTORIA, aceptar = premiar: el servidor emite el cupón en el acto.
   async function validar(p) {
-    if (!await confirmar('¿Aceptas este vídeo? Empezará a contar visualizaciones y podrá ganar premio.')) return
+    const historia = p.formato === 'historia'
+    if (!await confirmar(historia
+      ? `¿Te ha llegado la mención de @${p.usuario_red}? Al aceptarla, el cliente recibe su premio ahora mismo.`
+      : '¿Aceptas este vídeo? Empezará a contar visualizaciones y podrá ganar premio.')) return
     setBusy(true)
-    const { error } = await supabase.rpc('validar_participacion_creador', { p_participacion_id: p.id })
+    const { data, error } = await supabase.rpc('validar_participacion_creador', { p_participacion_id: p.id })
     setBusy(false)
     if (error) return toast(traducirError(error))
-    toast('Vídeo aceptado', 'success')
+    const r = data?.premio?.resultado
+    if (historia && r === 'en_espera_tope') toast('Aceptada. Has llegado a tu límite del mes: el premio le llegará el mes que viene.', 'success')
+    else toast(historia ? 'Historia aceptada. El cliente ya tiene su premio.' : 'Vídeo aceptado', 'success')
     cargar()
   }
 
@@ -218,17 +260,17 @@ export default function Creadores() {
   if (!cfg?.programa_activo) {
     return (
       <div style={{ maxWidth: 620 }}>
-        <Cabecera />
+        <Cabecera historia />
         <div style={{ ...ds.card, marginTop: 16, padding: 22 }}>
           <div style={{ fontSize: type.base, fontWeight: 700, color: colors.ink, marginBottom: 8 }}>
             Todavía no lo tienes activado
           </div>
           <p style={{ fontSize: type.sm, color: colors.stone, lineHeight: 1.6, marginTop: 0 }}>
-            Pidoo Creadores convierte a tus clientes en quienes te hacen publicidad: graban un
-            vídeo de su pedido en TikTok o Instagram y, según las visualizaciones que consigan,
-            se llevan un descuento para su <strong>siguiente pedido en tu restaurante</strong>.
-            No es un código que tengas que canjear en el mostrador: el descuento se aplica solo
-            dentro de la app, así que a ti no te da ningún trabajo.
+            Pidoo Creadores convierte a tus clientes en quienes te hacen publicidad: suben una
+            historia de Instagram con su pedido, te etiquetan, y se llevan un descuento para su{' '}
+            <strong>siguiente pedido en tu restaurante</strong>. Tú solo confirmas que te ha
+            llegado la mención. No es un código que tengas que canjear en el mostrador: el
+            descuento se aplica solo dentro de la app.
           </p>
           <p style={{ fontSize: type.sm, color: colors.stone, lineHeight: 1.6 }}>
             Va incluido en tu alta, sin cuota. Tú decides los premios, lo que estás dispuesto a
@@ -247,6 +289,10 @@ export default function Creadores() {
   }
 
   const pausado = !!cfg.pausado_por_restaurante
+  // Desde el 15 oct 2026 los programas son de HISTORIAS: premio fijo, y el dueño
+  // confirma cada una al ver la mención en su Instagram. El formato lo decide
+  // Pidoo (PD174); aquí solo cambia lo que se enseña.
+  const historia = cfg.formato === 'historia'
   const gasto = Number(cfg.gasto_mes_actual || 0)
   const tope = cfg.tope_mensual_euros != null ? Number(cfg.tope_mensual_euros) : null
   const enJuego = parts.filter(p => p.estado === 'activa' || p.estado === 'en_espera_tope')
@@ -259,7 +305,7 @@ export default function Creadores() {
 
   return (
     <div>
-      <Cabecera />
+      <Cabecera historia={historia} />
 
       {/* Pausa */}
       <div style={{
@@ -272,9 +318,13 @@ export default function Creadores() {
             {pausado ? 'Pausado' : 'Funcionando'}
           </div>
           <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 2 }}>
-            {pausado
-              ? 'No entran vídeos nuevos. Los que ya están en juego siguen contando.'
-              : 'Tus clientes pueden registrar vídeos de sus pedidos.'}
+            {historia
+              ? (pausado
+                  ? 'No entran historias nuevas. Las que ya te han enviado puedes seguir revisándolas.'
+                  : 'Tus clientes pueden apuntar historias de sus pedidos.')
+              : (pausado
+                  ? 'No entran vídeos nuevos. Los que ya están en juego siguen contando.'
+                  : 'Tus clientes pueden registrar vídeos de sus pedidos.')}
           </div>
         </div>
         <button onClick={togglePausa} disabled={busy} aria-pressed={!pausado} style={{
@@ -292,8 +342,17 @@ export default function Creadores() {
 
       {/* Resumen del mes */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 14 }}>
-        <Stat label="Vídeos en juego" value={fmtNum(enJuego.length)} />
-        <Stat label="Alcance total" value={fmtNum(alcance)} sub="visualizaciones" />
+        {historia ? (
+          <>
+            <Stat label="Por revisar" value={fmtNum(porRevisar.length)} alerta={porRevisar.length > 0} />
+            <Stat label="Historias" value={fmtNum(parts.length)} sub="en total" />
+          </>
+        ) : (
+          <>
+            <Stat label="Vídeos en juego" value={fmtNum(enJuego.length)} />
+            <Stat label="Alcance total" value={fmtNum(alcance)} sub="visualizaciones" />
+          </>
+        )}
         <Stat label="Premios dados" value={fmtNum(premiadas.length)} />
         <Stat label="Gasto este mes" value={fmtEur(gasto)} sub={tope != null ? `de ${fmtEur(tope)}` : 'sin tope'}
               alerta={tope != null && gasto >= tope} />
@@ -318,11 +377,10 @@ export default function Creadores() {
             id: 'videos',
             // El contador de pendientes va en la pestaña, no dentro: si hay que
             // entrar para enterarse de que hay algo que hacer, no se entera nadie.
-            label: porRevisar.length
-              ? `Vídeos (${parts.length}) · ${porRevisar.length} por revisar`
-              : `Vídeos (${parts.length})`,
+            label: `${historia ? 'Historias' : 'Vídeos'} (${parts.length})`
+              + (porRevisar.length ? ` · ${porRevisar.length} por revisar` : ''),
           },
-          { id: 'premios', label: `Premios (${escalera.length})` },
+          { id: 'premios', label: historia ? 'Premio' : `Premios (${escalera.length})` },
           { id: 'ajustes', label: 'Límite de gasto' },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -348,21 +406,32 @@ export default function Creadores() {
               borderColor: colors.warning, background: colors.warningSoft,
             }}>
               <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>
-                {porRevisar.length === 1
-                  ? 'Tienes 1 vídeo por revisar'
-                  : `Tienes ${porRevisar.length} vídeos por revisar`}
+                {historia
+                  ? (porRevisar.length === 1 ? 'Tienes 1 historia por revisar' : `Tienes ${porRevisar.length} historias por revisar`)
+                  : (porRevisar.length === 1 ? 'Tienes 1 vídeo por revisar' : `Tienes ${porRevisar.length} vídeos por revisar`)}
               </div>
-              <div style={{ fontSize: type.xs, color: colors.stone, lineHeight: 1.55, marginTop: 4 }}>
-                Son vídeos grabados <strong>en tu local</strong>, sin un pedido de Pidoo detrás:
-                solo tú puedes decir si esa persona estuvo ahí. Mientras no los aceptes
-                <strong> no pueden ganar ningún premio</strong>. Si no dices nada en {HORAS_CORTESIA} horas,
-                entran solos, y aun así podrás rechazarlos mientras no tengan premio.
-              </div>
+              {historia ? (
+                <div style={{ fontSize: type.xs, color: colors.stone, lineHeight: 1.55, marginTop: 4 }}>
+                  Mira en tu Instagram (notificaciones o mensajes) si te ha llegado la mención
+                  de ese <strong>@</strong>. Si está, acéptala y el cliente recibe su premio en el acto.
+                  Si no está, recházala. <strong>Hazlo en el día</strong>: la historia desaparece a las
+                  24 horas. Si no dices nada en 48 horas, se acepta sola.
+                </div>
+              ) : (
+                <div style={{ fontSize: type.xs, color: colors.stone, lineHeight: 1.55, marginTop: 4 }}>
+                  Son vídeos grabados <strong>en tu local</strong>, sin un pedido de Pidoo detrás:
+                  solo tú puedes decir si esa persona estuvo ahí. Mientras no los aceptes
+                  <strong> no pueden ganar ningún premio</strong>. Si no dices nada en 72 horas,
+                  entran solos, y aun así podrás rechazarlos mientras no tengan premio.
+                </div>
+              )}
             </div>
           )}
 
           {parts.length === 0 ? (
-            <Vacio texto="Todavía no ha grabado nadie. En cuanto un cliente registre un vídeo de un pedido tuyo, aparecerá aquí." />
+            <Vacio texto={historia
+              ? 'Todavía no te ha enviado nadie una historia. En cuanto un cliente la apunte, aparecerá aquí para que la confirmes.'
+              : 'Todavía no ha grabado nadie. En cuanto un cliente registre un vídeo de un pedido tuyo, aparecerá aquí.'} />
           ) : partsOrdenadas.map(p => {
             const e = ESTADOS[p.estado] || ESTADOS.activa
             return (
@@ -373,17 +442,33 @@ export default function Creadores() {
                   <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>
                     {p.usuarios?.nombre || 'Cliente'}
                   </div>
-                  <a href={p.share_url} target="_blank" rel="noopener noreferrer" style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2,
-                    fontSize: type.xs, color: colors.terracotta, textDecoration: 'none', fontWeight: 600,
-                  }}>
-                    Ver el vídeo en {p.red === 'instagram' ? 'Instagram' : 'TikTok'} <ExternalLink size={11} />
-                  </a>
+                  {/* Una historia no tiene enlace propio: se busca por el @ entre
+                      las menciones. El enlace lleva a su perfil, donde está
+                      mientras no pasen 24 h. */}
+                  {/* Los bonos de compensación usan esta tabla con un `share_url`
+                      que no es un enlace (`compensacion-…`): sin enlace que abrir. */}
+                  {/^https?:\/\//.test(p.share_url || '') && (
+                    <a href={p.share_url} target="_blank" rel="noopener noreferrer" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2,
+                      fontSize: type.xs, color: colors.terracotta, textDecoration: 'none', fontWeight: 600,
+                    }}>
+                      {p.formato === 'historia'
+                        ? <>Historia de @{p.usuario_red}</>
+                        : <>Ver el vídeo en {p.red === 'instagram' ? 'Instagram' : 'TikTok'}</>}
+                      <ExternalLink size={11} />
+                    </a>
+                  )}
                 </div>
-                <div style={{ textAlign: 'right', minWidth: 90 }}>
-                  <div style={{ fontSize: type.base, fontWeight: 800, color: colors.ink }}>{fmtNum(p.views_actual)}</div>
-                  <div style={{ fontSize: 10.5, color: colors.stone, textTransform: 'uppercase', letterSpacing: '0.04em' }}>visualizaciones</div>
-                </div>
+                {p.formato === 'historia' ? (
+                  <div style={{ textAlign: 'right', minWidth: 90, fontSize: type.xxs, color: colors.stone }}>
+                    {new Date(p.created_at).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'right', minWidth: 90 }}>
+                    <div style={{ fontSize: type.base, fontWeight: 800, color: colors.ink }}>{fmtNum(p.views_actual)}</div>
+                    <div style={{ fontSize: 10.5, color: colors.stone, textTransform: 'uppercase', letterSpacing: '0.04em' }}>visualizaciones</div>
+                  </div>
+                )}
                 <span style={{ ...ds.badge, background: e.bg, color: e.color, flexShrink: 0 }}>{e.label}</span>
 
                 {/* Un vídeo de mesa NO tiene pedido detrás, y ese es justo el
@@ -408,8 +493,8 @@ export default function Creadores() {
 
                 {p.estado === 'pendiente_validacion' && (
                   <span style={{ fontSize: type.xxs, color: colors.stone, flexBasis: '100%' }}>
-                    {horasPara(p.created_at) > 0
-                      ? `Si no lo revisas, entrará solo dentro de ${horasPara(p.created_at)} h.`
+                    {horasPara(p) > 0
+                      ? `Si no lo revisas, entrará solo dentro de ${horasPara(p)} h.`
                       : 'Entrará solo en la próxima revisión automática.'}
                   </span>
                 )}
@@ -424,7 +509,7 @@ export default function Creadores() {
 
                 {(p.estado === 'activa' || p.estado === 'en_espera_tope') && (
                   <button onClick={() => rechazar(p)} disabled={busy} style={{ ...ds.miniBtnDanger, flexShrink: 0 }}>
-                    No es de mi local
+                    {p.formato === 'historia' ? 'Rechazar' : 'No es de mi local'}
                   </button>
                 )}
                 {p.estado === 'rechazada' && p.motivo_rechazo && (
@@ -438,8 +523,120 @@ export default function Creadores() {
         </div>
       )}
 
-      {/* ── PREMIOS ── */}
-      {tab === 'premios' && (
+      {/* ── PREMIO DE LAS HISTORIAS ── */}
+      {tab === 'premios' && historia && (
+        <div style={{ marginTop: 16, maxWidth: 620 }}>
+          <div style={{
+            padding: '10px 12px', borderRadius: 10, marginBottom: 12,
+            background: colors.cream2, fontSize: type.xs, color: colors.stone, lineHeight: 1.5,
+            display: 'flex', gap: 8,
+          }}>
+            <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              <strong>Este premio lo pagas tú</strong>, y se lo das a cada cliente que suba una
+              historia etiquetándote. El coste que declares es el que cuenta para tu límite del
+              mes, así que ponlo de verdad. Es un descuento para su <strong>siguiente pedido a
+              domicilio</strong> en tu restaurante.
+            </span>
+          </div>
+
+          {!form && (
+            <div style={{ ...ds.card, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                background: colors.terracottaSoft, color: colors.terracotta2,
+                display: 'grid', placeItems: 'center',
+              }}><Video size={16} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink }}>
+                  {premioHistoria?.descripcion || 'Sin premio todavía'}
+                </div>
+                <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 2 }}>
+                  {premioHistoria
+                    ? `Por cada historia aceptada · te cuesta ${fmtEur(premioHistoria.coste_estimado)}`
+                    : 'Ponle un premio o tus clientes no podrán participar.'}
+                </div>
+              </div>
+              <button
+                onClick={() => setForm(premioHistoria
+                  ? { ...premioHistoria }
+                  : { tipo_premio: 'descuento_fijo', valor: 2, descripcion: '2 € de descuento en tu próximo pedido', coste_estimado: 2 })}
+                style={ds.miniBtn}><Pencil size={13} /></button>
+            </div>
+          )}
+
+          {form && (
+            <div style={{ ...ds.card, borderColor: colors.terracotta }}>
+              <div style={{ fontSize: type.sm, fontWeight: 700, color: colors.ink, marginBottom: 12 }}>
+                Premio por cada historia
+              </div>
+
+              <label style={ds.label}>Tipo de premio</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))', gap: 8, marginBottom: 12 }}>
+                {TIPOS.map(t => (
+                  <button key={t.id} onClick={() => setForm(f => ({ ...f, tipo_premio: t.id, valor: t.id === 'porcentaje' ? 10 : 2 }))}
+                    style={{
+                      padding: '9px 10px', borderRadius: 10, textAlign: 'left', cursor: 'pointer',
+                      border: `1.5px solid ${form.tipo_premio === t.id ? colors.terracotta : colors.border}`,
+                      background: form.tipo_premio === t.id ? colors.terracottaSoft : colors.paper,
+                      fontFamily: 'inherit',
+                    }}>
+                    <div style={{ fontSize: type.xs, fontWeight: 700, color: colors.ink }}>{t.label}</div>
+                    <div style={{ fontSize: 10.5, color: colors.stone, marginTop: 1 }}>{t.ayuda}</div>
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 10 }}>
+                {(form.tipo_premio === 'descuento_fijo' || form.tipo_premio === 'porcentaje') && (
+                  <div>
+                    <label style={ds.label}>{form.tipo_premio === 'porcentaje' ? 'Porcentaje (máx. 50)' : 'Euros (máx. 25)'}</label>
+                    <input style={ds.formInput} type="number" step="0.5" value={form.valor ?? ''}
+                           onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} />
+                  </div>
+                )}
+
+                {form.tipo_premio === 'producto_gratis' && (
+                  <div>
+                    <label style={ds.label}>Producto</label>
+                    <select style={ds.select} value={form.producto_id || ''}
+                            onChange={e => {
+                              const p = productos.find(x => x.id === e.target.value)
+                              setForm(f => ({ ...f, producto_id: e.target.value, coste_estimado: p?.precio ?? f.coste_estimado }))
+                            }}>
+                      <option value="">— Elige —</option>
+                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre} ({fmtEur(p.precio)})</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label style={ds.label}>Lo que te cuesta</label>
+                  <input style={ds.formInput} type="number" step="0.5" value={form.coste_estimado ?? ''}
+                         onChange={e => setForm(f => ({ ...f, coste_estimado: e.target.value }))} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <label style={ds.label}>Cómo lo verá el cliente</label>
+                <input style={ds.formInput} maxLength={80} placeholder="2 € de descuento en tu próximo pedido"
+                       value={form.descripcion || ''}
+                       onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+                <button onClick={() => setForm(null)} style={ds.secondaryBtn} disabled={busy}>Cancelar</button>
+                <button onClick={guardarPremioHistoria} style={ds.primaryBtn} disabled={busy}>
+                  {busy ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PREMIOS (escalera de vídeos) ── */}
+      {tab === 'premios' && !historia && (
         <div style={{ marginTop: 16 }}>
           <div style={{
             padding: '10px 12px', borderRadius: 10, marginBottom: 12,
@@ -570,8 +767,9 @@ export default function Creadores() {
           </div>
           <p style={{ fontSize: type.xs, color: colors.stone, lineHeight: 1.55, marginTop: 0 }}>
             Cuando el coste de los premios de un mes llega a este límite, dejan de entregarse
-            hasta el mes siguiente. Los vídeos que estaban a punto de ganar <strong>no se pierden</strong>:
-            quedan en espera y cobran cuando entra el mes nuevo. Déjalo vacío si no quieres límite.
+            hasta el mes siguiente. {historia ? 'Las historias que aceptes' : 'Los vídeos que estaban a punto de ganar'}{' '}
+            <strong>no se pierden</strong>: quedan en espera y cobran cuando entra el mes nuevo.
+            Déjalo vacío si no quieres límite.
           </p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <div style={{ flex: 1 }}>
@@ -590,7 +788,7 @@ export default function Creadores() {
   )
 }
 
-function Cabecera() {
+function Cabecera({ historia = false }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -598,8 +796,9 @@ function Cabecera() {
         <h1 style={{ ...ds.h1, margin: 0 }}>Creadores</h1>
       </div>
       <p style={{ fontSize: type.sm, color: colors.stone, marginTop: 6, marginBottom: 0, maxWidth: 640, lineHeight: 1.55 }}>
-        Tus clientes graban un vídeo de su pedido y, según las visualizaciones que consigan,
-        se llevan un descuento para la próxima vez que te pidan.
+        {historia
+          ? 'Tus clientes suben una historia de Instagram con su pedido, te etiquetan, y se llevan un descuento para la próxima vez que te pidan. Tú confirmas que te ha llegado la mención.'
+          : 'Tus clientes graban un vídeo de su pedido y, según las visualizaciones que consigan, se llevan un descuento para la próxima vez que te pidan.'}
       </p>
     </div>
   )
