@@ -19,13 +19,15 @@ import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpv
 import { hayQueCobrar } from '../lib/metodoPago'
 import { sePuedeCambiarPago } from '../lib/stock'
 import CambiarFormaPago from './CambiarFormaPago'
+import TpvCobroLector from './TpvCobroLector'
+import { estadoLector } from '../lib/cobroLector'
 import {
   aceptarPedido, rechazarPedido, cancelarPedido, marcarListo, marcarRecogido,
   marcarEntregado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
 } from '../lib/accionesPedido'
 import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
 import { unlockAudio, startAlarm, stopAlarm } from '../lib/alarm'
-import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil, Wallet } from 'lucide-react'
+import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil, Wallet, CreditCard } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
@@ -1132,6 +1134,35 @@ function Acciones({
 }) {
   const cobraEfectivo = pendienteDeCobro(p)
 
+  // COBRO CON EL LECTOR DE TARJETAS (15 oct 2026). Recogidas, kiosko y telefónicos que se
+  // pagan en el local: el importe va al lector (WisePad 3) a través del móvil del mostrador y
+  // el pedido pasa a 'tarjeta'. No en un reparto de un socio: ese lo cobra el repartidor.
+  const lectorPosible = !!tpvConfig?.cobro_lector && cobraEfectivo && p.estado !== 'nuevo'
+    && !(p.modo_entrega === 'delivery' && p.socio_id)
+
+  async function abrirLector() {
+    if (ocupado) return
+    setOcupado(true)
+    const e = await estadoLector(restaurante?.id || p.establecimiento_id)
+    setOcupado(false)
+    if (!e.listo) {
+      toast('El móvil del lector no está listo: abre «Lector de tarjetas» en el móvil y espera a «Listo para cobrar».', 'error')
+      return
+    }
+    setPaso('lector')
+  }
+
+  async function lectorCobrado(tarjeta) {
+    setPaso(null)
+    toast(`Cobrado ${eur(cents(p.total))} con tarjeta${tarjeta?.ultimos4 ? ` ···· ${tarjeta.ultimos4}` : ''}`, 'success')
+    // Si ya estaba listo para llevárselo, cobrarlo es entregarlo.
+    if (['listo', 'recogido', 'en_camino'].includes(p.estado)) {
+      const r = await marcarEntregado({ pedido: { ...p, metodo_pago: 'tarjeta' } })
+      if (!r.ok && r.motivo !== 'gestionado') toast('Cobrado, pero no se pudo marcar como entregado: márcalo a mano.', 'error')
+    }
+    onCambiado?.()
+  }
+
   // Lo que se pregunta antes de dar un pedido por entregado. Antes decía «en efectivo»
   // también en los pedidos con datáfono. Si la forma de pago aún se puede corregir, se
   // dice QUÉ botón pulsar: el cliente que pidió en efectivo y en la puerta saca la
@@ -1378,6 +1409,15 @@ function Acciones({
     )
   }
 
+  if (lectorPosible) {
+    botones.unshift(
+      <button key="lector" disabled={ocupado} onClick={abrirLector} style={{ ...btnGrande, opacity: ocupado ? 0.6 : 1 }}>
+        <CreditCard size={17} style={{ marginRight: 6 }} />
+        Cobrar con el lector · {eur(cents(p.total))}
+      </button>,
+    )
+  }
+
   // La fila de secundarios: reimprimir (todo lo aceptado en adelante), factura
   // (solo lo entregado), cambiar forma de pago (efectivo o datáfono, en marcha o
   // entregado) y cancelar (solo lo vivo, nunca un cerrado).
@@ -1450,6 +1490,13 @@ function Acciones({
           Tras guardar se relee la lista y el detalle: el realtime también llegaría,
           pero la cabecera («COBRAR · Efectivo») y la pregunta de entregar seguirían
           diciendo la forma de pago vieja un segundo. */}
+      {paso === 'lector' && (
+        <TpvCobroLector pedidoId={p.id} total={p.total}
+          establecimientoId={restaurante?.id || p.establecimiento_id}
+          onCobrado={lectorCobrado}
+          onCerrar={() => { setPaso(null); onCambiado?.() }}
+          notaFallo="No se ha cobrado nada. Puedes reintentarlo o cobrarlo como siempre." />
+      )}
       {paso === 'pago' && puedeCambiarPago(p) && (
         <CambiarFormaPago pedido={p}
           onCerrar={() => setPaso(null)}
