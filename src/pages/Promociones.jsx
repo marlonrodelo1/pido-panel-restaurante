@@ -136,6 +136,17 @@ export default function Promociones() {
     setPromos(prev => prev.map(p => p.id === id ? { ...p, activa: !current } : p))
   }
 
+  // Ofertas de carta: el interruptor no toca `activa` (la lleva el horario), sino que
+  // las apaga del todo (tarjeta + menú de la carta) hasta que se vuelvan a encender.
+  async function toggleOferta(p) {
+    const apagar = !p.pausada
+    if (apagar && !(await confirmar(`¿Apagar «${p.titulo}»? Se quitan la oferta y el menú de la carta hasta que la vuelvas a encender.`))) return
+    const { data, error } = await supabase.rpc('oferta_pausar', { p_promocion_id: p.id, p_pausar: apagar })
+    if (error || data?.pausada !== apagar) { toast('No se pudo cambiar: ' + (error?.message || 'sin respuesta')); return }
+    setPromos(prev => prev.map(x => x.id === p.id ? { ...x, pausada: data.pausada, activa: data.activa } : x))
+    toast(apagar ? 'Oferta apagada' : 'Oferta encendida: sale sola en su horario', 'success')
+  }
+
   async function eliminar(id) {
     if (!await confirmar('¿Eliminar esta promoción?')) return
     const { error } = await supabase.from('promociones').delete().eq('id', id)
@@ -314,8 +325,8 @@ export default function Promociones() {
                       </span>
                     )}
                     {esOferta && (
-                      <span style={chip(p.activa ? 'sage' : 'paper')}>
-                        {p.activa ? 'Activa ahora' : 'Se enciende sola en su horario'}
+                      <span style={chip(p.pausada ? 'danger' : p.activa ? 'sage' : 'paper')}>
+                        {p.pausada ? 'Apagada' : p.activa ? 'Activa ahora' : 'Se enciende sola en su horario'}
                       </span>
                     )}
                     {p.minimo_compra > 0 && (
@@ -332,31 +343,35 @@ export default function Promociones() {
                   </div>
                 </div>
 
-                {/* Toggle (las ofertas de carta van por horario: sin controles) */}
-                {!esOferta && <>
-                <button onClick={() => toggleActiva(p.id, p.activa)} style={{
-                  width: 48, height: 28, borderRadius: 14, border: 'none',
-                  background: p.activa ? colors.sage : colors.cream2,
-                  cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
-                  display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
-                }}>
-                  <span style={{
-                    position: 'absolute', top: 3, left: p.activa ? 23 : 3,
-                    width: 22, height: 22, borderRadius: 11, background: '#fff',
-                    transition: 'left 0.2s', boxShadow: '0 1px 2px rgba(26,24,21,0.2)',
-                  }} />
-                </button>
+                {/* Toggle (en las ofertas de carta: encendida = sigue su horario, apagada = pausada) */}
+                {(() => {
+                  const on = esOferta ? !p.pausada : p.activa
+                  return (
+                    <button onClick={() => esOferta ? toggleOferta(p) : toggleActiva(p.id, p.activa)}
+                      title={esOferta ? (on ? 'Apagar oferta' : 'Encender oferta') : undefined} style={{
+                      width: 48, height: 28, borderRadius: 14, border: 'none',
+                      background: on ? colors.sage : colors.cream2,
+                      cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                      display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
+                    }}>
+                      <span style={{
+                        position: 'absolute', top: 3, left: on ? 23 : 3,
+                        width: 22, height: 22, borderRadius: 11, background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 2px rgba(26,24,21,0.2)',
+                      }} />
+                    </button>
+                  )
+                })()}
 
-                {/* Mini buttons */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {/* Mini buttons (las ofertas de carta las monta Pidoo: sin editar ni borrar) */}
+                {!esOferta && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <button onClick={() => abrirEditar(p)} style={ds.miniBtn} title="Editar">
                     <Edit2 size={11} strokeWidth={2.2}/>
                   </button>
                   <button onClick={() => eliminar(p.id)} style={ds.miniBtnDanger} title="Eliminar">
                     <Trash2 size={11} strokeWidth={2.2}/>
                   </button>
-                </div>
-                </>}
+                </div>}
               </div>
             </div>
           )
