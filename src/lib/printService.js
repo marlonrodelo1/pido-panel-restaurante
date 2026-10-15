@@ -50,6 +50,18 @@ const puente = ThermalPrinter || escritorio
 export const hayImpresoraNativa = !!puente
 export const esEscritorio = !!escritorio
 
+// ── EL APARATO DEL LECTOR NO IMPRIME (15 oct 2026) ────────────────────────────
+// El móvil que hace de puente con el lector de tarjetas (pantalla «Lector de tarjetas») tiene
+// la app del local abierta todo el día. Con las impresoras en la NUBE sacaba OTRA comanda de cada
+// pedido: cada aparato apunta lo que ya imprimió solo en su propia memoria (ticketsImpresos), así
+// que el ordenador y el móvil imprimían los dos. Ese aparato no imprime NADA: se hace como que sí
+// (sin papel y sin avisos de «no ha salido», que lo harían reintentar). Lo marca LectorTarjetas
+// con la misma clave; al salir de esa pantalla con «Volver al mostrador» se quita.
+const CLAVE_APARATO_LECTOR = 'pidoo_lector_cobrador'
+export function aparatoNoImprime() {
+  try { return localStorage.getItem(CLAVE_APARATO_LECTOR) === '1' } catch { return false }
+}
+
 // Escape HTML to prevent XSS when interpolating user data into ticket HTML
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 
@@ -276,6 +288,7 @@ async function rescatarIpImpresora(imp) {
 // responde, el llamante saca el papel por la de caja YA, y el rescate corre en
 // segundo plano para que la SIGUIENTE vaya bien.
 export async function enviarAImpresora(imp, data) {
+  if (aparatoNoImprime()) return true   // el móvil del lector: no saca papel (ver arriba)
   if (!puente || !imp) return false
   try {
     if (imp.modo === 'usb') {
@@ -320,6 +333,7 @@ export async function sendRawToIp(ip, port, data) {
  * Send raw bytes to configured thermal printer via TCP
  */
 async function sendToThermalPrinter(data) {
+  if (aparatoNoImprime()) return true   // el móvil del lector: no saca papel
   // Con impresoras en la NUBE, todo lo que pasa por aquí (tickets del cliente,
   // cajón, informes, X/Z) va a LA DE CAJA. La configuración clásica del
   // aparato queda de respaldo.
@@ -371,6 +385,7 @@ export function impresoraCocinaConfigurada(config = getPrinterConfig()) {
 // principal: una comanda en la barra es molesta; una comanda que no sale es un
 // cliente sin su comida.
 async function sendComanda(data) {
+  if (aparatoNoImprime()) return true   // el móvil del lector: no saca papel
   const config = getPrinterConfig()
   if (impresoraCocinaConfigurada(config)) {
     const c = config.cocina
