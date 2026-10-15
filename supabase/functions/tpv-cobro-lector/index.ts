@@ -1,4 +1,4 @@
-// tpv-cobro-lector v1 (15 oct 2026) — cobrar una venta del TPV con el lector de tarjetas
+// tpv-cobro-lector v2 (15 oct 2026) — cobrar una venta del TPV con el lector de tarjetas
 // (BBPOS WisePad 3) a través del móvil Android del mostrador.
 //
 // POR QUÉ UN MÓVIL EN MEDIO: el WisePad 3 es un lector «móvil» (Bluetooth). Stripe solo deja
@@ -34,6 +34,10 @@
 //                 'creado' se pregunta además a Stripe (por si el móvil cobró y no avisó).
 //
 // INTERRUPTOR: tpv_config.cobro_lector (solo Pidoo, PD360). Errores de negocio: 409.
+//
+// v2: guarda la COMISIÓN REAL de Stripe de cada cobro (pedido_cobros_movil.comision_stripe, de
+// latest_charge.balance_transaction.fee). La liquidación de los lunes (calcular_liquidacion_restaurante)
+// le paga al restaurante lo cobrado con el lector MENOS esa comisión.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const URL = Deno.env.get('SUPABASE_URL')!
@@ -71,7 +75,8 @@ async function stripe(method: 'GET' | 'POST', path: string, params?: Record<stri
   const data = await r.json().catch(() => ({}))
   return { ok: r.ok, status: r.status, data }
 }
-const leerPI = (id: string) => stripe('GET', `/payment_intents/${encodeURIComponent(id)}?expand%5B%5D=latest_charge`)
+// v2: con el balance_transaction del cargo, de donde sale la comisión real de Stripe.
+const leerPI = (id: string) => stripe('GET', `/payment_intents/${encodeURIComponent(id)}?expand%5B%5D=latest_charge.balance_transaction`)
 const stripeError = (r: StripeResp) => ({
   code: r.data?.error?.code || null,
   type: r.data?.error?.type || null,
@@ -119,11 +124,14 @@ async function activado(sb: SB, establecimientoId: string) {
 }
 
 // ── Datos de la tarjeta (marca, últimos 4, cómo se leyó, recibo). Best-effort. ─────────────────
-function datosTarjeta(pi: any): Record<string, string> {
+function datosTarjeta(pi: any): Record<string, any> {
   const ch = pi?.latest_charge && typeof pi.latest_charge === 'object' ? pi.latest_charge : null
   if (!ch) return {}
   const cp = ch.payment_method_details?.card_present || ch.payment_method_details?.interac_present || null
-  const datos: Record<string, string> = {}
+  const datos: Record<string, any> = {}
+  // v2: comisión real de Stripe (céntimos -> euros). La usa la liquidación de los lunes.
+  const bt = ch.balance_transaction && typeof ch.balance_transaction === 'object' ? ch.balance_transaction : null
+  if (bt && Number.isFinite(Number(bt.fee))) datos.comision_stripe = Math.round(Number(bt.fee)) / 100
   if (cp?.brand) datos.tarjeta_marca = String(cp.brand).slice(0, 30)
   if (cp?.last4) datos.tarjeta_ultimos4 = String(cp.last4).slice(0, 4)
   const lectura = cp?.wallet?.type || cp?.read_method
