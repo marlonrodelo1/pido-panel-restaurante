@@ -1,6 +1,9 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
+# El postinstall (scripts/fix-stripe-terminal.mjs, lector de tarjetas) corre en `npm install`:
+# el script tiene que estar ANTES de instalar o el build muere con "module not found".
+COPY scripts ./scripts
 RUN npm install
 COPY . .
 
