@@ -78,7 +78,7 @@ const PANTALLAS = {
 }
 
 export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAbajo = 0, onAlternarPantalla }) {
-  const { restaurante, tpvConfig, stockActivo } = useRest()
+  const { restaurante, tpvConfig, setTpvConfig, stockActivo } = useRest()
   const { pedidosNuevos } = usePedidoAlert()
 
   const [categorias, setCategorias] = useState([])
@@ -931,8 +931,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   }
 
   // El ticket de una venta ya grabada. Sale aquí y al terminar el cobro con el lector.
+  // Con `tpv_config.ticket_cliente_auto = false` (15 oct 2026, Duende) NO sale solo: se saca con
+  // «Imprimir ticket» de la venta. El cajón se abre igual, que hay que dar el cambio.
   function imprimirVenta(body, metodo_pago) {
     if (!body?.ticket) return
+    if (tpvConfig?.ticket_cliente_auto === false) {
+      const abrir = body.config ? !!body.config.abrir_cajon : metodo_pago === 'efectivo'
+      if (abrir) pulsoCajon().catch(() => {})
+      return
+    }
     imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
       pieTicket: body.config?.pie_ticket,
       // Si la respuesta viene SIN `config` (venta repetida servida por una
@@ -968,10 +975,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       extras: l.extrasTexto ? String(l.extrasTexto).split(', ').filter(Boolean) : [],
       precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null,
     }))
-    imprimirTicketTpv(ticket, { codigo: null, para_llevar: paraLlevar }, items, restaurante, {
-      pieTicket: tpvConfig?.pie_ticket, provisional: true,
-      abrirCajonTambien: metodo_pago === 'efectivo' && (tpvConfig?.abrir_cajon ?? true),
-    }).catch(() => {})
+    const abrirCajonOff = metodo_pago === 'efectivo' && (tpvConfig?.abrir_cajon ?? true)
+    if (tpvConfig?.ticket_cliente_auto === false) {
+      if (abrirCajonOff) pulsoCajon().catch(() => {})
+    } else {
+      imprimirTicketTpv(ticket, { codigo: null, para_llevar: paraLlevar }, items, restaurante, {
+        pieTicket: tpvConfig?.pie_ticket, provisional: true,
+        abrirCajonTambien: abrirCajonOff,
+      }).catch(() => {})
+    }
 
     setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
     setParaLlevar(false)
@@ -1098,11 +1110,25 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // Asi no hay que desplegar una edge que cobra dinero para arreglar una imagen.
   const conLogo = (est) => ({ ...est, logo_url: est?.logo_url || restaurante?.logo_url || null })
 
+  // Ticket del cliente automático o solo a petición (`tpv_config.ticket_cliente_auto`). Las
+  // comandas de cocina no cambian: salen siempre solas.
+  async function cambiarTicketAuto() {
+    setMenu(false)
+    const nuevo = tpvConfig?.ticket_cliente_auto === false
+    const { data, error } = await supabase.from('tpv_config')
+      .update({ ticket_cliente_auto: nuevo })
+      .eq('establecimiento_id', restaurante.id)
+      .select('ticket_cliente_auto')
+    if (error || !data?.length) { toast('No se pudo cambiar. Revisa la conexión.', 'error'); return }
+    setTpvConfig((prev) => ({ ...prev, ticket_cliente_auto: nuevo }))
+    toast(nuevo ? 'El ticket del cliente vuelve a salir solo' : 'El ticket del cliente ya solo sale cuando lo pidas', 'success')
+  }
+
   async function reimprimir() {
     if (!ultimaVenta?.ticket) return
     const r = await imprimirTicketTpv(ultimaVenta.ticket, ultimaVenta.pedido, ultimaVenta.items,
       conLogo(ultimaVenta.establecimiento), { pieTicket: ultimaVenta.config?.pie_ticket })
-    toast(r.ticket ? 'Ticket reimpreso' : 'La impresora no responde', r.ticket ? 'success' : 'error')
+    toast(r.ticket ? 'Ticket impreso' : 'La impresora no responde', r.ticket ? 'success' : 'error')
   }
 
   if (!tpvConfig?.activo) {
@@ -1683,7 +1709,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={reimprimir} style={{ ...btnSecundario, height: 36, fontSize: 13 }}>
-                  <Printer size={14} style={{ marginRight: 4 }} /> Reimprimir
+                  <Printer size={14} style={{ marginRight: 4 }} /> {tpvConfig?.ticket_cliente_auto === false ? 'Imprimir ticket' : 'Reimprimir'}
                 </button>
                 <button onClick={() => pulsoCajon()} style={{ ...btnSecundario, height: 36, fontSize: 13 }}>
                   Abrir cajón
@@ -1737,8 +1763,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             toast(`Cobrado ${eur(cents(venta.pedido?.total))} con tarjeta${tarjeta?.ultimos4 ? ` ···· ${tarjeta.ultimos4}` : ''}`, 'success')
             imprimirVenta(venta, 'datafono')
           }}
-          onOtraForma={() => {
+          onOtraForma={async () => {
             const venta = cobroLector
+            if (!await confirmar(`¿Lo cobraste DE VERDAD con el datáfono del banco? La venta de ${eur(cents(venta.pedido?.total))} se queda apuntada como cobrada. Si el cliente no ha pagado, pulsa «Anular la venta».`)) return
             setCobroLector(null)
             toast(`Venta de ${eur(cents(venta.pedido?.total))} apuntada con el datáfono del banco`, 'success')
             imprimirVenta(venta, 'datafono')
@@ -1966,6 +1993,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             </>
           )}
           <GrupoMenu titulo="Caja" />
+          <OpcionMenu icono={<Printer size={19} color={T.accent} />}
+            texto={tpvConfig?.ticket_cliente_auto === false ? 'Ticket del cliente: cuando lo pidas' : 'Ticket del cliente: automático'}
+            nota={tpvConfig?.ticket_cliente_auto === false
+              ? 'Solo salen las comandas. Pulsa para que el ticket salga solo'
+              : 'Sale solo en cada venta. Pulsa para sacarlo solo cuando lo pidas'}
+            onClick={cambiarTicketAuto} />
           <OpcionMenu icono={<Inbox size={19} color={T.accent} />} texto="Abrir cajón"
             nota="Sin cobrar nada"
             onClick={async () => {

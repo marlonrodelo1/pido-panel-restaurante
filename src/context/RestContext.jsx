@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { registerWebPush, unregisterWebPush } from '../lib/webPush'
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications'
-import { establecerContextoImpresion, cargarImpresoras } from '../lib/printService'
+import { establecerContextoImpresion, cargarImpresoras, establecerTicketClienteAuto } from '../lib/printService'
 
 const RestContext = createContext({})
 
@@ -13,6 +13,8 @@ export function RestProvider({ children }) {
   // Modulo TPV. Mismo gating que `carta_local_activa`: lo enciende Pidoo desde el
   // super-admin y aqui solo se lee. Si no hay fila, el modulo no esta contratado.
   const [tpvConfig, setTpvConfig] = useState(null)
+  // El ticket del cliente de los pedidos (comanda + ticket) sale solo o a petición.
+  useEffect(() => { establecerTicketClienteAuto(tpvConfig?.ticket_cliente_auto) }, [tpvConfig?.ticket_cliente_auto])
   // Modulo Almacen (stock + escandallos). Mismo patron que el TPV: lo enciende
   // Pidoo y aqui solo se lee. Sin fila, el modulo no esta contratado.
   const [stockConfig, setStockConfig] = useState(null)

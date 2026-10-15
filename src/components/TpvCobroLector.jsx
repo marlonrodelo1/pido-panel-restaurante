@@ -80,6 +80,16 @@ export default function TpvCobroLector({
       setFase('esperando')
       return
     }
+    // Mostrador: cancelar = no hay venta. Se ANULA en el mismo paso y las líneas vuelven al
+    // mostrador (15 oct: con dos pasos, la venta se quedaba apuntada como datáfono sin cobrar).
+    // Si la anulación falla, la ventana sigue abierta con sus opciones.
+    if (r.ok && onAnular) {
+      terminadoRef.current = true
+      await anular()
+      setAviso('Cobro cancelado. No se ha cobrado nada.')
+      setFase('fallo')
+      return
+    }
     setAviso(r.ok ? 'Cobro cancelado. No se ha cobrado nada.' : mensajeErrorLector(r.error))
     setFase('fallo')
   }

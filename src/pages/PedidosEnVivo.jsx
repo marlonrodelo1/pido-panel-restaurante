@@ -778,7 +778,7 @@ export default function PedidosEnVivo() {
     // solo para quien NO tiene impresora conectada.
     if (hayImpresoraNativa) {
       crearDestinoDe(restaurante?.id)
-        .then((destinoDe) => imprimirPedido(pedido, items, restaurante, destinoDe))
+        .then((destinoDe) => imprimirPedido(pedido, items, restaurante, destinoDe, { forzarCliente: true }))
         .then(r => { if (!r?.ok) toast('No se pudo imprimir. Verifica la IP de la impresora en Config.') })
         .catch(() => toast('Error de conexión con la impresora.'))
     } else {

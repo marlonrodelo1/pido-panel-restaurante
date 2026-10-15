@@ -146,6 +146,15 @@ export function establecerContextoImpresion(establecimientoId) {
   estActual = establecimientoId || null
 }
 
+// ¿El TICKET DEL CLIENTE sale solo? (`tpv_config.ticket_cliente_auto`, 15 oct 2026). Lo fija
+// RestContext. Apagado = solo sale la COMANDA de cocina; el ticket, cuando se pide
+// («Imprimir ticket» / «Reimprimir ticket»).
+let ticketClienteAuto = true
+export function establecerTicketClienteAuto(valor) {
+  ticketClienteAuto = valor !== false
+}
+export function ticketClienteAutomatico() { return ticketClienteAuto }
+
 export function invalidarImpresoras() {
   impCache = { est: null, hasta: 0, lista: null }
 }
@@ -575,7 +584,7 @@ export function disconnectPrinter() {
  * Print both receipts: kitchen command + customer ticket
  * Called automatically when an order is accepted
  */
-export async function imprimirPedido(pedido, items, restaurante, destinoDe = null) {
+export async function imprimirPedido(pedido, items, restaurante, destinoDe = null, { forzarCliente = false } = {}) {
   const config = getPrinterConfig()
   if (!impresoraConfigurada(config)) return { ok: false, reason: 'not_configured' }
 
@@ -610,7 +619,7 @@ export async function imprimirPedido(pedido, items, restaurante, destinoDe = nul
   }
 
   let r2 = true
-  if (config.tickets !== 1) {
+  if (config.tickets !== 1 && (ticketClienteAuto || forzarCliente)) {
     await new Promise(r => setTimeout(r, 500))
     // El TICKET DEL CLIENTE si: es el que va en la bolsa y el que lee el cliente.
     // Se pide DESPUES de mandar la comanda para no retrasar a cocina si el logo

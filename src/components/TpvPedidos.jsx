@@ -1441,7 +1441,7 @@ function Acciones({
   if (p.estado !== 'nuevo' && !['cancelado', 'rechazado', 'fallido'].includes(p.estado)) {
     secundarios.push(
       <button key="reimprimir" disabled={ocupado} onClick={pulsarReimprimir} style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>
-        <Printer size={15} style={{ marginRight: 6 }} /> Reimprimir ticket
+        <Printer size={15} style={{ marginRight: 6 }} /> Imprimir ticket
       </button>,
     )
   }
