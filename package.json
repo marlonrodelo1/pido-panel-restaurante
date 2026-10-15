@@ -8,9 +8,11 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:qr": "node --test scripts/test-qr-carta.mjs"
+    "test:qr": "node --test scripts/test-qr-carta.mjs",
+    "postinstall": "node scripts/fix-stripe-terminal.mjs"
   },
   "dependencies": {
+    "@capacitor-community/stripe-terminal": "8.2.1",
     "@capacitor/android": "^8.3.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/browser": "^8.0.3",

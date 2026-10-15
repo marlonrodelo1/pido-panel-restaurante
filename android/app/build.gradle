@@ -14,8 +14,8 @@ android {
         applicationId "com.pidoo.restaurante"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 17
-        versionName "2.5"
+        versionCode 18
+        versionName "2.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -33,7 +33,10 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled true
+            // 15 oct 2026 (18/2.6): sin R8. Con el SDK de Stripe Terminal (lector de tarjetas)
+            // R8 se quedaba sin memoria tras casi una hora. Igual que la app del socio, que lleva
+            // el mismo plugin. La app solo pesa algo más; no cambia lo que hace.
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release

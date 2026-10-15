@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Lector de tarjetas (Stripe Terminal, 15 oct 2026). El panel compila con R8 (minifyEnabled):
+# el plugin y el SDK de Stripe se conservan enteros para que nada se pierda por reflexión.
+-keep class com.getcapacitor.community.stripe.terminal.** { *; }
+-keep class com.stripe.stripeterminal.** { *; }
+-dontwarn com.stripe.stripeterminal.**

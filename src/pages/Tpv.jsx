@@ -35,8 +35,9 @@ import {
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
   Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
   Maximize2, Minimize2, StickyNote, Bookmark,
-  ShoppingBag, Utensils,
+  ShoppingBag, Utensils, Smartphone, Loader2,
 } from 'lucide-react'
+import { llamarLector, estadoLector, mensajeErrorLector } from '../lib/cobroLector'
 
 import { T, FONT, cents, eur, caja, btnIcono, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import TpvPedidos from '../components/TpvPedidos'
@@ -54,6 +55,8 @@ import DisponibilidadProductos from './DisponibilidadProductos'
 import ConfigImpresora from './ConfigImpresora'
 import CrearEnvio from './CrearEnvio'
 import SociosYRepartidores from './SociosYRepartidores'
+import LectorTarjetas, { CLAVE_MODO_COBRADOR } from './LectorTarjetas'
+import { lectorSoportado } from '../lib/lectorTarjetas'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
@@ -70,6 +73,7 @@ const PANTALLAS = {
   historial: 'Historial',
   disponibilidad: 'Carta',
   impresora: 'Impresora y cuenta',
+  lector: 'Lector de tarjetas',
 }
 
 export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAbajo = 0, onAlternarPantalla }) {
@@ -117,6 +121,32 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // ENCIMA en esta capa. No se sustituye el TPV: si se desmontara, el carrito a
   // medias se perderia con el cliente delante.
   const [pantalla, setPantalla] = useState(null)
+  // COBRO CON LECTOR DE TARJETAS (15 oct 2026). El lector (WisePad 3) va por Bluetooth a un
+  // móvil del mostrador con la app abierta en «Lector de tarjetas». Si Pidoo lo ha activado
+  // (tpv_config.cobro_lector) y ese móvil está listo, «Tarjeta» manda el cobro al lector en vez
+  // de dar por hecho que se cobró con el datáfono del banco. Si el móvil no está listo, todo
+  // sigue como siempre: nada de esto puede dejar el mostrador sin cobrar.
+  const [cobroLector, setCobroLector] = useState(null)   // la venta que espera la tarjeta
+  const [lectorListo, setLectorListo] = useState(false)
+  const lectorActivado = !!tpvConfig?.cobro_lector
+  // Este aparato ES el móvil del lector: al abrir la app vuelve directo a esa pantalla.
+  useEffect(() => {
+    if (!modoApp || !lectorActivado || !lectorSoportado()) return
+    let cobrador = false
+    try { cobrador = localStorage.getItem(CLAVE_MODO_COBRADOR) === '1' } catch { /* modo incognito */ }
+    if (cobrador) setPantalla((p) => p || 'lector')
+  }, [modoApp, lectorActivado])
+  useEffect(() => {
+    if (!lectorActivado || !restaurante?.id) { setLectorListo(false); return }
+    let vivo = true
+    const mirar = async () => {
+      const e = await estadoLector(restaurante.id)
+      if (vivo) setLectorListo(!!e.listo)
+    }
+    mirar()
+    const t = setInterval(mirar, 15000)
+    return () => { vivo = false; clearInterval(t) }
+  }, [lectorActivado, restaurante?.id])
   const [modalStock, setModalStock] = useState(false)
   const [stockVista, setStockVista] = useState('existencias')
   const [nuevoPedido, setNuevoPedido] = useState(null)   // 'reparto' | 'recogida'
@@ -865,7 +895,24 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (!carrito.length) return
     // Con tarjeta no hay cambio que calcular: el importe se teclea en el datáfono
     // y aquí solo se deja constancia. Un paso menos en cada venta con tarjeta.
-    cobrar('datafono', null)
+    // Con el lector de Pidoo listo, el importe va solo al lector (ver `cobroLector`).
+    cobrar('datafono', null, { lector: lectorActivado && lectorListo })
+  }
+
+  // El ticket de una venta ya grabada. Sale aquí y al terminar el cobro con el lector.
+  function imprimirVenta(body, metodo_pago) {
+    if (!body?.ticket) return
+    imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
+      pieTicket: body.config?.pie_ticket,
+      // Si la respuesta viene SIN `config` (venta repetida servida por una
+      // edge anterior a la v6), en efectivo el cajón se abre igual: el
+      // reintento es justo el momento en que hay que dar el cambio.
+      abrirCajonTambien: body.config ? !!body.config.abrir_cajon : metodo_pago === 'efectivo',
+    }).then((r) => {
+      // `impresoraConfigurada()` EN VIVO, no el estado congelado al montar:
+      // si se configuró la impresora desde la capa, el aviso tiene que salir.
+      if (!r.ticket && impresoraConfigurada()) toast('No se pudo imprimir el ticket', 'error')
+    }).catch(() => {})
   }
 
   // La venta cobrada SIN INTERNET: a la cola local (misma clave de
@@ -901,7 +948,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     toast(`Sin conexión: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
   }
 
-  async function cobrar(metodo_pago, entregado_c = null) {
+  async function cobrar(metodo_pago, entregado_c = null, { lector = false } = {}) {
     if (enVueloRef.current) return
     enVueloRef.current = true
     setCobrando(true)
@@ -960,6 +1007,16 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
       setParaLlevar(false)
       setModalPago(false)
+
+      // Con el lector: la venta ya está grabada (como datáfono) y ahora se cobra en el lector.
+      // El ticket sale cuando el lector confirma (o si se cobra de otra forma). Si la venta
+      // venía repetida y ya estaba pagada con tarjeta, no hay nada que cobrar.
+      if (lector && body.pedido?.id && body.pedido?.metodo_pago !== 'tarjeta') {
+        if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
+        setCobroLector(body)
+        return
+      }
+
       if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
       else toast(`Cobrado ${eur(cents(body.pedido?.total))}${body.repetida ? ' (ya estaba cobrado)' : ''}`, 'success')
 
@@ -973,19 +1030,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         }
       }
 
-      if (body.ticket) {
-        imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
-          pieTicket: body.config?.pie_ticket,
-          // Si la respuesta viene SIN `config` (venta repetida servida por una
-          // edge anterior a la v6), en efectivo el cajón se abre igual: el
-          // reintento es justo el momento en que hay que dar el cambio.
-          abrirCajonTambien: body.config ? !!body.config.abrir_cajon : metodo_pago === 'efectivo',
-        }).then((r) => {
-          // `impresoraConfigurada()` EN VIVO, no el estado congelado al montar:
-          // si se configuró la impresora desde la capa, el aviso tiene que salir.
-          if (!r.ticket && impresoraConfigurada()) toast('No se pudo imprimir el ticket', 'error')
-        }).catch(() => {})
-      }
+      imprimirVenta(body, metodo_pago)
     } catch (err) {
       // FALLO DE RED (sin internet, o el fetch ni salió): la venta NO se
       // pierde ni se bloquea — va a la COLA LOCAL con su misma clave de
@@ -1581,6 +1626,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             </button>
           </div>
 
+          {/* Con el lector de Pidoo activado: dónde va a ir el cobro con tarjeta. */}
+          {lectorActivado && (
+            <div style={{
+              marginTop: 6, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
+              color: lectorListo ? T.ok : T.muted,
+            }}>
+              <Smartphone size={13} />
+              {lectorListo ? 'Tarjeta: se cobra en el lector' : 'Lector sin conectar: «Tarjeta» = datáfono del banco'}
+            </div>
+          )}
+
           {ultimaVenta?.ticket && (
             <div style={{
               marginTop: 10, padding: 10, borderRadius: 12,
@@ -1638,6 +1694,22 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             setConfigurando(null)
           }}
         />
+      )}
+
+      {cobroLector && (
+        <ModalCobroLector venta={cobroLector} establecimientoId={restaurante.id}
+          onCobrado={(tarjeta) => {
+            const venta = cobroLector
+            setCobroLector(null)
+            toast(`Cobrado ${eur(cents(venta.pedido?.total))} con tarjeta${tarjeta?.ultimos4 ? ` ···· ${tarjeta.ultimos4}` : ''}`, 'success')
+            imprimirVenta(venta, 'datafono')
+          }}
+          onOtraForma={() => {
+            const venta = cobroLector
+            setCobroLector(null)
+            toast(`Venta de ${eur(cents(venta.pedido?.total))} apuntada con el datáfono del banco`, 'success')
+            imprimirVenta(venta, 'datafono')
+          }} />
       )}
 
       {modalPago && (
@@ -1797,7 +1869,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             background: 'var(--c-surface)', borderBottom: '1px solid var(--c-border)',
             flexShrink: 0,
           }}>
-            <button onClick={() => setPantalla(null)} style={{
+            <button onClick={() => {
+              // Salir de «Lector de tarjetas» = este aparato deja de ser el cobrador.
+              if (pantalla === 'lector') { try { localStorage.removeItem(CLAVE_MODO_COBRADOR) } catch { /* modo incognito */ } }
+              setPantalla(null)
+            }} style={{
               display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
               borderRadius: 10, border: '1px solid var(--c-border)',
               background: 'var(--c-surface)', color: 'var(--c-text)',
@@ -1815,6 +1891,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             {pantalla === 'historial' && <HistorialMovil />}
             {pantalla === 'disponibilidad' && <DisponibilidadProductos />}
             {pantalla === 'impresora' && <ConfigImpresora />}
+            {pantalla === 'lector' && <LectorTarjetas />}
           </div>
         </div>
       )}
@@ -1850,6 +1927,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
               <OpcionMenu icono={<Printer size={19} color={T.accent} />} texto="Impresora y cuenta"
                 nota="Abrir o cerrar el local, impresora y salir"
                 onClick={() => { setMenu(false); setPantalla('impresora') }} />
+              {/* Solo en el móvil Android que hace de puente con el lector. */}
+              {lectorActivado && lectorSoportado() && (
+                <OpcionMenu icono={<CreditCard size={19} color={T.accent} />} texto="Lector de tarjetas"
+                  nota="Usar este móvil para cobrar con el lector del mostrador"
+                  onClick={() => { setMenu(false); setPantalla('lector') }} />
+              )}
             </>
           )}
           <GrupoMenu titulo="Caja" />
@@ -2041,6 +2124,120 @@ function ModalEfectivo({ total_c, cobrando, abreCajon = true, onCerrar, onCobrar
           <Banknote size={19} style={{ marginRight: 8 }} />
           {cobrando ? 'Cobrando…' : abreCajon ? 'Cobrar y abrir cajón' : 'Cobrar'}
         </button>
+      </div>
+    </Modal>
+  )
+}
+
+// El cobro de una venta en el LECTOR de tarjetas (15 oct 2026). La venta ya está grabada (como
+// datáfono); aquí se pide el cobro al lector y se espera a que el cliente pague. Lo hace el móvil
+// del mostrador (pantalla «Lector de tarjetas»); esto solo pregunta cómo va.
+//   - Cobrado  → onCobrado(tarjeta): se imprime el ticket. La venta ya es «tarjeta».
+//   - Fallo    → reintentar, o «Lo cobré con el datáfono del banco» (la venta se queda como
+//                datáfono y sale el ticket).
+// No se puede cerrar con un cobro a medias: cerrar = cancelarlo primero.
+const ESPERA_SONDEO_MS = 1500
+
+function textoFalloLector(error) {
+  const code = error?.decline_code || error?.code || ''
+  if (/declin|insufficient|do_not_honor|card_declined|expired|incorrect_pin|pin/i.test(code)) return 'Tarjeta rechazada. Pide otra tarjeta o cobra de otra forma.'
+  return 'Cobro cancelado. No se ha cobrado nada.'
+}
+
+function ModalCobroLector({ venta, establecimientoId, onCobrado, onOtraForma }) {
+  const pedidoId = venta?.pedido?.id
+  const total_c = cents(venta?.pedido?.total)
+  const [fase, setFase] = useState('preparando')   // preparando | esperando | cancelando | fallo
+  const [cobroId, setCobroId] = useState(null)
+  const [aviso, setAviso] = useState('')
+  const [intento, setIntento] = useState(0)
+  const terminadoRef = useRef(false)
+
+  // Pedir el cobro al lector (y otra vez al reintentar).
+  useEffect(() => {
+    let vivo = true
+    terminadoRef.current = false
+    setFase('preparando'); setAviso(''); setCobroId(null)
+    ;(async () => {
+      const r = await llamarLector('crear', establecimientoId, { pedido_id: pedidoId })
+      if (!vivo) return
+      if (r.ok && r.data?.ya_cobrado) { terminadoRef.current = true; onCobrado(null); return }
+      if (!r.ok || !r.data?.cobro_id) { setAviso(mensajeErrorLector(r.error)); setFase('fallo'); return }
+      setCobroId(r.data.cobro_id)
+      setFase('esperando')
+    })()
+    return () => { vivo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intento])
+
+  // ¿Ha pagado? Se pregunta cada 1,5 s; una de cada cuatro, además a Stripe.
+  useEffect(() => {
+    if (!cobroId || fase !== 'esperando') return
+    let vivo = true
+    let n = 0
+    const mirar = async () => {
+      n++
+      const r = await llamarLector('estado', establecimientoId, { cobro_id: cobroId, verificar: n % 4 === 0 })
+      if (!vivo || terminadoRef.current || !r.ok) return
+      if (r.data?.estado === 'cobrado') { terminadoRef.current = true; onCobrado(r.data.tarjeta || null) }
+      else if (r.data?.estado === 'cancelado' || r.data?.estado === 'fallido') {
+        setAviso(textoFalloLector(r.data?.error)); setFase('fallo')
+      }
+    }
+    const t = setInterval(mirar, ESPERA_SONDEO_MS)
+    return () => { vivo = false; clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cobroId, fase])
+
+  async function cancelar() {
+    if (!cobroId) { setFase('fallo'); setAviso('Cobro cancelado. No se ha cobrado nada.'); return }
+    setFase('cancelando')
+    const r = await llamarLector('cancelar', establecimientoId, { cobro_id: cobroId })
+    if (r.data?.ya_cobrado) { terminadoRef.current = true; onCobrado(null); return }
+    if (!r.ok && r.error === 'cobro_en_curso') {
+      setAviso('El cliente está pagando ahora mismo en el lector: espera unos segundos.')
+      setFase('esperando')
+      return
+    }
+    setAviso(r.ok ? 'Cobro cancelado. No se ha cobrado nada.' : mensajeErrorLector(r.error))
+    setFase('fallo')
+  }
+
+  const esperando = fase === 'preparando' || fase === 'esperando' || fase === 'cancelando'
+  return (
+    <Modal titulo={`Cobrar ${eur(total_c)} con tarjeta`} cerrarAlFondo={false}
+      onCerrar={esperando ? cancelar : onOtraForma}>
+      <div style={{ display: 'grid', gap: 14, textAlign: 'center' }}>
+        {esperando ? (
+          <>
+            <Loader2 size={40} color={T.accent} style={{ margin: '6px auto 0', animation: 'spin 1s linear infinite' }} />
+            <div style={{ fontSize: 34, fontWeight: 700, color: T.text }}>{eur(total_c)}</div>
+            <div style={{ fontSize: 16, color: T.text, fontWeight: 600 }}>
+              {fase === 'preparando' ? 'Mandando el importe al lector…'
+                : fase === 'cancelando' ? 'Cancelando…'
+                  : 'El cliente ya puede pasar la tarjeta por el lector'}
+            </div>
+            {aviso && <div style={{ fontSize: 13, color: T.muted }}>{aviso}</div>}
+            <button onClick={cancelar} disabled={fase !== 'esperando'}
+              style={{ ...btnSecundario, height: 48, fontSize: 15, opacity: fase === 'esperando' ? 1 : 0.5 }}>
+              Cancelar el cobro
+            </button>
+          </>
+        ) : (
+          <>
+            <AlertTriangle size={36} color={T.danger} style={{ margin: '6px auto 0' }} />
+            <div style={{ fontSize: 16, color: T.text, fontWeight: 600, lineHeight: 1.4 }}>{aviso || 'No se ha cobrado.'}</div>
+            <button onClick={() => setIntento((n) => n + 1)} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
+              <CreditCard size={18} style={{ marginRight: 8 }} /> Volver a intentarlo en el lector
+            </button>
+            <button onClick={onOtraForma} style={{ ...btnSecundario, height: 48, fontSize: 14 }}>
+              Lo cobré con el datáfono del banco
+            </button>
+            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+              La venta ya está apuntada. Si al final paga en efectivo, anúlala en «Tickets del día» y vuelve a cobrarla en efectivo.
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   )

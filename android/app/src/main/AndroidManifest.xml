@@ -65,4 +65,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Acceso al audio para reproducir sonido de notificación con la pantalla apagada -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Lector de tarjetas BBPOS WisePad 3 por Bluetooth (15 oct 2026). El plugin de Stripe
+         Terminal pide los tres en Android 12+ al buscar el lector; si falta uno en el manifiesto,
+         la búsqueda falla. Se piden solo al abrir «Lector de tarjetas», nunca al arrancar. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 </manifest>
