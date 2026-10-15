@@ -13,6 +13,7 @@ import { supabase } from './lib/supabase'
 import { colors, ds } from './lib/uiStyles'
 import { RestProvider, useRest } from './context/RestContext'
 import { PedidoAlertProvider, usePedidoAlert } from './context/PedidoAlertContext'
+import { LectorProvider } from './context/LectorContext'
 import Login from './pages/Login'
 import ConfirmarAlta from './pages/ConfirmarAlta'
 import PedidosEnVivo from './pages/PedidosEnVivo'
@@ -1020,5 +1021,5 @@ export default function App() {
   if (path === '/confirmar-alta') {
     return <ErrorBoundary><ConfirmarAlta /><ToastNotification /></ErrorBoundary>
   }
-  return <ErrorBoundary><RestProvider><AppContent /><ConfirmModal /><ToastNotification /></RestProvider></ErrorBoundary>
+  return <ErrorBoundary><RestProvider><LectorProvider><AppContent /><ConfirmModal /><ToastNotification /></LectorProvider></RestProvider></ErrorBoundary>
 }

@@ -56,7 +56,7 @@ import DisponibilidadProductos from './DisponibilidadProductos'
 import ConfigImpresora from './ConfigImpresora'
 import CrearEnvio from './CrearEnvio'
 import SociosYRepartidores from './SociosYRepartidores'
-import LectorTarjetas, { CLAVE_MODO_COBRADOR } from './LectorTarjetas'
+import LectorTarjetas from './LectorTarjetas'
 import { lectorSoportado } from '../lib/lectorTarjetas'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -123,20 +123,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // medias se perderia con el cliente delante.
   const [pantalla, setPantalla] = useState(null)
   // COBRO CON LECTOR DE TARJETAS (15 oct 2026). El lector (WisePad 3) va por Bluetooth a un
-  // móvil del mostrador con la app abierta en «Lector de tarjetas». Si Pidoo lo ha activado
+  // móvil del mostrador con la app abierta (LectorContext, en segundo plano). Si Pidoo lo ha activado
   // (tpv_config.cobro_lector) y ese móvil está listo, «Tarjeta» manda el cobro al lector en vez
   // de dar por hecho que se cobró con el datáfono del banco. Si el móvil no está listo, todo
   // sigue como siempre: nada de esto puede dejar el mostrador sin cobrar.
   const [cobroLector, setCobroLector] = useState(null)   // la venta que espera la tarjeta
   const [lectorListo, setLectorListo] = useState(false)
   const lectorActivado = !!tpvConfig?.cobro_lector
-  // Este aparato ES el móvil del lector: al abrir la app vuelve directo a esa pantalla.
-  useEffect(() => {
-    if (!modoApp || !lectorActivado || !lectorSoportado()) return
-    let cobrador = false
-    try { cobrador = localStorage.getItem(CLAVE_MODO_COBRADOR) === '1' } catch { /* modo incognito */ }
-    if (cobrador) setPantalla((p) => p || 'lector')
-  }, [modoApp, lectorActivado])
   useEffect(() => {
     if (!lectorActivado || !restaurante?.id) { setLectorListo(false); return }
     let vivo = true
@@ -1871,11 +1864,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             background: 'var(--c-surface)', borderBottom: '1px solid var(--c-border)',
             flexShrink: 0,
           }}>
-            <button onClick={() => {
-              // Salir de «Lector de tarjetas» = este aparato deja de ser el cobrador.
-              if (pantalla === 'lector') { try { localStorage.removeItem(CLAVE_MODO_COBRADOR) } catch { /* modo incognito */ } }
-              setPantalla(null)
-            }} style={{
+            <button onClick={() => setPantalla(null)} style={{
               display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
               borderRadius: 10, border: '1px solid var(--c-border)',
               background: 'var(--c-surface)', color: 'var(--c-text)',
