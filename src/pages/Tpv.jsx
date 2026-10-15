@@ -901,6 +901,35 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (banco) cobrar('datafono', null)
   }
 
+  // El cliente NO pagó con tarjeta (cobro cancelado o rechazado en el lector): la venta ya estaba
+  // grabada como datáfono, así que se ANULA (rectificativa, como en «Tickets del día»; no se
+  // imprime nada porque el original tampoco salió) y sus líneas vuelven al mostrador para
+  // cobrarla de otra forma. Con el carrito vacío la clave de idempotencia ya se soltó: al volver
+  // a cobrar sale una venta NUEVA, no la anulada.
+  async function anularVentaLector() {
+    const venta = cobroLector
+    const ticketId = venta?.ticket?.id
+    if (!ticketId) {
+      toast('Esta venta no tiene ticket: anúlala en «Tickets del día».', 'error')
+      setCobroLector(null)
+      return
+    }
+    const { error } = await supabase.rpc('tpv_anular_ticket', {
+      p_ticket_id: ticketId, p_motivo: 'No pagó: cobro con tarjeta cancelado en el lector',
+    })
+    if (error) {
+      toast(`No se pudo anular la venta (${error.message}). Anúlala en «Tickets del día».`, 'error')
+      return
+    }
+    setCobroLector(null)
+    setUltimaVenta(null)
+    if (venta._lineas?.length) {
+      setCarrito(venta._lineas)
+      setParaLlevar(!!venta._paraLlevar)
+    }
+    toast('Venta anulada: no se ha cobrado nada. La tienes otra vez en el mostrador.', 'success')
+  }
+
   // El ticket de una venta ya grabada. Sale aquí y al terminar el cobro con el lector.
   function imprimirVenta(body, metodo_pago) {
     if (!body?.ticket) return
@@ -1015,7 +1044,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // venía repetida y ya estaba pagada con tarjeta, no hay nada que cobrar.
       if (lector && body.pedido?.id && body.pedido?.metodo_pago !== 'tarjeta') {
         if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
-        setCobroLector(body)
+        // Las líneas se guardan para devolverlas al mostrador si al final no paga con tarjeta.
+        setCobroLector({ ...body, _lineas: lineasPantalla, _paraLlevar: !!cuerpo?.para_llevar })
         return
       }
 
@@ -1712,7 +1742,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             setCobroLector(null)
             toast(`Venta de ${eur(cents(venta.pedido?.total))} apuntada con el datáfono del banco`, 'success')
             imprimirVenta(venta, 'datafono')
-          }} />
+          }}
+          onAnular={anularVentaLector} />
       )}
 
       {modalPago && (

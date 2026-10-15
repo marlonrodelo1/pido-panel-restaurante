@@ -22,9 +22,10 @@ function textoFalloLector(error) {
 }
 
 export default function TpvCobroLector({
-  pedidoId, total, establecimientoId, onCobrado, onOtraForma, onCerrar,
+  pedidoId, total, establecimientoId, onCobrado, onOtraForma, onCerrar, onAnular,
   textoOtraForma = 'Lo cobré con el datáfono del banco',
-  notaFallo = 'La venta ya está apuntada. Si al final paga en efectivo, anúlala en «Tickets del día» y vuelve a cobrarla en efectivo.',
+  textoAnular = 'Anular la venta y volver al mostrador',
+  notaFallo = null,
 }) {
   const total_c = cents(total)
   const [fase, setFase] = useState('preparando')   // preparando | esperando | cancelando | fallo
@@ -83,10 +84,18 @@ export default function TpvCobroLector({
     setFase('fallo')
   }
 
+  const [anulando, setAnulando] = useState(false)
+  async function anular() {
+    if (anulando || !onAnular) return
+    setAnulando(true)
+    try { await onAnular() } finally { setAnulando(false) }
+  }
+
   const esperando = fase === 'preparando' || fase === 'esperando' || fase === 'cancelando'
-  // La X: con un cobro a medias, lo cancela; si ya falló, cierra (onCerrar o, si no hay,
-  // la «otra forma», que es lo que hacía el mostrador).
-  const cerrar = esperando ? cancelar : (onCerrar || onOtraForma)
+  // La X: con un cobro a medias, lo cancela. Si ya falló, en el mostrador ANULA la venta (15 oct:
+  // antes la daba por cobrada con el datáfono del banco e imprimía el ticket de algo sin pagar);
+  // en Pedidos, solo cierra.
+  const cerrar = esperando ? cancelar : (onAnular ? anular : (onCerrar || onOtraForma))
 
   return (
     <div style={{
@@ -123,9 +132,14 @@ export default function TpvCobroLector({
             <>
               <AlertTriangle size={36} color={T.danger} style={{ margin: '6px auto 0' }} />
               <div style={{ fontSize: 16, color: T.text, fontWeight: 600, lineHeight: 1.4 }}>{aviso || 'No se ha cobrado.'}</div>
-              <button onClick={() => setIntento((n) => n + 1)} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
+              <button onClick={() => setIntento((n) => n + 1)} disabled={anulando} style={{ ...btnAccion, height: 52, fontSize: 16 }}>
                 <CreditCard size={18} style={{ marginRight: 8 }} /> Volver a intentarlo en el lector
               </button>
+              {onAnular && (
+                <button onClick={anular} disabled={anulando} style={{ ...btnSecundario, height: 50, fontSize: 15, borderColor: T.accent, color: T.text, opacity: anulando ? 0.5 : 1 }}>
+                  {anulando ? 'Anulando…' : textoAnular}
+                </button>
+              )}
               {onOtraForma && (
                 <button onClick={onOtraForma} style={{ ...btnSecundario, height: 48, fontSize: 14 }}>
                   {textoOtraForma}
