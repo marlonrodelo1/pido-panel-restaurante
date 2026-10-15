@@ -12,6 +12,10 @@ const TIPOS = [
   { id: '2x1', label: '2x1', icon: '🔥', desc: 'Lleva 2 y paga 1 en un producto específico' },
 ]
 
+// Ofertas de carta (tipo 'oferta', las monta Pidoo): el precio rebajado vive en el
+// producto y la tarjeta se enciende y apaga sola por horario. Aquí solo se enseñan.
+const OFERTA = { id: 'oferta', label: 'Oferta de carta', icon: '🍽️' }
+
 export default function Promociones() {
   const { restaurante } = useRest()
   const [promos, setPromos] = useState([])
@@ -283,7 +287,8 @@ export default function Promociones() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {promos.map(p => {
-          const tipoData = TIPOS.find(t => t.id === p.tipo)
+          const esOferta = p.tipo === 'oferta'
+          const tipoData = esOferta ? OFERTA : TIPOS.find(t => t.id === p.tipo)
           const vencida = p.fecha_fin && new Date(p.fecha_fin) < new Date()
           return (
             <div key={p.id} style={{ ...ds.card, padding: 16, opacity: p.activa && !vencida ? 1 : 0.65 }}>
@@ -305,7 +310,12 @@ export default function Promociones() {
                   <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                     {p.valor && (
                       <span style={chip('terracotta')}>
-                        {p.tipo === 'descuento_porcentaje' ? `${p.valor}%` : `${p.valor}€`}
+                        {p.tipo === 'descuento_porcentaje' ? `${p.valor}%` : esOferta ? `−${p.valor}%` : `${p.valor}€`}
+                      </span>
+                    )}
+                    {esOferta && (
+                      <span style={chip(p.activa ? 'sage' : 'paper')}>
+                        {p.activa ? 'Activa ahora' : 'Se enciende sola en su horario'}
                       </span>
                     )}
                     {p.minimo_compra > 0 && (
@@ -322,7 +332,8 @@ export default function Promociones() {
                   </div>
                 </div>
 
-                {/* Toggle */}
+                {/* Toggle (las ofertas de carta van por horario: sin controles) */}
+                {!esOferta && <>
                 <button onClick={() => toggleActiva(p.id, p.activa)} style={{
                   width: 48, height: 28, borderRadius: 14, border: 'none',
                   background: p.activa ? colors.sage : colors.cream2,
@@ -345,6 +356,7 @@ export default function Promociones() {
                     <Trash2 size={11} strokeWidth={2.2}/>
                   </button>
                 </div>
+                </>}
               </div>
             </div>
           )
