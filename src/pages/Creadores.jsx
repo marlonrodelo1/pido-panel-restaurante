@@ -477,7 +477,10 @@ export default function Creadores() {
                 {p.origen === 'mesa' && (
                   <span style={{
                     ...ds.badge, background: colors.cream2, color: colors.stone, flexShrink: 0,
-                  }}>Desde la mesa</span>
+                  }}>{/* Una historia sin pedido viene del QR de la mesa o de la
+                       pegatina de la bolsa (quien pidió por teléfono o en el
+                       mostrador): lo que importa es que no hay pedido detrás. */}
+                    {p.formato === 'historia' ? 'Sin pedido en Pidoo' : 'Desde la mesa'}</span>
                 )}
 
                 {p.estado === 'pendiente_validacion' && (
