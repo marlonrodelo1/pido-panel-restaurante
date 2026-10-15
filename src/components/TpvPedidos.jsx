@@ -23,7 +23,7 @@ import TpvCobroLector from './TpvCobroLector'
 import { estadoLector } from '../lib/cobroLector'
 import {
   aceptarPedido, rechazarPedido, cancelarPedido, marcarListo, marcarRecogido,
-  marcarEntregado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
+  marcarEntregado, cerrarPedidoCobrado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
 } from '../lib/accionesPedido'
 import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
 import { unlockAudio, startAlarm, stopAlarm } from '../lib/alarm'
@@ -1155,11 +1155,16 @@ function Acciones({
   async function lectorCobrado(tarjeta) {
     setPaso(null)
     toast(`Cobrado ${eur(cents(p.total))} con tarjeta${tarjeta?.ultimos4 ? ` ···· ${tarjeta.ultimos4}` : ''}`, 'success')
-    // Si ya estaba listo para llevárselo, cobrarlo es entregarlo.
+    // Cobrado = cuenta cerrada (Marlon, 15 oct). Si ya estaba listo, se entrega como siempre.
+    // Si aún se prepara: se cierra solo si es del local (kiosko, mesa, teléfono); a un cliente
+    // de la app no se le dice «entregado» con la comida en la plancha.
+    let r = null
     if (['listo', 'recogido', 'en_camino'].includes(p.estado)) {
-      const r = await marcarEntregado({ pedido: { ...p, metodo_pago: 'tarjeta' } })
-      if (!r.ok && r.motivo !== 'gestionado') toast('Cobrado, pero no se pudo marcar como entregado: márcalo a mano.', 'error')
+      r = await marcarEntregado({ pedido: { ...p, metodo_pago: 'tarjeta' } })
+    } else if (['mesa', 'telefonico'].includes(p.origen_pedido)) {
+      r = await cerrarPedidoCobrado({ pedido: p })
     }
+    if (r && !r.ok && r.motivo !== 'gestionado') toast('Cobrado, pero no se pudo cerrar el pedido: ciérralo a mano.', 'error')
     onCambiado?.()
   }
 

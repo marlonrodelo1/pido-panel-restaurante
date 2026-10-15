@@ -885,12 +885,20 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setModalPago(true)      // hace falta preguntar con cuánto paga, para el cambio
   }
 
-  function cobrarConTarjeta() {
-    if (!carrito.length) return
+  async function cobrarConTarjeta() {
+    if (!carrito.length || enVueloRef.current) return
     // Con tarjeta no hay cambio que calcular: el importe se teclea en el datáfono
     // y aquí solo se deja constancia. Un paso menos en cada venta con tarjeta.
     // Con el lector de Pidoo listo, el importe va solo al lector (ver `cobroLector`).
-    cobrar('datafono', null, { lector: lectorActivado && lectorListo })
+    if (!lectorActivado) { cobrar('datafono', null); return }
+    if (lectorListo) { cobrar('datafono', null, { lector: true }); return }
+    // 15 oct 2026: si el móvil del lector no responde, NO se cobra como datáfono del banco sin
+    // decir nada (le pasó a Marlon la primera noche: la venta se dio por cobrada y el lector ni
+    // se enteró). Se mira otra vez al momento y, si sigue sin estar, se pregunta.
+    const e = await estadoLector(restaurante.id)
+    if (e.listo) { setLectorListo(true); cobrar('datafono', null, { lector: true }); return }
+    const banco = await confirmar('El lector de tarjetas no responde: el móvil tiene la app cerrada, por detrás o sin internet. ¿Lo cobras con el DATÁFONO DEL BANCO?')
+    if (banco) cobrar('datafono', null)
   }
 
   // El ticket de una venta ya grabada. Sale aquí y al terminar el cobro con el lector.

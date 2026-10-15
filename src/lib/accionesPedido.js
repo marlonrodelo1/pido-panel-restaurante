@@ -203,3 +203,17 @@ export async function marcarEntregado({ pedido }) {
   }
   return { ok: true }
 }
+
+// Cierra (entrega) un pedido del LOCAL que se acaba de cobrar con tarjeta en el lector, esté en
+// el estado que esté (15 oct 2026, Marlon: «cuando se cobre por tarjeta se cierre enseguida la
+// cuenta»). Solo para kiosko / mesa / teléfono: no hay cliente de la app al que avisar de nada.
+// La comanda ya salió en su momento; cocina trabaja con el papel. Mismo candado que el resto:
+// solo se cierra lo que sigue vivo.
+export async function cerrarPedidoCobrado({ pedido }) {
+  const { data: filas, error } = await supabase.from('pedidos')
+    .update({ estado: 'entregado', entregado_at: new Date().toISOString() })
+    .eq('id', pedido.id).in('estado', ['aceptado', 'preparando', 'listo', 'recogido', 'en_camino']).select('id')
+  if (error) { console.error('[cerrarPedidoCobrado]', error); return { ok: false, motivo: 'error' } }
+  if (!filas?.length) return { ok: false, motivo: 'gestionado' }
+  return { ok: true }
+}
