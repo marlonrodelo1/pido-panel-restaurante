@@ -106,11 +106,50 @@ export function queFalta(p, sel) {
   return g ? sinPrefijo(g.nombre) : null
 }
 
-// Firma de una línea: dos iguales se suman en vez de duplicarse.
+// Firma de una línea: dos iguales se suman en vez de duplicarse. La nota cuenta:
+// una hamburguesa "sin cebolla" y otra normal son dos líneas en la comanda.
 export function firmaLinea(productoId, sel) {
   const ops = Object.keys(sel.ops || {}).sort()
     .map((k) => k + ':' + [...sel.ops[k]].sort().join(',')).join(';')
-  return productoId + '|' + (sel.tamanoId || '') + '|' + ops
+  return productoId + '|' + (sel.tamanoId || '') + '|' + ops + '|' + (sel.nota || '').toLowerCase()
+}
+
+// ── Nota de la línea para la cocina ("sin cebolla, bien hecha") ──
+// El servidor la corta a 120; aquí se para antes para que el contador no engañe.
+export const NOTA_MAX = 100
+
+// Sin espacios ni comas sueltas al principio, al final o repetidas.
+export const limpiarNota = (t) => String(t || '')
+  .replace(/\s+/g, ' ')
+  .replace(/\s*,[\s,]*/g, ', ')
+  .replace(/^[\s,]+|[\s,]+$/g, '')
+  .slice(0, NOTA_MAX)
+
+// Lo que se pide más a menudo, según la categoría del producto: un toque y listo.
+export function atajosNota(categoria) {
+  const c = String(categoria || '')
+  if (/bebida|refresco|zumo|batido|agua|cerveza/i.test(c)) return ['Sin hielo', 'Con hielo', 'Bien fría', 'Con pajita']
+  if (/papa|patata|frita/i.test(c)) return ['Sin sal', 'Salsa aparte', 'Bien hechas', 'Sin salsa']
+  if (/postre|dulce|helado/i.test(c)) return ['Sin nata', 'Sin sirope']
+  return ['Sin cebolla', 'Sin tomate', 'Sin lechuga', 'Sin pepinillo', 'Sin salsas', 'Salsa aparte', 'Bien hecha', 'Cortada a la mitad']
+}
+
+// Una tecla del teclado de la nota: mayúscula al empezar y tras una coma.
+export function teclearNota(texto, k) {
+  const t = texto || ''
+  if (k === ' ') return (!t || t.endsWith(' ')) ? t : (t + ' ').slice(0, NOTA_MAX)
+  if (k === ',') return (!t.trim() || /,\s*$/.test(t)) ? t : (t.trimEnd() + ', ').slice(0, NOTA_MAX)
+  const inicio = !t.trim() || /,\s*$/.test(t)
+  return (t + (inicio ? k.toUpperCase() : k.toLowerCase())).slice(0, NOTA_MAX)
+}
+
+// Un atajo se pone o se quita (si ya estaba escrito, tal cual, se borra).
+export function alternarAtajo(texto, atajo) {
+  const partes = limpiarNota(texto).split(', ').filter(Boolean)
+  const i = partes.findIndex((p) => p.toLowerCase() === atajo.toLowerCase())
+  if (i >= 0) partes.splice(i, 1)
+  else partes.push(atajo)
+  return limpiarNota(partes.join(', '))
 }
 
 // Texto de los extras de una línea, como en la comanda.

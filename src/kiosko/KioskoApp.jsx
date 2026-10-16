@@ -17,9 +17,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './kiosko.css'
 import { supabase } from '../lib/supabase'
 import { estaAbierto, horarioHoyTexto } from '../lib/horario'
-import { cargarCarta, precioUnidad, firmaLinea, textoExtras, uuidv4 } from './carta'
 import {
-  Inicio, Nombre, Carta, Ficha, Resumen, Sugerencia, Pago, Listo, Cerrado,
+  cargarCarta, precioUnidad, firmaLinea, textoExtras, uuidv4,
+  limpiarNota, atajosNota, teclearNota, alternarAtajo,
+} from './carta'
+import {
+  Inicio, Nombre, Carta, Ficha, Resumen, Sugerencia, Pago, Listo, Cerrado, Nota,
   AvisoInactividad, ConfirmarCancelar, Personal, Aviso, Acceso, fotoGrande,
 } from './pantallas'
 
@@ -87,6 +90,7 @@ export default function KioskoApp() {
   const [carrito, setCarrito] = useState([])
   const [catSel, setCatSel] = useState(null)
   const [ficha, setFicha] = useState(null)              // { p, sel }
+  const [nota, setNota] = useState(null)                // { destino: 'ficha' | key de la línea, p, texto }
   const [sugeridos, setSugeridos] = useState([])
   const [pago, setPago] = useState(null)
   const [enviando, setEnviando] = useState(false)
@@ -311,6 +315,7 @@ export default function KioskoApp() {
     setCarrito([])
     setCatSel(null)          // cada cliente empieza por la categoría de siempre
     setFicha(null)
+    setNota(null)
     setSugeridos([])
     setPago(null)
     setEnviando(false)
@@ -355,7 +360,7 @@ export default function KioskoApp() {
       meter(p.id, { tamanoId: null, ops: {} }, 1)
       return
     }
-    setFicha({ p, sel: { tamanoId: null, ops: {}, cant: 1 } })
+    setFicha({ p, sel: { tamanoId: null, ops: {}, nota: '', cant: 1 } })
   }
 
   function pulsarOpcion(g, opcionId) {
@@ -370,9 +375,24 @@ export default function KioskoApp() {
     })
   }
 
+  // ── Nota de una línea para la cocina ──
+  const nombreCategoria = (p) => carta.categorias.find((c) => c.id === p.categoria_id)?.nombre || ''
+
+  function abrirNotaLinea(key) {
+    const l = lineas.find((x) => x.key === key)
+    if (l) setNota({ destino: key, p: l.p, texto: l.sel.nota || '' })
+  }
+
+  function guardarNota(texto) {
+    const t = limpiarNota(texto)
+    if (nota?.destino === 'ficha') setFicha((f) => (f ? { ...f, sel: { ...f.sel, nota: t } } : f))
+    else if (nota) setCarrito((prev) => prev.map((l) => (l.key === nota.destino ? { ...l, sel: { ...l.sel, nota: t } } : l)))
+    setNota(null)
+  }
+
   function anadirFicha() {
     const { p, sel } = ficha
-    meter(p.id, { tamanoId: sel.tamanoId, ops: sel.ops }, sel.cant)
+    meter(p.id, { tamanoId: sel.tamanoId, ops: sel.ops, nota: limpiarNota(sel.nota) }, sel.cant)
     setFicha(null)
   }
 
@@ -406,11 +426,12 @@ export default function KioskoApp() {
     }
   }
 
-  const anadidos = new Set(carrito.filter((l) => !l.sel.tamanoId && !Object.keys(l.sel.ops).length).map((l) => l.productoId))
+  const deUnToque = (l) => !l.sel.tamanoId && !Object.keys(l.sel.ops).length && !l.sel.nota
+  const anadidos = new Set(carrito.filter(deUnToque).map((l) => l.productoId))
 
   function alternarSugerido(p) {
     if (anadidos.has(p.id)) {
-      setCarrito((prev) => prev.filter((l) => !(l.productoId === p.id && !l.sel.tamanoId && !Object.keys(l.sel.ops).length)))
+      setCarrito((prev) => prev.filter((l) => !(l.productoId === p.id && deUnToque(l))))
     } else {
       meter(p.id, { tamanoId: null, ops: {} }, 1)
     }
@@ -455,6 +476,7 @@ export default function KioskoApp() {
             tamano_id: l.sel.tamanoId || null,
             cantidad: l.cant,
             extras: Object.values(l.sel.ops).flat(),
+            notas: limpiarNota(l.sel.nota) || null,
           })),
         }),
       })
@@ -572,7 +594,7 @@ export default function KioskoApp() {
         {pantalla === 'resumen' && (
           <Resumen lineas={lineas} nombre={nombre} totalC={totalC} nItems={nItems}
             onMas={(k) => cambiarLinea(k, 1)} onMenos={(k) => cambiarLinea(k, -1)}
-            onSeguir={() => setPantalla('carta')} onContinuar={continuarResumen} />
+            onSeguir={() => setPantalla('carta')} onContinuar={continuarResumen} onNota={abrirNotaLinea} />
         )}
         {pantalla === 'sugerencia' && (
           <Sugerencia sugeridos={sugeridos} anadidos={anadidos} nombre={nombre} totalC={totalC}
@@ -594,7 +616,16 @@ export default function KioskoApp() {
             onOp={pulsarOpcion}
             onMas={() => setFicha((f) => ({ ...f, sel: { ...f.sel, cant: Math.min(20, f.sel.cant + 1) } }))}
             onMenos={() => setFicha((f) => ({ ...f, sel: { ...f.sel, cant: Math.max(1, f.sel.cant - 1) } }))}
-            onAnadir={anadirFicha} onCerrar={() => setFicha(null)} />
+            onAnadir={anadirFicha} onCerrar={() => setFicha(null)}
+            onNota={() => setNota({ destino: 'ficha', p: ficha.p, texto: ficha.sel.nota || '' })} />
+        )}
+        {nota && (
+          <Nota producto={nota.p.nombre} texto={nota.texto} atajos={atajosNota(nombreCategoria(nota.p))}
+            onTecla={(k) => setNota((n) => ({ ...n, texto: teclearNota(n.texto, k) }))}
+            onBorrar={() => setNota((n) => ({ ...n, texto: n.texto.slice(0, -1) }))}
+            onAtajo={(a) => setNota((n) => ({ ...n, texto: alternarAtajo(n.texto, a) }))}
+            onQuitar={() => guardarNota('')} onGuardar={() => guardarNota(nota.texto)}
+            onCerrar={() => setNota(null)} />
         )}
         {cancelar && <ConfirmarCancelar onNo={() => setCancelar(false)} onSi={reiniciar} />}
         {inactivo && !personal && (

@@ -710,6 +710,9 @@ export function imprimirPedidoWeb(pedido, items, restaurante, tipo = 'ambos') {
       html += `<hr style="border:2px dashed #000;">`
       for (const item of items || []) {
         html += `<p style="font-size:16px;font-weight:bold;margin:4px 0;">${esc(item.cantidad)}x ${esc(item.nombre_producto)}</p>`
+        const extras = Array.isArray(item.extras) ? item.extras.join(', ') : item.extras
+        if (extras) html += `<p style="font-size:14px;margin:0 0 2px 12px;">${esc(extras)}</p>`
+        if (item.notas) html += `<p style="font-size:15px;font-weight:bold;margin:0 0 4px 12px;">! ${esc(item.notas)}</p>`
       }
       if (pedido.notas) {
         html += `<hr style="border:1px solid #000;"><p style="font-weight:bold;">NOTAS: ${esc(pedido.notas)}</p><hr style="border:1px solid #000;">`

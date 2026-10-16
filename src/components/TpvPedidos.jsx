@@ -1105,9 +1105,10 @@ function DetallePedido({ p, cargando, repartoPropio = false, restaurante, tpvCon
                   {l.extras.join(', ')}
                 </span>
               )}
+              {/* La nota del cliente ("sin cebolla") es para cocinar: que no se pase. */}
               {l.notas && (
-                <span style={{ display: 'block', fontSize: 12, color: T.muted, fontStyle: 'italic', marginTop: 2 }}>
-                  {l.notas}
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: T.accent, marginTop: 3 }}>
+                  Nota: {l.notas}
                 </span>
               )}
             </span>

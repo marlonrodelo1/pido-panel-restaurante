@@ -9,9 +9,9 @@
 
 import {
   ShoppingBag, ArrowLeft, ArrowRight, X, Plus, Minus, Check, CreditCard, Banknote,
-  Lock, Info, Utensils, Pause, Play, RefreshCw,
+  Lock, Info, Utensils, Pause, Play, RefreshCw, Pencil,
 } from 'lucide-react'
-import { eur, sinPrefijo, precioUnidad, queFalta, textoExtras } from './carta'
+import { eur, sinPrefijo, precioUnidad, queFalta, textoExtras, NOTA_MAX } from './carta'
 
 export const C = {
   bg: '#F7F3EC', card: '#EFE9DD', ink: '#1A1815', muted: '#6B6356', terra: '#C5562C',
@@ -248,8 +248,99 @@ export function Carta({ est, nombre, categorias, catSel, onCat, productos, cantP
   )
 }
 
+// Botón de la nota de una línea: vacío invita a escribirla; con nota, la enseña.
+function BotonNota({ nota, onClick, grande = false }) {
+  return (
+    <button onClick={onClick} style={{
+      minHeight: grande ? 112 : 64, maxWidth: '100%', boxSizing: 'border-box', borderRadius: grande ? 24 : 18,
+      alignSelf: grande ? 'stretch' : 'flex-start', background: nota ? '#FBEDE4' : '#fff',
+      border: `3px ${nota ? 'solid' : 'dashed'} ${nota ? C.terra : '#D9D0BF'}`,
+      display: 'flex', alignItems: 'center', gap: grande ? 18 : 12, padding: grande ? '18px 24px' : '8px 20px',
+      textAlign: 'left', fontFamily: 'inherit', color: C.ink, cursor: 'pointer',
+    }}>
+      <Pencil size={grande ? 34 : 26} strokeWidth={2.4} color={C.terra} aria-hidden="true" style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: grande ? 28 : 23, fontWeight: nota ? 700 : 600, lineHeight: 1.3, color: nota ? C.ink : C.muted, overflowWrap: 'anywhere' }}>
+        {nota ? `«${nota}»` : (grande ? 'Toca para pedir algo especial: sin cebolla, bien hecha…' : 'Añadir nota')}
+      </span>
+      {nota && grande && <span style={{ flexShrink: 0, fontSize: 25, fontWeight: 700, color: C.terra }}>Cambiar</span>}
+    </button>
+  )
+}
+
+// ── Nota para la cocina (teclado propio + atajos) ───────────────────────────────
+export function Nota({ producto, texto, atajos, onTecla, onBorrar, onAtajo, onQuitar, onGuardar, onCerrar }) {
+  const marcados = new Set(String(texto || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean))
+  const hay = !!String(texto || '').trim()
+  const tecla = (label, onClick, extra = {}) => (
+    <button key={label} onClick={onClick} aria-label={extra.aria || label} style={{
+      flex: extra.flex || 1, minWidth: 0, height: 100, border: 0, borderRadius: 20,
+      background: extra.bg || '#fff', color: extra.color || C.ink, boxShadow: '0 4px 0 rgba(26,24,21,0.12)',
+      fontFamily: DM, fontWeight: 700, fontSize: extra.fs || 40, cursor: 'pointer',
+    }}>{label}</button>
+  )
+  return (
+    <div style={{ ...abs, zIndex: 25, background: 'rgba(26,24,21,0.62)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+      <div className="kz-sube" style={{ background: C.bg, borderRadius: '52px 52px 0 0', padding: '48px 44px 44px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ ...titulo(60), letterSpacing: -1 }}>Nota para la cocina</h2>
+            <p style={{ margin: '14px 0 0', fontSize: 30, lineHeight: 1.3, color: C.muted }}>{producto}</p>
+          </div>
+          <button onClick={onCerrar} aria-label="Cerrar sin guardar" style={btnRedondo(100)}><X size={46} strokeWidth={2.6} /></button>
+        </div>
+
+        <div style={{ minHeight: 200, boxSizing: 'border-box', background: '#fff', border: `4px solid ${C.ink}`, borderRadius: 32, padding: '24px 32px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ fontFamily: DM, fontWeight: 700, fontSize: 44, lineHeight: 1.25, overflowWrap: 'anywhere' }}>
+            <span style={{ whiteSpace: 'pre-wrap' }}>{texto}</span>
+            <span className="kz-caret" style={{ display: 'inline-block', verticalAlign: 'middle', width: 5, height: 50, margin: '0 8px 0 4px', borderRadius: 3, background: C.terra }} />
+            {!texto && <span style={{ color: '#B9AE9C' }}>Escribe o toca una opción</span>}
+          </div>
+          <div style={{ alignSelf: 'flex-end', fontSize: 22, fontWeight: 600, color: C.muted }}>{String(texto || '').length}/{NOTA_MAX}</div>
+        </div>
+
+        {atajos.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+            {atajos.map((a) => {
+              const on = marcados.has(a.toLowerCase())
+              return (
+                <button key={a} onClick={() => onAtajo(a)} aria-pressed={on} style={{
+                  height: 80, padding: '0 30px', borderRadius: 999, border: `3px solid ${on ? C.ink : C.line}`,
+                  background: on ? C.ink : '#fff', color: on ? C.bg : C.ink, display: 'flex', alignItems: 'center', gap: 10,
+                  fontFamily: DM, fontWeight: 700, fontSize: 29, cursor: 'pointer',
+                }}>
+                  {on && <Check size={28} strokeWidth={3} aria-hidden="true" />}{a}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ background: C.card, borderRadius: 40, padding: '22px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {FILAS.map((f, i) => (
+            <div key={f} style={{ display: 'flex', gap: 10 }}>
+              {f.split('').map((k) => tecla(k, () => onTecla(k)))}
+              {i === 2 && tecla('Borrar', onBorrar, { flex: 2.4, fs: 30, bg: C.ink, color: C.bg, aria: 'Borrar la última letra' })}
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 10 }}>
+            {tecla(',', () => onTecla(','), { aria: 'Coma' })}
+            {tecla('Espacio', () => onTecla(' '), { flex: 8, fs: 30, color: C.muted })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 20 }}>
+          {hay && <button onClick={onQuitar} style={{ ...btnSecundario(136, 34), flex: 1 }}>Quitar nota</button>}
+          <button onClick={onGuardar} style={{ ...btnPrimario(136, 40), flex: 1.4 }}>
+            {hay ? 'Guardar nota' : 'Listo'} <Check size={44} strokeWidth={2.8} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 4. Ficha del producto (extras) ──────────────────────────────────────────────
-export function Ficha({ p, sel, onTamano, onOp, onMas, onMenos, onAnadir, onCerrar }) {
+export function Ficha({ p, sel, onTamano, onOp, onMas, onMenos, onAnadir, onCerrar, onNota }) {
   const falta = queFalta(p, sel)
   const totalC = precioUnidad(p, sel) * sel.cant
   const marca = (marcado, redondo) => (
@@ -309,6 +400,11 @@ export function Ficha({ p, sel, onTamano, onOp, onMas, onMenos, onAnadir, onCerr
               </div>
             )
           })}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {cabecera('Nota para la cocina', sel.nota ? 'Añadida' : 'Opcional', sel.nota ? 'ok' : null)}
+            <BotonNota nota={sel.nota} onClick={onNota} grande />
+          </div>
         </div>
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 24, padding: '28px 48px 48px', borderTop: `2px solid ${C.line}` }}>
           <button onClick={onMenos} aria-label="Uno menos" style={btnRedondo(104)}><Minus size={44} strokeWidth={2.8} /></button>
@@ -336,7 +432,7 @@ function Cabecera({ textoVolver, onVolver, derecha }) {
 }
 
 // ── 5. Tu pedido ────────────────────────────────────────────────────────────────
-export function Resumen({ lineas, nombre, totalC, nItems, onMas, onMenos, onSeguir, onContinuar }) {
+export function Resumen({ lineas, nombre, totalC, nItems, onMas, onMenos, onSeguir, onContinuar, onNota }) {
   return (
     <div style={{ ...abs, boxSizing: 'border-box', padding: '56px 48px 0', display: 'flex', flexDirection: 'column' }}>
       <Cabecera textoVolver="Seguir pidiendo" onVolver={onSeguir}
@@ -350,6 +446,7 @@ export function Resumen({ lineas, nombre, totalC, nItems, onMas, onMenos, onSegu
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontFamily: DM, fontWeight: 800, fontSize: 32, lineHeight: 1.15 }}>{l.p.nombre}</div>
               {l.extras && <div style={{ fontSize: 24, lineHeight: 1.35, color: C.muted }}>{l.extras}</div>}
+              <BotonNota nota={l.sel.nota} onClick={() => onNota(l.key)} />
               <div style={{ fontFamily: DM, fontWeight: 800, fontSize: 34, color: C.terra }}>{eur(l.totalC)}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: C.bg, borderRadius: 999, padding: 8 }}>
