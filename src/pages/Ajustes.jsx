@@ -107,12 +107,12 @@ export default function Ajustes() {
   // Si está set, tiene prioridad sobre el geocoding al guardar.
   const [coordsManual, setCoordsManual] = useState(null)
 
-  // Métodos de pago aceptados por el restaurante (default: los 3 activos)
-  const [aceptaEfectivo, setAceptaEfectivo] = useState(restaurante?.acepta_efectivo ?? true)
-  const [aceptaTarjetaOnline, setAceptaTarjetaOnline] = useState(restaurante?.acepta_tarjeta_online ?? true)
-  // Datáfono: el TPV físico. Lo pasa el repartidor en la puerta o el propio
-  // restaurante en el local. Se liquida como el efectivo (no pasa por Stripe).
-  const [aceptaDatafono, setAceptaDatafono] = useState(restaurante?.acepta_datafono ?? false)
+  // Formas de pago: desde el 17 oct 2026 las decide SOLO Pidoo (super-admin). Aquí solo se
+  // enseñan; el servidor rechaza cualquier cambio del dueño (trg_tarjeta_app_siempre_activa,
+  // PD334), así que guardarTodo ya no las envía.
+  const aceptaEfectivo = restaurante?.acepta_efectivo ?? true
+  const aceptaTarjetaOnline = restaurante?.acepta_tarjeta_online ?? true
+  const aceptaDatafono = restaurante?.acepta_datafono ?? false
   // Si true, el cliente debe registrarse. Default false = guest checkout permitido.
   const [exigeRegistro, setExigeRegistro] = useState(restaurante?.exige_registro_cliente ?? false)
 
@@ -379,9 +379,6 @@ export default function Ajustes() {
     codigoPostalFiscal !== (restaurante?.codigo_postal || '') ||
     ciudadFiscal !== (restaurante?.ciudad_fiscal || '') ||
     provinciaFiscal !== (restaurante?.provincia_fiscal || '') ||
-    aceptaEfectivo !== (restaurante?.acepta_efectivo ?? true) ||
-    aceptaTarjetaOnline !== (restaurante?.acepta_tarjeta_online ?? true) ||
-    aceptaDatafono !== (restaurante?.acepta_datafono ?? false) ||
     exigeRegistro !== (restaurante?.exige_registro_cliente ?? false) ||
     JSON.stringify([...catsSeleccionadas].sort()) !== JSON.stringify([...catsOriginales].sort()) ||
     JSON.stringify(horario ?? null) !== horarioOriginal ||
@@ -413,9 +410,6 @@ export default function Ajustes() {
       codigo_postal: codigoPostalFiscal.trim() || null,
       ciudad_fiscal: ciudadFiscal.trim() || null,
       provincia_fiscal: provinciaFiscal.trim() || null,
-      acepta_efectivo: aceptaEfectivo,
-      acepta_tarjeta_online: aceptaTarjetaOnline,
-      acepta_datafono: aceptaDatafono,
       exige_registro_cliente: exigeRegistro,
       tarifa_envio_fija: tarifaModo === 'unica'
         ? (tarifaEnvioFija === '' || tarifaEnvioFija == null ? null : Number(tarifaEnvioFija))
@@ -442,14 +436,12 @@ export default function Ajustes() {
       } catch (e) { console.warn('Geocoding failed:', e) }
     }
 
-    // Si el servidor rechaza el guardado (p. ej. PD334 al apagar la tarjeta, o
-    // dejar el restaurante sin ninguna forma de cobro) no se sigue ni se dice «Guardado».
+    // Si el servidor rechaza el guardado (p. ej. un campo que gestiona Pidoo) no se
+    // sigue ni se dice «Guardado».
     const { error: errGuardar } = (await updateRestaurante(updates)) || {}
     if (errGuardar) {
       setGuardando(false)
-      toast(errGuardar.code === '23514'
-        ? 'Tienes que dejar al menos una forma de pago activa.'
-        : (errGuardar.message || 'No se ha podido guardar. Inténtalo de nuevo.'))
+      toast(errGuardar.message || 'No se ha podido guardar. Inténtalo de nuevo.')
       return
     }
     setHorarioOriginal(JSON.stringify(horario ?? null))
@@ -775,57 +767,24 @@ export default function Ajustes() {
       <div style={{ background: 'var(--c-surface)', borderRadius: 14, padding: 18, border: '1px solid var(--c-border)', marginBottom: 16 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Métodos de pago</h3>
         <div style={{ fontSize: 12, color: 'var(--c-muted)', marginBottom: 14 }}>
-          El pago con tarjeta en la app está siempre activo. El efectivo y el datáfono son
-          opcionales: si los activas, el cobro al cliente corre de tu cuenta.
+          Las formas de pago las gestiona Pidoo. Si quieres cambiar alguna, escríbenos desde Soporte.
         </div>
-        {/* La tarjeta en la app no se puede apagar (regla de Pidoo, trigger
-            trg_tarjeta_app_siempre_activa / PD334). Los restaurantes antiguos que la
-            tenían apagada ven el interruptor solo para poder encenderla. */}
-        {restaurante?.acepta_tarjeta_online !== false ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: '1px solid var(--c-border)' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-text)' }}>Pago con tarjeta en la app</div>
-              <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 2, lineHeight: 1.4 }}>
-                El cliente paga al hacer el pedido y Pidoo te lo transfiere el lunes, descontada su comisión.
-                Es la forma más segura: el pedido ya está pagado antes de salir de tu cocina.
-              </div>
-            </div>
-            <span style={{
-              flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
-              background: 'rgba(139,157,122,0.18)', color: '#5E6E50',
-            }}>
-              Siempre activo
-            </span>
-          </div>
-        ) : (
-          <PayToggle
-            label="Pago con tarjeta en la app"
-            sub="El cliente paga al hacer el pedido y Pidoo te lo transfiere el lunes, descontada su comisión. Una vez activado ya no se puede desactivar."
-            value={aceptaTarjetaOnline}
-            onChange={setAceptaTarjetaOnline}
-          />
-        )}
-        <PayToggle
+        {/* Solo lectura: las cambia Pidoo desde el super-admin (PD334 en el servidor). */}
+        <PagoFijo
+          label="Pago con tarjeta en la app"
+          sub="El cliente paga al hacer el pedido y Pidoo te lo transfiere el lunes, descontada su comisión. Es la forma más segura: el pedido ya está pagado antes de salir de tu cocina."
+          activo={aceptaTarjetaOnline}
+        />
+        <PagoFijo
           label="Datáfono (tarjeta al entregar)"
           sub="El cliente paga con tarjeta al recibir el pedido. En reparto lo cobra el repartidor con su móvil y el dinero entra en Pidoo, que te lo transfiere el lunes; en recogida lo cobras tú. Si el cliente no aparece o no paga, la responsabilidad es tuya, no de Pidoo."
-          value={aceptaDatafono}
-          onChange={setAceptaDatafono}
+          activo={aceptaDatafono}
         />
-        <PayToggle
+        <PagoFijo
           label="Efectivo"
           sub="El repartidor cobra en la puerta (o tú en el local si es recogida). La comisión de Pidoo se ajusta en la liquidación de los lunes. Si el cliente no aparece o no paga, la responsabilidad es tuya, no de Pidoo."
-          value={aceptaEfectivo}
-          onChange={setAceptaEfectivo}
+          activo={aceptaEfectivo}
         />
-        {!aceptaEfectivo && !aceptaTarjetaOnline && !aceptaDatafono && (
-          <div style={{
-            marginTop: 10, padding: '10px 12px', borderRadius: 10,
-            background: 'rgba(239,68,68,0.10)', color: '#B5564A',
-            fontSize: 12, fontWeight: 600,
-          }}>
-            ⚠️ Has desactivado todos los métodos de pago. El cliente no podrá pedir.
-          </div>
-        )}
         {!aceptaTarjetaOnline && (aceptaEfectivo || aceptaDatafono) && (
           <div style={{
             marginTop: 10, padding: '10px 12px', borderRadius: 10,
@@ -1842,6 +1801,25 @@ export default function Ajustes() {
  * Toggle reutilizable para métodos de pago / acceso del cliente.
  * Una fila con label + subtítulo + switch a la derecha.
  */
+// Forma de pago en solo lectura (la decide Pidoo).
+function PagoFijo({ label, sub, activo }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: '1px solid var(--c-border)' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-text)' }}>{label}</div>
+        <div style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 2, lineHeight: 1.4 }}>{sub}</div>
+      </div>
+      <span style={{
+        flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+        background: activo ? 'rgba(139,157,122,0.18)' : 'rgba(0,0,0,0.06)',
+        color: activo ? '#5E6E50' : 'var(--c-muted)',
+      }}>
+        {activo ? 'Activo' : 'Desactivado'}
+      </span>
+    </div>
+  )
+}
+
 function PayToggle({ label, sub, value, onChange }) {
   return (
     <div
