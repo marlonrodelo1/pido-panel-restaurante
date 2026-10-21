@@ -9,7 +9,7 @@ import {
   getPrinterConfig, savePrinterConfig,
   scanPrinters, connectAndTestPrinter, disconnectPrinter, hayImpresoraNativa, esEscritorio,
   probarImpresoraCocina, listarImpresorasUsb, intercambiarImpresoras,
-  cargarImpresoras, invalidarImpresoras, probarImpresoraNube,
+  cargarImpresoras, invalidarImpresoras, probarImpresoraNube, pulsoCajon,
 } from '../lib/printService'
 import { invalidarDestinos } from '../lib/destinosImpresion'
 import { confirmar, toast } from '../App'
@@ -58,6 +58,21 @@ export default function ConfigImpresora() {
   function cambiarModo(nuevo) {
     setModo(nuevo)
     savePrinterConfig({ ...getPrinterConfig(), modo: nuevo })
+  }
+
+  // PROBAR EL CAJÓN: solo manda el pulso. Que la impresora lo acepte NO prueba que
+  // el cajón se abra (puede faltar el cable o ir a otra impresora), por eso el
+  // aviso pide mirar el cajón en vez de dar el éxito por hecho.
+  const [probandoCajon, setProbandoCajon] = useState(false)
+  async function probarCajon() {
+    setProbandoCajon(true)
+    try {
+      const ok = await pulsoCajon()
+      if (ok) toast('Pulso enviado a la impresora de caja. Mira el cajón: si no se ha abierto, revisa el cable RJ11 entre el cajón y la impresora.', 'success')
+      else toast('La impresora de caja no responde: sin ella el cajón no se abre. Prueba antes la impresora.', 'error')
+    } finally {
+      setProbandoCajon(false)
+    }
   }
 
   // INTERCAMBIAR los papeles de las dos impresoras (caja ↔ cocina) en un toque:
@@ -256,6 +271,27 @@ export default function ConfigImpresora() {
             configuración clásica de este aparato queda debajo, plegada, como
             respaldo (y para poder importarla). */}
         {tpvActivo && <GestorImpresoras />}
+
+        {/* Auditoría 21 oct 2026: el cajón nunca se había comprobado en un local
+            real, y el botón del menú del TPV dice «Cajón abierto» en cuanto la
+            impresora acepta el pulso, aunque no haya cajón o el cable no esté. Aquí
+            la prueba es parte de la instalación y el mensaje es honesto: el pulso
+            sale por la impresora de CAJA, y quien tiene que confirmar que se abrió
+            es la persona que está delante. */}
+        {tpvActivo && (
+          <div style={{ marginTop: 14 }}>
+            <button
+              onClick={probarCajon}
+              disabled={probandoCajon}
+              style={{ ...ds.secondaryBtn, width: '100%', justifyContent: 'center', opacity: probandoCajon ? 0.6 : 1 }}
+            >
+              {probandoCajon ? 'Enviando el pulso…' : 'Probar cajón portamonedas'}
+            </button>
+            <div style={{ fontSize: type.xs, color: colors.stone, marginTop: 6, lineHeight: 1.5 }}>
+              Manda el pulso a la impresora de CAJA. El cajón va conectado con su cable (RJ11) a esa impresora, no al ordenador.
+            </div>
+          </div>
+        )}
 
         {tpvActivo && !mostrarClasica && (
           <button

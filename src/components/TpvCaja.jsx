@@ -524,6 +524,9 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
   if (vista === 'cierre') {
     const tecleado = importeC > 0 || contando
     const descuadre = importeC - esperado
+    // Grande = 20 € o más, o un 10 % o más de lo esperado. Los descuadres de céntimos
+    // (el día a día) no deben asustar a nadie.
+    const descuadreGrande = tecleado && Math.abs(descuadre) >= Math.max(2000, Math.round(Math.abs(esperado) * 0.1))
     // El reparto que hará el servidor al cerrar, para enseñarlo antes, con la
     // base recién leída de `tpv_config`: la misma que usa `tpv_cerrar_caja`.
     const repartoConfirm = repartoCierre(importeC, baseC)
@@ -630,6 +633,26 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                   ? 'Cuadra con lo que debería haber.'
                   : `${descuadre > 0 ? 'Sobran' : 'Faltan'} ${eur(Math.abs(descuadre))} respecto a los ${eur(esperado)} que debería haber.`}
               </div>
+              {/* Auditoría 21 oct 2026: el 16 oct se cerró con 0,01 € contados frente a
+                  383,85 € esperados (−383,84 €) porque el dinero se había sacado del
+                  cajón SIN apuntar la salida. Un desfase grande casi siempre es eso (o
+                  una entrada sin apuntar), así que se avisa ANTES de que quede escrito.
+                  No bloquea: el dinero real manda y el cierre se corrige con otro. */}
+              {descuadreGrande && (
+                <div style={{
+                  background: 'rgba(255,122,107,0.12)', border: `1px solid ${T.danger}`,
+                  borderRadius: 12, padding: 12, textAlign: 'left', display: 'grid', gap: 6,
+                }}>
+                  <strong style={{ fontSize: 13, color: T.danger }}>
+                    {descuadre < 0 ? 'Falta mucho dinero. ¿Has sacado efectivo del cajón?' : 'Sobra mucho dinero. ¿Falta apuntar algo?'}
+                  </strong>
+                  <div style={{ fontSize: 12, color: T.text, lineHeight: 1.5 }}>
+                    {descuadre < 0
+                      ? 'Si retiraste dinero (a la caja fuerte, al banco, para pagar a alguien), pulsa Cancelar y apúntalo como «Salida» antes de cerrar. Si no, se guardará como descuadre.'
+                      : 'Si metiste dinero en el cajón o cobraste algo en efectivo sin pasar por el TPV, pulsa Cancelar y apúntalo como «Entrada» antes de cerrar. Si no, se guardará como descuadre.'}
+                  </div>
+                </div>
+              )}
               {/* Qué pasa con ese dinero al pulsar Finalizar: lo que pasa de la
                   base va a la caja mayor y la base se queda para mañana. */}
               {repartoConfirm && (
@@ -652,7 +675,7 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                 </button>
                 <button onClick={cerrar} disabled={ocupado}
                   style={{ ...btnAccion, flex: 1, height: 48, opacity: ocupado ? 0.5 : 1 }}>
-                  {ocupado ? 'Cerrando…' : 'Finalizar'}
+                  {ocupado ? 'Cerrando…' : (descuadreGrande ? 'Cerrar igualmente' : 'Finalizar')}
                 </button>
               </div>
             </div>
