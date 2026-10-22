@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { registerWebPush, unregisterWebPush } from '../lib/webPush'
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications'
 import { establecerContextoImpresion, cargarImpresoras, establecerTicketClienteAuto } from '../lib/printService'
+import { esFalloSinRespuesta, esErrorDeRed, comprobarRed, redCaida } from '../lib/estadoRed'
 
 const RestContext = createContext({})
 
@@ -10,6 +11,18 @@ export function RestProvider({ children }) {
   const [user, setUser] = useState(null)
   const [restaurante, setRestaurante] = useState(null)
   const [restauranteNotFound, setRestauranteNotFound] = useState(false)
+  // SIN CONEXIÓN Y SIN COPIA (a4, 22 oct 2026): no se ha podido preguntar por el
+  // restaurante y este aparato no tiene ninguna copia guardada. NO es «no hay
+  // negocio»: es «no se ha podido saber». Se reintenta solo al volver la red.
+  const [sinConexion, setSinConexion] = useState(false)
+  // El restaurante que se está usando viene de la copia del aparato (no del
+  // servidor): al volver internet se relee.
+  const [desdeEspejo, setDesdeEspejo] = useState(false)
+  // Lo que hay cargado AHORA, para las funciones asíncronas: un fallo de red a
+  // mitad de una recarga no puede quitarle el restaurante a una pantalla que ya
+  // lo tiene.
+  const restauranteRef = useRef(null)
+  useEffect(() => { restauranteRef.current = restaurante }, [restaurante])
   // Modulo TPV. Mismo gating que `carta_local_activa`: lo enciende Pidoo desde el
   // super-admin y aqui solo se lee. Si no hay fila, el modulo no esta contratado.
   const [tpvConfig, setTpvConfig] = useState(null)
@@ -31,7 +44,7 @@ export function RestProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) fetchRestaurante(session.user.id)
-      else { setRestaurante(null); setRestauranteNotFound(false); setLoading(false) }
+      else { setRestaurante(null); setRestauranteNotFound(false); setSinConexion(false); setDesdeEspejo(false); setLoading(false) }
     })
 
     return () => subscription.unsubscribe()
@@ -58,6 +71,16 @@ export function RestProvider({ children }) {
   // si al arrancar no hay red, se entra con él: el TPV puede seguir vendiendo.
   const claveEspejo = (uid) => `pidoo_espejo_restaurante_${uid}`
 
+  // Mezcla `parcial` en el espejo de ese usuario (restaurante, tpvConfig,
+  // stockConfig). Solo con lecturas BUENAS: es con lo que se entra sin internet.
+  function actualizarEspejo(uid, parcial) {
+    if (!uid) return
+    try {
+      const prev = JSON.parse(localStorage.getItem(claveEspejo(uid)) || '{}')
+      localStorage.setItem(claveEspejo(uid), JSON.stringify({ ...prev, ...parcial }))
+    } catch { /* lleno */ }
+  }
+
   function entrarConEspejo(userId) {
     try {
       const e = JSON.parse(localStorage.getItem(claveEspejo(userId)) || 'null')
@@ -67,15 +90,38 @@ export function RestProvider({ children }) {
       setTpvConfig(e.tpvConfig || null)
       setStockConfig(e.stockConfig || null)
       establecerContextoImpresion(e.restaurante.id)
+      setDesdeEspejo(true)
+      setSinConexion(false)
       return true
     } catch { return false }
   }
 
+  // Sin respuesta del servidor: lo que YA hay en pantalla se queda tal cual; si no
+  // hay nada, la copia del aparato; si tampoco hay copia, «sin conexión» (que se
+  // reintenta solo). Nunca «No encontramos un negocio».
+  function quedarseSinServidor(userId) {
+    if (!restauranteRef.current && !entrarConEspejo(userId)) setSinConexion(true)
+    comprobarRed()
+  }
+
   async function fetchRestaurante(userId) {
     setRestauranteNotFound(false)
+    // 🔴 LA CARGA SE PUEDE COLGAR, NO SOLO FALLAR (a4, 22 oct 2026). Con la fibra
+    // caída y el router encendido, cada consulta se queda esperando hasta que el
+    // sistema la da por perdida, y aquí van cinco seguidas. Si a los 8 s no hay
+    // restaurante en pantalla y el aparato tiene copia, se entra con ella; la
+    // carga sigue por detrás y, si acaba bien, la sustituye. Con internet la
+    // carga tarda menos de eso y esto no llega a hacer nada.
+    const reserva = setTimeout(() => {
+      if (!restauranteRef.current && entrarConEspejo(userId)) { setLoading(false); comprobarRed() }
+    }, 8000)
+    // ¿Alguna consulta se quedó SIN respuesta (red o servidor caído)? Entonces
+    // que no aparezca el restaurante no quiere decir que no exista.
+    let sinRespuesta = false
+    const mirar = (res) => { if (esFalloSinRespuesta(res)) sinRespuesta = true; return res }
     try {
       // Verificar/asignar rol 'restaurante' en tabla usuarios
-      const { data: perfil } = await supabase.from('usuarios').select('id, rol, created_at').eq('id', userId).single()
+      const { data: perfil } = mirar(await supabase.from('usuarios').select('id, rol, created_at').eq('id', userId).single())
       if (perfil && perfil.rol !== 'restaurante') {
         setAuthError(`Esta cuenta está registrada como "${perfil.rol}". Usa una cuenta de restaurante.`)
         await supabase.auth.signOut()
@@ -92,42 +138,40 @@ export function RestProvider({ children }) {
       //      restaurante. Sin este tercer paso, un companero entra y se queda en
       //      "Cargando restaurante..." para siempre, aunque la RLS ya le deje ver
       //      todo lo demas.
-      let { data } = await supabase.from('establecimientos').select('*').eq('user_id', userId).maybeSingle()
+      let { data } = mirar(await supabase.from('establecimientos').select('*').eq('user_id', userId).maybeSingle())
       if (!data) {
-        const { data: userData } = await supabase.auth.getUser()
+        const { data: userData, error: errUsuario } = await supabase.auth.getUser()
+        if (errUsuario && esFalloSinRespuesta({ error: errUsuario })) sinRespuesta = true
         const email = userData?.user?.email
         if (email) {
-          const res = await supabase.from('establecimientos').select('*').eq('email', email).maybeSingle()
+          const res = mirar(await supabase.from('establecimientos').select('*').eq('email', email).maybeSingle())
           data = res.data
         }
       }
       if (!data) {
-        const { data: equipo } = await supabase
+        const { data: equipo } = mirar(await supabase
           .from('establecimiento_usuarios')
           .select('establecimiento_id')
           .eq('user_id', userId)
           .limit(1)
-          .maybeSingle()
+          .maybeSingle())
         if (equipo?.establecimiento_id) {
-          const res = await supabase.from('establecimientos').select('*')
-            .eq('id', equipo.establecimiento_id).maybeSingle()
+          const res = mirar(await supabase.from('establecimientos').select('*')
+            .eq('id', equipo.establecimiento_id).maybeSingle())
           data = res.data
         }
       }
-      setRestaurante(data)
       if (data) {
+        setRestaurante(data)
+        setSinConexion(false)
+        setDesdeEspejo(false)
         // El modulo TPV se lee aqui una vez, con el restaurante: la pantalla de
         // cobro y la entrada del menu dependen de el. (Y se RELEE al volver la
         // app a primer plano — ver el efecto de abajo: antes, activar el modulo
         // con la tablet abierta exigia matar la app y volver a entrar.)
         // Cada lectura buena refresca el ESPEJO local: es con lo que se entra
         // el día que no haya internet.
-        const guardarEspejo = (parcial) => {
-          try {
-            const prev = JSON.parse(localStorage.getItem(claveEspejo(userId)) || '{}')
-            localStorage.setItem(claveEspejo(userId), JSON.stringify({ ...prev, restaurante: data, ...parcial }))
-          } catch { /* lleno */ }
-        }
+        const guardarEspejo = (parcial) => actualizarEspejo(userId, { restaurante: data, ...parcial })
         guardarEspejo({})
         supabase.from('tpv_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
           .then(({ data: cfg, error }) => { if (!error) { setTpvConfig(cfg || null); guardarEspejo({ tpvConfig: cfg || null }) } })
@@ -140,37 +184,74 @@ export function RestProvider({ children }) {
         cargarImpresoras(data.id, { fresco: true }).catch(() => {})
         registerWebPush('restaurante', { establecimiento_id: data.id, user_id: userId })
         registerPushNotifications('restaurante', { establecimiento_id: data.id, user_id: userId })
-      } else if (!navigator.onLine && entrarConEspejo(userId)) {
-        // Sin red no se puede saber nada del servidor: se entra con lo último
-        // bueno y el TPV sigue en modo local.
+      } else if (sinRespuesta || !navigator.onLine) {
+        // 🔴 SIN RED NO SE SABE NADA DEL SERVIDOR (a4, 22 oct 2026). Antes aquí
+        // se ponía el restaurante a null y salía «No encontramos un negocio
+        // vinculado a esta cuenta» con un único botón, «Cerrar sesión», que sin
+        // internet no deja volver a entrar. Pasaba con solo minimizar la app de
+        // Windows con la fibra caída: al volver, supabase-js re-confirma la
+        // sesión, esto se relee y todas las consultas fallan por la red.
+        quedarseSinServidor(userId)
       } else {
         // Cuenta autenticada pero sin establecimiento vinculado: marcar
         // explicitamente "no encontrado" para no quedar en "Cargando..." infinito.
+        // Aquí SÍ se sabe: todas las consultas contestaron y ninguna lo trae.
+        setRestaurante(null)
         setRestauranteNotFound(true)
       }
     } catch (err) {
       console.error('[RestContext] Error cargando restaurante:', err)
-      if (!navigator.onLine) entrarConEspejo(userId)
+      if (!navigator.onLine || esErrorDeRed(err)) quedarseSinServidor(userId)
+    } finally {
+      clearTimeout(reserva)
     }
     setLoading(false)
   }
+
+  // Con el restaurante sacado de la copia del aparato (o sin ninguno, por falta
+  // de red), en cuanto vuelve internet se relee del servidor. Y cada 30 s
+  // mientras no haya nada en pantalla, por si el aviso de la red no llega.
+  useEffect(() => {
+    if (!user?.id || (!sinConexion && !desdeEspejo)) return
+    const uid = user.id
+    const alVolverRed = () => { if (!redCaida()) fetchRestaurante(uid) }
+    window.addEventListener('pidoo:red', alVolverRed)
+    const t = sinConexion ? setInterval(() => fetchRestaurante(uid), 30000) : null
+    return () => {
+      window.removeEventListener('pidoo:red', alVolverRed)
+      if (t) clearInterval(t)
+    }
+  }, [user?.id, sinConexion, desdeEspejo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Los MÓDULOS (TPV, almacén) se refrescan al VOLVER A PRIMER PLANO: los
   // enciende Pidoo desde el super-admin y la tablet no se enteraba hasta matar
   // la app y volver a entrar. `visibilitychange` cubre la web, la app de
   // Windows y el WebView de Android sin depender de ningún plugin.
+  //
+  // 🔴 Solo con una lectura BUENA (a4, 22 oct 2026). Antes un fallo de red al
+  // volver a primer plano dejaba `tpvConfig` a null: el TPV desaparecía del menú
+  // y la pantalla decía «El TPV no está activado» en mitad del servicio.
   useEffect(() => {
     if (!restaurante?.id) return
+    const uid = user?.id
     const alVolver = () => {
       if (document.visibilityState !== 'visible') return
       supabase.from('tpv_config').select('*').eq('establecimiento_id', restaurante.id).maybeSingle()
-        .then(({ data: cfg }) => setTpvConfig(cfg || null))
+        .then(({ data: cfg, error }) => {
+          if (error) return
+          setTpvConfig(cfg || null)
+          actualizarEspejo(uid, { tpvConfig: cfg || null })
+        })
       supabase.from('stock_config').select('*').eq('establecimiento_id', restaurante.id).maybeSingle()
-        .then(({ data: cfg }) => setStockConfig(cfg || null))
+        .then(({ data: cfg, error }) => {
+          if (error) return
+          setStockConfig(cfg || null)
+          actualizarEspejo(uid, { stockConfig: cfg || null })
+        })
     }
     document.addEventListener('visibilitychange', alVolver)
     return () => document.removeEventListener('visibilitychange', alVolver)
-  }, [restaurante?.id])
+  }, [restaurante?.id, user?.id])
 
   async function updateRestaurante(updates) {
     if (!restaurante) return
@@ -244,7 +325,7 @@ export function RestProvider({ children }) {
   }
 
   return (
-    <RestContext.Provider value={{ user, restaurante, restauranteNotFound, loading, authError, setAuthError, login, registro, logout, updateRestaurante, tpvConfig, setTpvConfig, tpvActivo: !!tpvConfig?.activo && !tpvConfig?.pausado_por_restaurante, stockConfig, setStockConfig, stockActivo: !!stockConfig?.activo && !stockConfig?.pausado_por_restaurante, refetch: () => fetchRestaurante(user?.id) }}>
+    <RestContext.Provider value={{ user, restaurante, restauranteNotFound, sinConexion, desdeEspejo, loading, authError, setAuthError, login, registro, logout, updateRestaurante, tpvConfig, setTpvConfig, tpvActivo: !!tpvConfig?.activo && !tpvConfig?.pausado_por_restaurante, stockConfig, setStockConfig, stockActivo: !!stockConfig?.activo && !stockConfig?.pausado_por_restaurante, refetch: () => fetchRestaurante(user?.id) }}>
       {children}
     </RestContext.Provider>
   )

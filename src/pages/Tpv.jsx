@@ -30,6 +30,7 @@ import {
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import { resumenJornada, inicioJornada } from '../lib/jornada'
 import { encolarVenta, sincronizarCola, ventasPendientes, ventasAtascadas, siguienteNumeroOff } from '../lib/colaVentas'
+import { redCaida, esFalloSinRespuesta } from '../lib/estadoRed'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
@@ -182,18 +183,23 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const [hojaVenta, setHojaVenta] = useState(false)
 
   // ── MODO SIN INTERNET (fase 1) ─────────────────────────────────────────────
-  // `online` pinta el banner; `colaN` es cuántas ventas cobradas sin conexión
+  // `sinRed` pinta el banner; `colaN` es cuántas ventas cobradas sin conexión
   // esperan a sincronizarse. La cola se intenta enviar al entrar, al volver la
   // conexión y cada 60 s — y avisa de lo que sube y de lo que se atasca.
-  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
+  //
+  // 🔴 `sinRed` NO es `!navigator.onLine` (a4, 22 oct 2026). Con la fibra caída y
+  // el wifi encendido el navegador dice que hay red, y el aviso naranja no salía
+  // nunca: el cajero se enteraba al cobrar. Ahora lo decide `estadoRed`, con
+  // fallos de verdad comprobados (y se quita con la primera respuesta).
+  const [sinRed, setSinRed] = useState(() => redCaida())
   const [colaN, setColaN] = useState(0)
   const atascadasAvisadasRef = useRef(0)
   useEffect(() => {
     if (!restaurante?.id) return
     const est = restaurante.id
     setColaN(ventasPendientes(est))
-    const alta = () => setOnline(true)
-    const baja = () => setOnline(false)
+    const alta = () => setSinRed(redCaida())
+    const baja = () => setSinRed(redCaida())
     const cambioCola = (e) => { if (e?.detail?.est === est) setColaN(e.detail.n) }
     const intentar = async () => {
       if (!navigator.onLine || !ventasPendientes(est)) return
@@ -206,16 +212,25 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       atascadasAvisadasRef.current = atasc
       setColaN(ventasPendientes(est))
     }
+    // La red ha cambiado (comprobado): se pinta, y si ha vuelto se manda la cola.
+    const cambioRed = () => {
+      const caida = redCaida()
+      setSinRed(caida)
+      if (!caida) intentar()
+    }
     window.addEventListener('online', alta)
     window.addEventListener('offline', baja)
     window.addEventListener('online', intentar)
+    window.addEventListener('pidoo:red', cambioRed)
     window.addEventListener('pidoo:cola-ventas', cambioCola)
+    setSinRed(redCaida())
     intentar()
     const t = setInterval(intentar, 60000)
     return () => {
       window.removeEventListener('online', alta)
       window.removeEventListener('offline', baja)
       window.removeEventListener('online', intentar)
+      window.removeEventListener('pidoo:red', cambioRed)
       window.removeEventListener('pidoo:cola-ventas', cambioCola)
       clearInterval(t)
     }
@@ -259,19 +274,45 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // Se lee al entrar y cada vez que se cierra el modal de la caja (que es donde
   // se abre y se cierra), y ademas al volver a la app: en una tablet que ha
   // estado en segundo plano toda la noche, el turno de ayer ya no vale.
+  //
+  // 🔴 SIN RED, EL TURNO NO SE TOCA (a4, 22 oct 2026). Antes un fallo de la
+  // consulta dejaba el turno a null y la carta se tapaba con «No hay ningún
+  // turno abierto» aunque estuviera abierto: con la fibra caída, al volver a
+  // la app el mostrador dejaba de vender. Ahora, si el servidor no contesta, se
+  // queda el turno que había (o el último guardado en el aparato) y se marca
+  // como «sin comprobar»; la puerta del turno solo sale cuando el servidor dice
+  // de verdad que no hay ninguno abierto.
+  const [turnoSinComprobar, setTurnoSinComprobar] = useState(false)
   const leerTurno = useCallback(async () => {
     if (!restaurante?.id) return
-    const { data } = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: restaurante.id })
+    const res = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: restaurante.id })
+    if (esFalloSinRespuesta(res)) {
+      let guardado = null
+      try { guardado = JSON.parse(localStorage.getItem(`pidoo_tpv_turno_${restaurante.id}`) || 'null') } catch { /* nada */ }
+      setTurno((previo) => previo ?? guardado)
+      setTurnoSinComprobar(true)
+      setTurnoLeido(true)
+      return
+    }
+    const { data } = res
     setTurno(data || null)
+    setTurnoSinComprobar(false)
     setTurnoLeido(true)
+    try { localStorage.setItem(`pidoo_tpv_turno_${restaurante.id}`, JSON.stringify(data || null)) } catch { /* lleno */ }
   }, [restaurante?.id])
 
   useEffect(() => { leerTurno() }, [leerTurno])
   useEffect(() => { if (!modalCaja) leerTurno() }, [modalCaja, leerTurno])
   useEffect(() => {
     const alVolver = () => { if (document.visibilityState === 'visible') leerTurno() }
+    // Al volver internet, el turno se comprueba de nuevo (estaba «sin comprobar»).
+    const alVolverRed = () => { if (!redCaida()) leerTurno() }
     document.addEventListener('visibilitychange', alVolver)
-    return () => document.removeEventListener('visibilitychange', alVolver)
+    window.addEventListener('pidoo:red', alVolverRed)
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('pidoo:red', alVolverRed)
+    }
   }, [leerTurno])
 
   // ── La venta a medias SOBREVIVE ───────────────────────────────────────────
@@ -1233,17 +1274,30 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       {/* MODO SIN INTERNET: el mostrador sigue (carta local, comandas por la
           red del local, ventas a la cola con ticket provisional). El banner
           dice en qué situación se está, y desaparece cuando todo está al día. */}
-      {(!online || colaN > 0) && (
+      {(sinRed || colaN > 0) && (
         <div style={{
           padding: '9px 14px', borderRadius: 10, marginBottom: 10,
           fontSize: 13, fontWeight: 700, lineHeight: 1.4,
-          background: !online ? 'rgba(245,158,11,0.14)' : 'rgba(96,165,250,0.12)',
-          border: `1px solid ${!online ? 'rgba(245,158,11,0.5)' : 'rgba(96,165,250,0.45)'}`,
-          color: !online ? '#F5A623' : '#7EB5F7',
+          background: sinRed ? 'rgba(245,158,11,0.14)' : 'rgba(96,165,250,0.12)',
+          border: `1px solid ${sinRed ? 'rgba(245,158,11,0.5)' : 'rgba(96,165,250,0.45)'}`,
+          color: sinRed ? '#F5A623' : '#7EB5F7',
         }}>
-          {!online
+          {sinRed
             ? `Sin conexión · modo local — el mostrador sigue: comandas, efectivo y datáfono. Las ventas se guardan en este aparato${colaN ? ` (${colaN} pendiente${colaN > 1 ? 's' : ''})` : ''} y se apuntarán solas al volver internet.`
             : `Sincronizando ${colaN} venta${colaN > 1 ? 's' : ''} cobrada${colaN > 1 ? 's' : ''} sin conexión…`}
+        </div>
+      )}
+
+      {/* El turno no se ha podido comprobar (sin red) y no hay ninguno guardado
+          como abierto: no se tapa la carta, se dice. Al volver internet se
+          comprueba solo. */}
+      {turnoSinComprobar && !turno?.abierta && !sinTurno && (
+        <div style={{
+          padding: '9px 14px', borderRadius: 10, marginBottom: 10, fontSize: 13, fontWeight: 700,
+          lineHeight: 1.4,
+          background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.5)', color: '#F5A623',
+        }}>
+          Sin conexión: no se ha podido comprobar el turno. Puedes seguir cobrando; al volver internet se comprueba solo.
         </div>
       )}
 
@@ -1266,7 +1320,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             {turno.abierta_por_nombre ? ` · ${turno.abierta_por_nombre}` : ''}
           </span>
           <span style={{ marginLeft: 'auto', color: T.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
-            En el cajón {eur(cents(turno.esperado))}
+            {/* Sin red el importe es el de la última vez que se pudo leer: se dice. */}
+            {turnoSinComprobar
+              ? `Sin conexión · cajón (última lectura) ${eur(cents(turno.esperado))}`
+              : `En el cajón ${eur(cents(turno.esperado))}`}
           </span>
         </div>
       )}
@@ -1287,9 +1344,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           onEditar={(p) => setPedidoEditar(p)}
           recargarToken={recargasPedidos}
           onAbrirRepartidores={() => setPantalla('socios-riders')} />
-      ) : (turnoLeido && !turno?.abierta && !sinTurno) ? (
+      ) : (turnoLeido && !turno?.abierta && !sinTurno && !turnoSinComprobar) ? (
         // LA PUERTA. Sin turno abierto no se pinta la carta: no tendria sentido
         // cobrar en una barra cuyo dinero no va a cuadrar con nada esta noche.
+        // Solo cuando el SERVIDOR lo ha dicho: sin red no se tapa nada (a4).
         <PuertaTurno
           restaurante={restaurante}
           onAbrirCaja={() => { setCajaVista('resumen'); setModalCaja(true) }}

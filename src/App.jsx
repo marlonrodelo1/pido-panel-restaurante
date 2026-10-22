@@ -112,7 +112,7 @@ function useIsDesktop(breakpoint = 1024) {
 const SECCIONES_DEEPLINK = ['liquidacion-pido']
 
 function AppContent() {
-  const { user, restaurante, restauranteNotFound, loading, logout, tpvActivo } = useRest()
+  const { user, restaurante, restauranteNotFound, sinConexion, refetch, loading, logout, tpvActivo } = useRest()
   const [seccion, setSeccion] = useState(() => {
     if (isNative) return 'pedidos'
     try {
@@ -221,6 +221,31 @@ function AppContent() {
           >
             <LogOut size={15} strokeWidth={2} />
             Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // SIN CONEXIÓN Y SIN COPIA EN ESTE APARATO (a4, 22 oct 2026): no se ha podido
+  // preguntar por el restaurante. Sin botón de cerrar sesión, a propósito: sin
+  // internet no se puede volver a entrar. Se reintenta solo al volver la red.
+  if (!restaurante && sinConexion) {
+    return (
+      <div style={{ ...shell, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 32 }}>
+        <style>{css}</style>
+        <div style={{ textAlign: 'center', maxWidth: 360 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: colors.ink, marginBottom: 8 }}>
+            Sin conexión
+          </div>
+          <div style={{ fontSize: 13, color: colors.stone, marginBottom: 24, lineHeight: 1.5 }}>
+            No se ha podido cargar tu restaurante y este aparato todavía no tiene una copia guardada. En cuanto vuelva internet entra solo.
+          </div>
+          <button
+            onClick={refetch}
+            style={{ ...ds.primaryBtn, height: 42, padding: '0 28px' }}
+          >
+            Reintentar
           </button>
         </div>
       </div>
