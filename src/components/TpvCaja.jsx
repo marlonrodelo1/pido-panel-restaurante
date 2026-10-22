@@ -527,6 +527,11 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     // Grande = 20 € o más, o un 10 % o más de lo esperado. Los descuadres de céntimos
     // (el día a día) no deben asustar a nadie.
     const descuadreGrande = tecleado && Math.abs(descuadre) >= Math.max(2000, Math.round(Math.abs(esperado) * 0.1))
+    // 22 oct 2026: en Duende se tecleó 219,40 € (TODO lo vendido, con tarjetas) como dinero contado
+    // cuando en el cajón había 94,50 €; la caja mayor se infló 124,90 € y «Tu dinero» no cuadraba.
+    // Si lo tecleado es lo vendido del turno (±1 €) y no lo que debería haber, se dice tal cual.
+    const ventaTotalC = cents(estado.venta_total)
+    const pusoLoVendido = descuadreGrande && ventaTotalC > esperado && Math.abs(importeC - ventaTotalC) <= 100
     // El reparto que hará el servidor al cerrar, para enseñarlo antes, con la
     // base recién leída de `tpv_config`: la misma que usa `tpv_cerrar_caja`.
     const repartoConfirm = repartoCierre(importeC, baseC)
@@ -644,10 +649,13 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                   borderRadius: 12, padding: 12, textAlign: 'left', display: 'grid', gap: 6,
                 }}>
                   <strong style={{ fontSize: 13, color: T.danger }}>
-                    {descuadre < 0 ? 'Falta mucho dinero. ¿Has sacado efectivo del cajón?' : 'Sobra mucho dinero. ¿Falta apuntar algo?'}
+                    {pusoLoVendido ? 'Has puesto lo VENDIDO, no lo que hay en el cajón.'
+                      : descuadre < 0 ? 'Falta mucho dinero. ¿Has sacado efectivo del cajón?' : 'Sobra mucho dinero. ¿Falta apuntar algo?'}
                   </strong>
                   <div style={{ fontSize: 12, color: T.text, lineHeight: 1.5 }}>
-                    {descuadre < 0
+                    {pusoLoVendido
+                      ? `${eur(ventaTotalC)} es todo lo vendido en el turno, con tarjetas y datáfono, que no están en el cajón. Pulsa Cancelar, cuenta solo los billetes y las monedas y pon eso: debería haber ${eur(esperado)}.`
+                      : descuadre < 0
                       ? 'Si retiraste dinero (a la caja fuerte, al banco, para pagar a alguien), pulsa Cancelar y apúntalo como «Salida» antes de cerrar. Si no, se guardará como descuadre.'
                       : 'Si metiste dinero en el cajón o cobraste algo en efectivo sin pasar por el TPV, pulsa Cancelar y apúntalo como «Entrada» antes de cerrar. Si no, se guardará como descuadre.'}
                   </div>

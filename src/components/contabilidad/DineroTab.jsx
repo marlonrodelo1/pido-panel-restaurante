@@ -4,6 +4,7 @@ import {
   TriangleAlert, Undo2, X, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { colors, ds, radius, type } from '../../lib/uiStyles'
+import { supabase } from '../../lib/supabase'
 import { toast, confirmar } from '../../App'
 import {
   eur, tesoreria, contarBolsillo, moverDinero, borrarApunteDinero, hoyCanariasIso, sumarDias, fechaLarga,
@@ -89,7 +90,7 @@ const MOVIMIENTOS = {
 
 const ICONO_MOV = {
   cierre: Wallet, apertura: Wallet, compra: ShoppingCart, gasto: Receipt,
-  apunte: ArrowLeftRight, datafono: CreditCard, tarjeta: CreditCard, pidoo: Smartphone,
+  apunte: ArrowLeftRight, datafono: CreditCard, tarjeta: CreditCard, stripe: CreditCard, pidoo: Smartphone,
 }
 
 export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }) {
@@ -136,6 +137,11 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
   // Tarjeta directa (Duende): la tarjeta de la app la cobra el dueño en Stripe y va al banco.
   // No hay liquidación, así que «Te debe Pidoo» no existe (`stock_config.tarjeta_directa`).
   const directa = pid.directa === true
+  // Lo cobrado por Stripe se cuenta donde el dueño lo guarda de verdad (22 oct 2026): en el banco
+  // o en la caja mayor (`stock_config.stripe_a_caja_mayor`, lo elige él abajo). Duende lo pasa a
+  // la caja mayor cada día; contándolo en el banco, el banco salía inflado y nunca cuadraba.
+  const stripeEnCajaMayor = directa && cma.stripe === true
+  const stripeEnBanco = directa && !stripeEnCajaMayor
   const total = Number(t.total || 0)
   // Contar, mover y deshacer los toca solo el dueño (o Pidoo): la base de datos se lo rechaza al
   // equipo con PD285. El equipo puede ver la pantalla, pero sin botones que acaban en error
@@ -175,7 +181,7 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         </div>
         <div style={{ fontSize: type.sm, color: colors.textMute, marginTop: 4, lineHeight: 1.5 }}>
           {directa
-            ? 'Sumando el cajón, la caja mayor y el banco (con lo que tienes en Stripe).'
+            ? `Sumando el cajón, la caja mayor y el banco (con lo que tienes en Stripe en ${stripeEnCajaMayor ? 'la caja mayor' : 'el banco'}).`
             : debesPidoo
             ? 'Sumando el cajón, la caja mayor y el banco, y restando lo que le debes a Pidoo.'
             : 'Sumando el cajón, la caja mayor, el banco y lo que te debe Pidoo.'}
@@ -195,7 +201,9 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         <TarjetaCajon cm={cm} hoy={hoy} onIrA={onIrA} onIrADia={onIrADia} />
 
         <Bolsillo icono={<Vault size={17} />} titulo="Caja mayor" saldo={cma.saldo}
-          frase="Los billetes que se sacan del cajón al cerrar. De aquí pagas.">
+          frase={stripeEnCajaMayor
+            ? 'Los billetes que se sacan del cajón al cerrar y lo que cobras con tarjeta (Stripe), ya sin la comisión. De aquí pagas.'
+            : 'Los billetes que se sacan del cajón al cerrar. De aquí pagas.'}>
           {!cma.contada ? (
             <Aviso
               texto={puede
@@ -235,13 +243,15 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         </Bolsillo>
 
         <Bolsillo icono={<Landmark size={17} />} titulo="Banco" saldo={bco.saldo}
-          frase={directa
+          frase={stripeEnCajaMayor
+            ? 'Lo que pagas por banco y lo que llevas desde la caja mayor. Lo de la tarjeta lo tienes en la caja mayor.'
+            : directa
             ? 'El datáfono y la tarjeta de la app (Stripe), menos lo que pagas por banco.'
             : 'El datáfono y lo que te paga Pidoo, menos lo que pagas por banco.'}>
           {!bco.contado ? (
             <Aviso
               texto={puede
-                ? (directa
+                ? (stripeEnBanco
                   ? 'Todavía no has puesto cuánto tienes: mira tu cuenta del banco, súmale lo tuyo que aún está en Stripe y ponlo aquí.'
                   : 'Todavía no has puesto cuánto tienes: mira el saldo de tu cuenta del banco y ponlo aquí.')
                 : 'Todavía no ha puesto el dueño el saldo del banco: hasta entonces esta cifra no es exacta.'}
@@ -255,7 +265,7 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
             <Nota aviso>
               {bco.contado
                 ? (puede
-                  ? (directa
+                  ? (stripeEnBanco
                     ? 'Sale en negativo: revisa tu banco y lo que hay en Stripe y vuelve a ponerlo.'
                     : 'Sale en negativo: revisa el saldo de tu cuenta y vuelve a ponerlo.')
                   : 'Sale en negativo: avísale al dueño para que revise el saldo del banco.')
@@ -282,6 +292,10 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         {!directa && <TarjetaPidoo pid={pid} />}
       </div>
 
+      {directa && puede && (
+        <DondeVaLaTarjeta estId={estId} enCajaMayor={stripeEnCajaMayor} onCambiado={recargar} />
+      )}
+
       {/* ── Movimientos ─────────────────────────────────────────────────── */}
       <Movimientos cma={cma} bco={bco} hoy={hoy} puede={puede} onDeshecho={recargar} />
 
@@ -296,7 +310,7 @@ export default function DineroTab({ estId, recarga, onApuntar, onIrA, onIrADia }
         estId={estId} bolsillo={ventana.bolsillo}
         calculado={ventana.bolsillo === 'banco' ? bco.saldo : cma.saldo}
         yaContado={ventana.bolsillo === 'banco' ? !!bco.contado : !!cma.contada}
-        directa={directa}
+        directa={stripeEnBanco} stripeEnCajaMayor={stripeEnCajaMayor}
         onGuardado={recargar}
         onCerrar={() => setVentana(null)}
       />
@@ -568,7 +582,7 @@ function Movimientos({ cma, bco, hoy, puede, onDeshecho }) {
 // No se cierran al pulsar fuera (igual que «Apuntar un pago»): con el importe tecleado, un
 // clic perdido lo borraba.
 
-function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir, directa = false, onGuardado, onCerrar }) {
+function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir, directa = false, stripeEnCajaMayor = false, onGuardado, onCerrar }) {
   const banco = bolsillo === 'banco'
   // Se congela al abrir: tras «Guardar» se recarga la tesorería y el bolsillo ya sale contado,
   // así que la primera vez acabaría enseñando la «diferencia» que se quería evitar.
@@ -659,7 +673,9 @@ function VentanaContar({ estId, bolsillo, calculado, yaContado: yaContadoAlAbrir
           ? (directa
             ? 'Mira cuánto hay en tu cuenta del banco, súmale lo de tu restaurante que aún está en Stripe (lo que todavía no te ha llegado al banco) y pon el total aquí.'
             : 'Mira en la app de tu banco cuánto hay en la cuenta del negocio y ponlo aquí.')
-          : 'Cuenta los billetes y las monedas de la caja mayor y pon cuánto hay.'}
+          : stripeEnCajaMayor
+            ? 'Cuenta los billetes y las monedas de la caja mayor, súmale lo de la tarjeta que aún está en Stripe (lo que todavía no has pasado) y pon el total aquí.'
+            : 'Cuenta los billetes y las monedas de la caja mayor y pon cuánto hay.'}
       </div>
       <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4 }}>
         {/* Sin contar nunca, la cifra calculada parte de 0 y puede salir en negativo: no ayuda. */}
@@ -806,6 +822,50 @@ function VentanaMover({ estId, bolsillo, inicial, saldos, contados = {}, onApunt
 }
 
 /* ── Piezas pequeñas ──────────────────────────────────────────────────────── */
+
+// Lo que se cobra con tarjeta por Stripe (app, lector, repartidores, datáfono): ¿el dueño lo deja en
+// el banco o lo pasa a la caja mayor? Cada uno lo hace a su manera y «Tu dinero» tiene que contarlo
+// donde está de verdad (22 oct 2026). Solo cambia las cuentas: no mueve dinero.
+function DondeVaLaTarjeta({ estId, enCajaMayor, onCambiado }) {
+  const [guardando, setGuardando] = useState(false)
+  async function elegir(cajaMayor) {
+    if (guardando || cajaMayor === enCajaMayor) return
+    setGuardando(true)
+    try {
+      // `.select()`: con RLS, un UPDATE que no toca ninguna fila no da error.
+      const { data, error } = await supabase.from('stock_config')
+        .update({ stripe_a_caja_mayor: cajaMayor })
+        .eq('establecimiento_id', estId)
+        .select('establecimiento_id')
+      if (error) throw error
+      if (!data?.length) throw new Error('no se ha guardado')
+      toast(cajaMayor ? 'Lo de la tarjeta se cuenta ahora en la caja mayor' : 'Lo de la tarjeta se cuenta ahora en el banco', 'success')
+      onCambiado()
+    } catch (e) {
+      toast(`No se pudo cambiar: ${e.message}`, 'error')
+    } finally {
+      setGuardando(false)
+    }
+  }
+  const opcion = (activa) => ({
+    ...ds.secondaryBtn, flex: '1 1 140px', height: 40, justifyContent: 'center', fontSize: type.sm,
+    ...(activa ? { borderColor: colors.primary, color: colors.primary, fontWeight: 800 } : {}),
+    opacity: guardando ? 0.6 : 1,
+  })
+  return (
+    <div style={{ ...ds.card, padding: 14, marginTop: 12 }}>
+      <div style={{ fontSize: type.sm, fontWeight: 800, color: colors.text }}>Lo que cobras con tarjeta, ¿dónde lo guardas?</div>
+      <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 4, lineHeight: 1.5 }}>
+        App, lector, datáfono y repartidores. Elige dónde lo tienes de verdad y aquí se contará ahí.
+        En la caja mayor se cuenta ya sin la comisión de Stripe.
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+        <button onClick={() => elegir(false)} disabled={guardando} style={opcion(!enCajaMayor)}>En el banco</button>
+        <button onClick={() => elegir(true)} disabled={guardando} style={opcion(enCajaMayor)}>En la caja mayor</button>
+      </div>
+    </div>
+  )
+}
 
 const botonTarjeta = { ...ds.secondaryBtn, height: 34, padding: '0 12px', fontSize: type.xs }
 
