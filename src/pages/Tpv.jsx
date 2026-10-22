@@ -29,8 +29,8 @@ import {
 } from '../lib/printService'
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import { resumenJornada, inicioJornada } from '../lib/jornada'
-import { encolarVenta, sincronizarCola, ventasPendientes, ventasAtascadas, siguienteNumeroOff } from '../lib/colaVentas'
-import { redCaida, esFalloSinRespuesta } from '../lib/estadoRed'
+import { encolarVenta, sincronizarCola, ventasPendientes, ventasAtascadas, siguienteNumeroOff, tokenSinEsperar } from '../lib/colaVentas'
+import { redCaida, esFalloSinRespuesta, comprobarRed, marcarRedOk, avisarFalloRed } from '../lib/estadoRed'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
@@ -223,6 +223,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     window.addEventListener('online', intentar)
     window.addEventListener('pidoo:red', cambioRed)
     window.addEventListener('pidoo:cola-ventas', cambioCola)
+    // Un cobro que se guardó en la cola CON internet (cortado por tiempo o por
+    // la sesión) pide que se mande enseguida, sin esperar a la vuelta de 60 s.
+    window.addEventListener('pidoo:cola-intentar', intentar)
     setSinRed(redCaida())
     intentar()
     const t = setInterval(intentar, 60000)
@@ -232,6 +235,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       window.removeEventListener('online', intentar)
       window.removeEventListener('pidoo:red', cambioRed)
       window.removeEventListener('pidoo:cola-ventas', cambioCola)
+      window.removeEventListener('pidoo:cola-intentar', intentar)
       clearInterval(t)
     }
   }, [restaurante?.id])
@@ -438,6 +442,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
   async function cargarCarta(avisar = false) {
     const claveEspejo = `pidoo_tpv_carta_${restaurante.id}`
+    // a5: con la red ya comprobada como caída y la carta aún sin pintar (abrir
+    // la app en pleno corte), la copia va PRIMERO: las consultas pueden tardar
+    // medio minuto en fallar (esperan a renovar la sesión) y el mostrador no
+    // puede esperar. Si luego la carga de verdad sale bien, la sustituye.
+    let yaConEspejo = false
+    if (cargando && redCaida()) {
+      try {
+        const espejo = JSON.parse(localStorage.getItem(claveEspejo) || 'null')
+        if (espejo?.cats?.length || espejo?.prods?.length) { aplicarCarta(espejo, true); yaConEspejo = true }
+      } catch { /* espejo roto: se sigue con la carga normal */ }
+    }
     const [cats, prods, gru] = await Promise.all([
       supabase.from('categorias').select('id, nombre, orden, impresora_destino')
         .eq('establecimiento_id', restaurante.id).eq('activa', true).order('orden'),
@@ -447,6 +462,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         .eq('establecimiento_id', restaurante.id),
     ])
     if (cats.error || prods.error || gru.error) {
+      if (yaConEspejo) return   // ya está pintada la copia (ver arriba)
       // Sin red, la carta guardada de la última vez: un router caído no puede
       // dejar el mostrador sin carta.
       try {
@@ -997,7 +1013,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // La venta cobrada SIN INTERNET: a la cola local (misma clave de
   // idempotencia) + ticket PROVISIONAL serie OFF + cajón si es efectivo. El
   // dinero ya está en el cajón: el servicio no se para por el router.
-  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla) {
+  //
+  // `motivo` (a5) solo cambia el aviso: 'red' (sin internet), 'tiempo' (el
+  // servidor no contestó a tiempo: no se sabe si entró) o 'sesion' (la sesión
+  // no se pudo renovar a tiempo). En los tres casos la venta es la misma.
+  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, motivo = 'red') {
     const numeroOff = siguienteNumeroOff(restaurante.id)
     encolarVenta(restaurante.id, { payload: cuerpo, numeroOff, total_c: totalPantalla, metodo: metodo_pago })
 
@@ -1029,7 +1049,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
     setParaLlevar(false)
     setModalPago(false)
-    toast(`Sin conexión: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
+    toast(motivo === 'tiempo'
+      ? `El servidor no ha contestado: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola (si ya había entrado, no se cobra dos veces).`
+      : motivo === 'sesion'
+        ? `La sesión se estaba renovando: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola en unos segundos.`
+        : `Sin conexión: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
+    // Si hay internet (cobro cortado por tiempo o por la sesión), la cola no
+    // espera a su vuelta de 60 s: se intenta enseguida.
+    if (!redCaida()) setTimeout(() => window.dispatchEvent(new CustomEvent('pidoo:cola-intentar')), 5000)
   }
 
   async function cobrar(metodo_pago, entregado_c = null, { lector = false } = {}) {
@@ -1042,16 +1069,28 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // clave de idempotencia no cambia.
     const corte = new AbortController()
     const reloj = setTimeout(() => corte.abort(), 30000)
+    // La comprobación de red a mitad de cobro (a5, ver abajo).
+    let vigia = null
     // El total que VE el camarero en este momento, para poder comparar después
     // con el que cobró de verdad el servidor. Y las líneas tal cual están: si
     // hay que guardar la venta sin conexión, esto es lo que se guarda.
     const totalPantalla = totalCarrito
     const lineasPantalla = carrito
     let cuerpo = null
+    // ¿El token es el guardado en el aparato porque la sesión no se pudo
+    // renovar a tiempo? (a5, ver `tokenSinEsperar`)
+    let tokenDeRespaldo = false
     try {
       if (!idemRef.current) idemRef.current = uuidv4()  // red de seguridad; la pone el efecto del carrito
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess?.session?.access_token
+      // 🔴 EL COBRO NO ESPERA A RENOVAR LA SESIÓN (a5, 22 oct 2026). Con el
+      // lector se deja como estaba: ese cobro necesita internet sí o sí.
+      let token = null
+      if (lector) {
+        const { data: sess } = await supabase.auth.getSession()
+        token = sess?.session?.access_token
+      } else {
+        ({ token, deRespaldo: tokenDeRespaldo } = await tokenSinEsperar())
+      }
       cuerpo = {
         establecimiento_id: restaurante.id,
         metodo_pago,
@@ -1067,13 +1106,50 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           ? { producto_id: l.producto_id, tamano: l.tamano, tamano_id: l.tamano_id || null, cantidad: l.cantidad, extras: l.extras, notas: l.notas || null }
           : { nombre: l.nombre, precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null })),
       }
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/tpv-venta`, {
-        method: 'POST',
-        signal: corte.signal,
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(cuerpo),
-      })
+      // a5: con la red YA comprobada como caída no se espera a nadie: la venta
+      // va directa a la cola, al instante. (`redCaida` solo es cierto tras un
+      // fallo de red confirmado por su propia comprobación, y se quita con la
+      // primera respuesta del servidor: con internet esto no pasa.)
+      if (!lector && redCaida()) {
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla)
+        return
+      }
+      // a5: el PRIMER cobro del corte. Con la fibra caída y el router encendido
+      // la petición no falla: se queda colgada hasta que el sistema la da por
+      // perdida (o hasta los 30 s del reloj). Si a los 6 s no ha contestado, se
+      // mira si hay internet; si NO lo hay, se corta y la venta va a la cola. Si
+      // lo hay (servidor lento), se sigue esperando como siempre.
+      // Si el servidor ya ha contestado, la comprobación que aún vuelva no corta
+      // nada: la respuesta manda.
+      let respondio = false
+      if (!lector) {
+        vigia = setTimeout(() => {
+          comprobarRed().then((hay) => { if (!hay && !respondio) corte.abort() }).catch(() => {})
+        }, 6000)
+      }
+      let resp
+      try {
+        resp = await fetch(`${SUPABASE_URL}/functions/v1/tpv-venta`, {
+          method: 'POST',
+          signal: corte.signal,
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify(cuerpo),
+        })
+      } catch (errRed) {
+        if (errRed?.name !== 'AbortError') avisarFalloRed()
+        throw errRed
+      }
+      respondio = true
+      clearTimeout(vigia)
+      marcarRedOk()
       const body = await resp.json().catch(() => ({}))
+      // a5: el token era el guardado (caducado: la sesión no se pudo renovar a
+      // tiempo) y el servidor no lo acepta. NO se ha cobrado nada en el servidor:
+      // la venta va a la cola, que la manda con la sesión ya renovada.
+      if (resp.status === 401 && tokenDeRespaldo && !lector) {
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'sesion')
+        return
+      }
       if (!resp.ok || !body?.ok) {
         throw new Error(({
           tpv_no_contratado: 'Este restaurante no tiene el TPV activado.',
@@ -1125,15 +1201,26 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       const esRed = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
       if (esRed && cuerpo) {
         cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla)
+      } else if (err?.name === 'AbortError' && cuerpo && !lector) {
+        // 🔴 CORTADO POR TIEMPO = A LA COLA (a5, 22 oct 2026). Antes salía
+        // «vuelve a pulsar» y la venta NO se guardaba: con la fibra caída cada
+        // cobro acababa así y el mostrador dejaba de vender. No se sabe si llegó
+        // a entrar, y da igual: va a la cola con SU MISMA clave de idempotencia,
+        // y si ya había entrado el servidor contesta «repetida» y no se cobra
+        // dos veces. El dinero ya está en el cajón.
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla,
+          redCaida() ? 'red' : 'tiempo')
       } else if (err?.name === 'AbortError') {
         // El servidor no contestó a tiempo con la red viva: reintentar tal
-        // cual es seguro por la clave de idempotencia.
+        // cual es seguro por la clave de idempotencia. (Solo con el lector: el
+        // cobro con tarjeta del lector no puede quedarse en la cola.)
         toast('Sin respuesta del servidor. Vuelve a pulsar cobrar TAL CUAL está la venta: si ya había entrado, no se cobra dos veces.', 'error')
       } else {
         toast(err.message || 'Error al cobrar', 'error')
       }
     } finally {
       clearTimeout(reloj)
+      clearTimeout(vigia)
       enVueloRef.current = false
       setCobrando(false)
     }

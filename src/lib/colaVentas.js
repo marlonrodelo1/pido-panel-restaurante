@@ -21,6 +21,36 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const claveCola = (est) => `pidoo_tpv_cola_ventas_${est}`
 const claveContador = (est) => `pidoo_tpv_off_n_${est}`
 
+// ── EL PERMISO PARA COBRAR, SIN ESPERAR A RENOVARLO (a5, 22 oct 2026) ──────────
+// La sesión dura unos 60 minutos y se renueva sola… con internet. Sin él,
+// `getSession()` se queda reintentando la renovación hasta medio minuto (y cada
+// intento puede colgarse), y el cobro esperaba detrás: a partir de la media hora
+// de corte, cada venta tardaba 25-50 s y acababa en «vuelve a pulsar cobrar»,
+// sin guardarse. Aquí se espera como mucho `ms`. Si no contesta a tiempo, o no
+// devuelve sesión, se usa el token que el aparato tiene guardado TAL CUAL, aunque
+// haya caducado: sin internet la petición falla igual y la venta va a la cola; con
+// internet el servidor dice 401 y la venta también va a la cola, que la manda en
+// cuanto la sesión esté renovada. Con la sesión al día, `getSession()` contesta
+// al momento y todo es como siempre.
+function tokenGuardado() {
+  try {
+    const clave = supabase.auth.storageKey
+    if (!clave) return null
+    const s = JSON.parse(localStorage.getItem(clave) || 'null')
+    return s?.access_token || null
+  } catch { return null }
+}
+
+export async function tokenSinEsperar(ms = 2500) {
+  const deSesion = supabase.auth.getSession()
+    .then(({ data }) => data?.session?.access_token || null)
+    .catch(() => null)
+  const r = await Promise.race([deSesion, new Promise((res) => setTimeout(() => res(undefined), ms))])
+  if (r) return { token: r, deRespaldo: false }
+  const guardado = tokenGuardado()
+  return { token: guardado, deRespaldo: !!guardado }
+}
+
 export function leerCola(est) {
   try {
     const v = JSON.parse(localStorage.getItem(claveCola(est)) || '[]')
@@ -71,8 +101,9 @@ export async function sincronizarCola(est) {
   sincronizando = true
   let enviadas = 0
   try {
-    const { data: sess } = await supabase.auth.getSession()
-    const token = sess?.session?.access_token
+    // Sin esperar a renovar la sesión más de la cuenta (a5): la cola corre por
+    // detrás, pero no puede quedarse medio minuto parada en cada vuelta.
+    const { token } = await tokenSinEsperar(8000)
     for (const venta of pendientes) {
       let resp, body
       try {

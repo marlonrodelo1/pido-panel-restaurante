@@ -34,20 +34,68 @@ export function RestProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
 
+  // ── LA SESIÓN CADUCADA SIN INTERNET PARA RENOVARLA (a5, 22 oct 2026) ────────
+  // La sesión dura ~60 min y se renueva sola con internet. Si caduca durante un
+  // corte y se abre (o se reabre) la app, supabase-js no puede renovarla y
+  // devuelve «sin sesión»: salía la pantalla de entrar, que pide la contraseña
+  // del dueño Y internet. Pero la sesión NO se ha perdido: supabase-js solo la
+  // borra cuando el servidor la rechaza de verdad (y entonces avisa con
+  // SIGNED_OUT); con un fallo de red la deja guardada para renovarla al volver.
+  // Así que si «sin sesión» viene de un fallo de red y la sesión sigue guardada,
+  // se sigue con ella y con la copia del restaurante. Al volver internet,
+  // supabase-js la renueva solo (TOKEN_REFRESHED) y todo se relee del servidor.
+  function sesionGuardada() {
+    try {
+      const s = JSON.parse(localStorage.getItem(supabase.auth.storageKey) || 'null')
+      return s?.user?.id && s?.refresh_token ? s : null
+    } catch { return null }
+  }
+
+  function entrarSinRenovar(guardada) {
+    console.warn('[RestContext] La sesión no se ha podido renovar (sin conexión): se sigue con la guardada')
+    setUser(guardada.user)
+    if (!restauranteRef.current && !entrarConEspejo(guardada.user.id)) setSinConexion(true)
+    setLoading(false)
+    comprobarRed()
+  }
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let resuelta = false
+    // Arrancar sin internet con la sesión caducada: supabase-js tarda hasta
+    // medio minuto en dar la renovación por fallida. A los 8 s, si hay sesión
+    // guardada, se entra con ella (la respuesta de verdad, cuando llegue, manda).
+    const arranque = setTimeout(() => {
+      if (resuelta) return
+      const guardada = sesionGuardada()
+      if (guardada) entrarSinRenovar(guardada)
+    }, 8000)
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      resuelta = true
+      clearTimeout(arranque)
+      if (!session?.user && error && esFalloSinRespuesta({ error })) {
+        const guardada = sesionGuardada()
+        if (guardada) { entrarSinRenovar(guardada); return }
+      }
       setUser(session?.user ?? null)
       if (session?.user) fetchRestaurante(session.user.id)
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // INITIAL_SESSION sin sesión pero con la sesión aún guardada = la
+      // renovación falló por la red (si el servidor la hubiera rechazado, ya
+      // estaría borrada). Un SIGNED_OUT de verdad no pasa por aquí.
+      if (!session?.user && _event === 'INITIAL_SESSION') {
+        const guardada = sesionGuardada()
+        if (guardada) { entrarSinRenovar(guardada); return }
+      }
       setUser(session?.user ?? null)
       if (session?.user) fetchRestaurante(session.user.id)
       else { setRestaurante(null); setRestauranteNotFound(false); setSinConexion(false); setDesdeEspejo(false); setLoading(false) }
     })
 
-    return () => subscription.unsubscribe()
+    return () => { clearTimeout(arranque); subscription.unsubscribe() }
   }, [])
 
   // Proactive session refresh — refresh 5 min before expiry (prevents 401 on sendPush)
