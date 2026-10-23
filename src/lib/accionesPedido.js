@@ -103,11 +103,14 @@ export async function aceptarPedido({ pedido, minutos, restaurante, items = [] }
     crearDestinoDe(restaurante?.id)
       .then((destinoDe) => imprimirPedido({ ...pedido, minutos_preparacion: minutos }, items, restaurante, destinoDe))
       .then((r) => {
+        // a10: cada aviso manda al botón que arregla SU papel. «Reimprimir» no
+        // existía aquí: el botón del pedido («Imprimir ticket») solo saca el del
+        // cliente, y la comanda se quedaba sin forma de volver a salir.
         if (!r?.cocina) {
           soltarImpresion(pedido.id)
-          toast('La comanda no ha salido por la impresora. Usa Reimprimir.')
+          toast('La comanda no ha salido por la impresora: sácala con «Reimprimir comanda» en el pedido.')
         } else if (!r?.cliente) {
-          toast('Comanda impresa; el ticket del cliente no salió. Usa Reimprimir.')
+          toast('Comanda impresa; el ticket del cliente no salió: sácalo con «Imprimir ticket» en el pedido.')
         }
       })
       .catch(() => soltarImpresion(pedido.id))

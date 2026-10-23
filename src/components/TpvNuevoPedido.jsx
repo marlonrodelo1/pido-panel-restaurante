@@ -628,11 +628,12 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
           .then((r) => {
             // Soltar SOLO si la comanda falló: con la comanda ya en cocina,
             // reimprimir el paquete entero duplicaría el pedido en la plancha.
+            // a10: cada aviso dice el botón de SU papel en Pedidos.
             if (!r?.cocina) {
               soltarImpresion(body.pedido.id)
-              toast('El pedido está creado, pero la comanda no ha salido: imprímela desde Pedidos', 'error')
+              toast('El pedido está creado, pero la comanda no ha salido: sácala con «Reimprimir comanda» en Pedidos', 'error')
             } else if (!r?.cliente) {
-              toast('Comanda impresa; el ticket del cliente no salió. Reimprímelo desde Pedidos.', 'error')
+              toast('Comanda impresa; el ticket del cliente no salió: sácalo con «Imprimir ticket» en Pedidos.', 'error')
             }
           })
           .catch(() => soltarImpresion(body.pedido.id))

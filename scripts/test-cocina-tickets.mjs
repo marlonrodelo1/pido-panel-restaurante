@@ -9,10 +9,10 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { generarComandaTpv } from '../src/lib/escpos.js'
+import { generarComandaTpv, generarComandaCocina } from '../src/lib/escpos.js'
 import {
   claveJornada, siguienteNumero, asignarNumeroCliente, anadirQuien, buscarQuien,
-  recordarQuien, quienDeVenta, nombrePuesto, tieneQuien,
+  recordarQuien, quienDeVenta, nombrePuesto, tieneQuien, lineasComandaDeItems,
 } from '../src/lib/comandaVenta.js'
 
 // El papel, decodificado a texto (solo ASCII basta para buscar las frases).
@@ -113,4 +113,40 @@ test('el nombre puesto de una aparcada: el tecleado sí, la etiqueta automática
   assert.equal(nombrePuesto({ nombre: 'Sin nombre 21:05', nombre_venta: 'Pepe' }), 'Pepe')
   assert.equal(tieneQuien({ numero: null, nombre: null }), false)
   assert.equal(tieneQuien({ numero: 0, nombre: null }), true)
+})
+
+// ── a10: reimprimir la comanda ───────────────────────────────────────────────
+test('comanda del mostrador reimpresa: lo dice arriba y lleva la hora de la venta', () => {
+  const t = texto(generarComandaTpv([linea], { nombre: 'Max' }, {
+    cliente: 23, codigo: 'PD-ABC123', reimpresa: true, fecha: '2026-10-24T19:30:00.000Z',
+  }))
+  assert.match(t, /REIMPRESION/)
+  assert.match(t, /Si ya la tienes, no la hagas otra vez/)
+  assert.match(t, /24\/10\/2026/)
+  assert.match(t, /Reimpresa: /)
+  assert.match(t, /CLIENTE 23/)
+})
+
+test('comanda de un pedido reimpresa: marca arriba; sin la opción, el papel de siempre', () => {
+  const pedido = { codigo: 'PD-XYZ999', created_at: '2026-10-24T19:30:00.000Z', metodo_pago: 'efectivo', origen_pedido: 'telefonico', subtotal: 12 }
+  const items = [{ cantidad: 1, nombre_producto: 'Pizza', extras: ['Queso (+0.50€)'], notas: null }]
+  const normal = generarComandaCocina(pedido, items, {}, '** COCINA **')
+  assert.deepEqual(normal, generarComandaCocina(pedido, items, {}, '** COCINA **', {}))
+  assert.doesNotMatch(texto(normal), /REIMPRESION/)
+  const t = texto(generarComandaCocina(pedido, items, {}, '** COCINA **', { reimpresa: true }))
+  assert.match(t, /REIMPRESION/)
+  assert.match(t, /Reimpresa: /)
+  assert.match(t, /PD-XYZ999/)
+})
+
+test('las líneas guardadas vuelven a cocina sin precios y con su producto (para su impresora)', () => {
+  const l = lineasComandaDeItems([
+    { producto_id: 'p1', cantidad: 2, nombre_producto: 'Hamburguesa', tamano: null, extras: ['Queso (+0.50€)', 'Al punto'], notas: 'Sin cebolla' },
+    { producto_id: null, cantidad: 1, nombre_producto: 'Varios', extras: null },
+    { cantidad: 1, nombre_producto: 'Sin columna' },
+  ])
+  assert.deepEqual(l[0], { producto_id: 'p1', cantidad: 2, nombre: 'Hamburguesa', tamano: null, extrasTexto: 'Queso, Al punto', notas: 'Sin cebolla' })
+  assert.equal(l[1].producto_id, null)       // línea libre: a la cocina
+  assert.equal(l[1].extrasTexto, '')
+  assert.equal(l[2].producto_id, undefined)  // sin el campo: el camino de siempre (caja)
 })

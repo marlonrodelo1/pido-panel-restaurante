@@ -12,6 +12,7 @@ import { redCaida, avisarFalloRed } from './estadoRed'
 import {
   ponerIpsLocales, conciliarIpsLocales, anotarIpLocal, quitarIpLocal, cambiarIpEnLista, conLimite,
 } from './impresionSinRed'
+import { lineasComandaDeItems } from './comandaVenta'
 
 // EL PUENTE CON LA IMPRESORA. Hay DOS implementaciones y el resto del fichero no
 // necesita saber en cual esta:
@@ -666,35 +667,7 @@ export async function imprimirPedido(pedido, items, restaurante, destinoDe = nul
   const config = getPrinterConfig()
   if (!impresoraConfigurada(config)) return { ok: false, reason: 'not_configured' }
 
-  // La COMANDA DE COCINA va SIN logo, a proposito. Ese papel lo lee el de la plancha y
-  // lo tira: un logo son ~30 mm de papel y unos segundos de impresion en CADA pedido,
-  // a cambio de nada. Ahi lo que importa es el codigo grande y las notas.
-  // Sale por la impresora DE COCINA si hay una configurada (con la principal de
-  // respaldo); si no, por la de siempre. Con un mapa de destinos, la comanda se
-  // PARTE en dos papeles: cocina y barra, cada uno a su impresora.
-  let r1 = true
-  const nube = await cargarImpresoras()
-  if (nube && nube.length) {
-    // Impresoras en la NUBE: cada línea a la suya, con su nombre de rótulo.
-    r1 = await imprimirComandaRepartida(nube, items || [],
-      (subset, titulo) => generarComandaCocina(pedido, subset, restaurante, titulo),
-      destinoDe)
-  } else if (destinoDe && impresoraCocinaConfigurada(config)) {
-    const paraCocina = []
-    const paraBarra = []
-    for (const it of items || []) {
-      (destinoDe(it.producto_id) === 'barra' ? paraBarra : paraCocina).push(it)
-    }
-    if (paraCocina.length) {
-      r1 = (await sendComanda(generarComandaCocina(pedido, paraCocina, restaurante))) && r1
-    }
-    if (paraBarra.length) {
-      r1 = (await sendToThermalPrinter(generarComandaCocina(pedido, paraBarra, restaurante, '** BARRA **'))) && r1
-    }
-  } else {
-    const cocina = generarComandaCocina(pedido, items, restaurante)
-    r1 = await sendComanda(cocina)
-  }
+  const r1 = await comandaDePedido(pedido, items, restaurante, destinoDe, config)
 
   let r2 = true
   if (config.tickets !== 1 && (ticketClienteAuto || forzarCliente)) {
@@ -708,6 +681,74 @@ export async function imprimirPedido(pedido, items, restaurante, destinoDe = nul
   }
 
   return { ok: r1 && r2, cocina: r1, cliente: r2 }
+}
+
+// LA COMANDA de un pedido (app, teléfono, mesa, kiosko), sola. Es la mitad de
+// cocina de `imprimirPedido`, sacada aparte para poder REIMPRIMIRLA (a10) sin el
+// ticket del cliente; `imprimirPedido` la usa tal cual, sin `opciones`.
+//
+// La COMANDA DE COCINA va SIN logo, a proposito. Ese papel lo lee el de la plancha y
+// lo tira: un logo son ~30 mm de papel y unos segundos de impresion en CADA pedido,
+// a cambio de nada. Ahi lo que importa es el codigo grande y las notas.
+// Sale por la impresora DE COCINA si hay una configurada (con la principal de
+// respaldo); si no, por la de siempre. Con un mapa de destinos, la comanda se
+// PARTE en dos papeles: cocina y barra, cada uno a su impresora.
+async function comandaDePedido(pedido, items, restaurante, destinoDe, config, opciones = undefined) {
+  let r1 = true
+  const nube = await cargarImpresoras()
+  if (nube && nube.length) {
+    // Impresoras en la NUBE: cada línea a la suya, con su nombre de rótulo.
+    r1 = await imprimirComandaRepartida(nube, items || [],
+      (subset, titulo) => generarComandaCocina(pedido, subset, restaurante, titulo, opciones),
+      destinoDe)
+  } else if (destinoDe && impresoraCocinaConfigurada(config)) {
+    const paraCocina = []
+    const paraBarra = []
+    for (const it of items || []) {
+      (destinoDe(it.producto_id) === 'barra' ? paraBarra : paraCocina).push(it)
+    }
+    if (paraCocina.length) {
+      r1 = (await sendComanda(generarComandaCocina(pedido, paraCocina, restaurante, undefined, opciones))) && r1
+    }
+    if (paraBarra.length) {
+      r1 = (await sendToThermalPrinter(generarComandaCocina(pedido, paraBarra, restaurante, '** BARRA **', opciones))) && r1
+    }
+  } else {
+    const cocina = generarComandaCocina(pedido, items, restaurante, undefined, opciones)
+    r1 = await sendComanda(cocina)
+  }
+  return r1
+}
+
+/**
+ * REIMPRIMIR LA COMANDA de un pedido ya hecho (a10, 23 oct 2026).
+ *
+ * Si la impresora de cocina se quedaba sin papel, la cocina perdía el pedido: el
+ * único «Reimprimir» que había sacaba el ticket del CLIENTE. Esto saca SOLO la
+ * comanda, repartida por impresoras como la primera vez y marcada «REIMPRESION»
+ * arriba (si la primera sí llegó, que no la hagan dos veces).
+ *
+ * Una venta de MOSTRADOR sale con el papel del mostrador (con su número de
+ * cliente y su nombre si este aparato los recuerda: `extra`), y el resto con el
+ * de los pedidos. No pasa por el registro anti-duplicados (`ticketsImpresos`): si
+ * alguien la pide es porque quiere otro papel. Devuelve si salió.
+ */
+export async function reimprimirComanda(pedido, items, restaurante, destinoDe = null, extra = {}) {
+  try {
+    if (pedido?.origen_pedido === 'tpv') {
+      return await imprimirComandaTpv(lineasComandaDeItems(items), restaurante, {
+        nota: pedido.para_llevar ? 'PARA LLEVAR' : null,
+        cliente: extra?.numero ?? null, nombre: extra?.nombre || null,
+        codigo: pedido.codigo || null, reimpresa: true, fecha: pedido.created_at || null,
+      }, destinoDe)
+    }
+    const config = getPrinterConfig()
+    if (!impresoraConfigurada(config) && !impresoraCocinaConfigurada(config)) return false
+    return await comandaDePedido(pedido, items, restaurante, destinoDe, config, { reimpresa: true })
+  } catch (err) {
+    console.error('[Print] Error reimprimiendo la comanda:', err)
+    return false
+  }
 }
 
 /**

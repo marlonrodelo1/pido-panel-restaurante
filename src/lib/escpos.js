@@ -182,11 +182,25 @@ function formatDate(isoStr) {
     ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
 }
 
+// UNA COMANDA VUELTA A SACAR (a10, 23 oct 2026) lo dice arriba, bien visible: si
+// la primera sí llegó, el de la plancha no tiene que hacer el pedido dos veces.
+// Sin `reimpresa`, nada: el papel de siempre.
+function marcaReimpresion(reimpresa) {
+  if (!reimpresa) return []
+  return [
+    ...boldOn(), ...wideSize(), ...line('REIMPRESION'), ...normalSize(), ...boldOff(),
+    ...line('Si ya la tienes, no la hagas otra vez'),
+  ]
+}
+
 /**
  * COMANDA COCINA - For the kitchen
  * Big text, no prices, focus on items and notes
  */
-export function generarComandaCocina(pedido, items, restaurante, titulo = '** COCINA **') {
+// `opciones.reimpresa` (a10): la misma comanda vuelta a sacar desde Pedidos,
+// con su marca arriba y la hora a la que se reimprime.
+export function generarComandaCocina(pedido, items, restaurante, titulo = '** COCINA **', opciones = {}) {
+  const reimpresa = !!opciones?.reimpresa
   const bytes = [
     ...init(),
     ...codepage850(),
@@ -198,6 +212,7 @@ export function generarComandaCocina(pedido, items, restaurante, titulo = '** CO
     ...line(titulo),
     ...normalSize(),
     ...boldOff(),
+    ...marcaReimpresion(reimpresa),
     ...feed(1),
 
     // Order code - BIG
@@ -213,6 +228,7 @@ export function generarComandaCocina(pedido, items, restaurante, titulo = '** CO
 
     // Time
     ...line(formatDate(pedido.created_at)),
+    ...(reimpresa ? line('Reimpresa: ' + formatDate()) : []),
     ...line('Prep: ' + (pedido.minutos_preparacion || '?') + ' min'),
     ...separator('-'),
   ]
@@ -671,9 +687,12 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   // dice COCINA y el de las bebidas dice BARRA.
   // `cliente` (número del día), `nombre` (el que le puso el camarero) y
   // `codigo` (PD-… al cobrar, OFF-… sin internet): de quién es (a9).
+  // `reimpresa` + `fecha` (a10): una comanda vuelta a sacar desde Pedidos o
+  // «Tickets del día», con la hora de la venta y no la de ahora.
   const {
     nota = null, numero = null, titulo = '** COCINA **',
     cliente = null, nombre = null, codigo = null,
+    reimpresa = false, fecha = null,
   } = opciones
   const bytes = []
 
@@ -681,6 +700,7 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   bytes.push(...boldOn(), ...doubleSize())
   bytes.push(...line(titulo))
   bytes.push(...normalSize(), ...boldOff())
+  bytes.push(...marcaReimpresion(reimpresa))
   if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
   bytes.push(...line('MOSTRADOR' + (numero ? ' #' + numero : '')))
   // DE QUIÉN ES (a9, 23 oct 2026). Antes solo salía «MOSTRADOR #1» y con varias
@@ -692,7 +712,8 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   }
   if (nombre) bytes.push(...bloqueGrande(String(nombre).toUpperCase(), { negrita: true }))
   if (codigo) bytes.push(...line(codigo))
-  bytes.push(...line(formatDate()))
+  bytes.push(...line(formatDate(reimpresa ? fecha : null)))
+  if (reimpresa) bytes.push(...line('Reimpresa: ' + formatDate()))
   bytes.push(...separator('='), ...left())
 
   for (const l of lineas) {

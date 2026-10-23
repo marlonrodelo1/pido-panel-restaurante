@@ -2513,7 +2513,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
           <GrupoMenu titulo="Informes" />
           <OpcionMenu icono={<ClipboardList size={19} color={T.accent} />} texto="Tickets del día"
-            nota="Reimprimir o anular cualquier venta"
+            nota="Reimprimir el ticket o la comanda, o anular una venta"
             onClick={() => { setMenu(false); setModalTickets(true) }} />
           <OpcionMenu icono={<FileText size={19} color={T.accent} />} texto="Informe X"
             nota="Lo vendido en este turno, sin cerrar nada"

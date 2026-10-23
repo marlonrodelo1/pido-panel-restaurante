@@ -11,8 +11,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
-import { imprimirTicketTpv, impresoraConfigurada } from '../lib/printService'
-import { Printer, Ban, RotateCcw } from 'lucide-react'
+import { imprimirTicketTpv, impresoraConfigurada, reimprimirComanda } from '../lib/printService'
+import { crearDestinoDe } from '../lib/destinosImpresion'
+import { quienDeVenta } from '../lib/comandaVenta'
+import { Printer, Ban, RotateCcw, ChefHat } from 'lucide-react'
 
 export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, onCerrarModal }) {
   const [tickets, setTickets] = useState([])
@@ -75,7 +77,8 @@ export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, 
       // `*` y no la lista de columnas: así trae `para_llevar` (el ticket imprime
       // «PARA LLEVAR») sin romperse si la columna aún no existiera.
       supabase.from('pedidos').select('*').eq('id', pedidoId).maybeSingle(),
-      supabase.from('pedido_items').select('nombre_producto, tamano, extras, precio_unitario, cantidad, notas').eq('pedido_id', pedidoId),
+      // `producto_id`: para que «Reimprimir comanda» mande cada línea a SU impresora.
+      supabase.from('pedido_items').select('producto_id, nombre_producto, tamano, extras, precio_unitario, cantidad, notas').eq('pedido_id', pedidoId),
     ])
     return { pedido, items: items || [], anula }
   }
@@ -89,6 +92,24 @@ export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, 
         pieTicket: tpvConfig?.pie_ticket, anula,
       })
       toast(r.ticket ? 'Ticket reimpreso' : 'La impresora no responde', r.ticket ? 'success' : 'error')
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  // La COMANDA de esa venta otra vez (a10, 23 oct 2026): para cuando la cocina
+  // se queda sin papel. Sale repartida por impresoras, marcada «REIMPRESION» y
+  // con su número de cliente y su nombre si este aparato los recuerda (a9).
+  async function reimprimirComandaDe(t) {
+    if (!impresoraConfigurada()) { toast('No hay impresora configurada', 'error'); return }
+    setOcupado(true)
+    try {
+      const { pedido, items } = await datosDeImpresion(t)
+      if (!pedido || !items.length) { toast('No se encuentra lo que llevaba esta venta', 'error'); return }
+      const destinoDe = await crearDestinoDe(establecimientoId)
+      const quien = quienDeVenta(establecimientoId, pedido.idempotency_key)
+      const ok = await reimprimirComanda(pedido, items, restaurante, destinoDe, quien || {})
+      toast(ok ? 'Comanda reimpresa' : 'La impresora no responde: la comanda no ha salido', ok ? 'success' : 'error')
     } finally {
       setOcupado(false)
     }
@@ -192,10 +213,19 @@ export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, 
             }}>
               {eur(cents(t.total))}
             </div>
-            <button onClick={() => reimprimir(t)} disabled={ocupado} title="Reimprimir"
+            <button onClick={() => reimprimir(t)} disabled={ocupado} title="Reimprimir el ticket"
+              aria-label="Reimprimir el ticket"
               style={{ ...btnSecundario, height: 40, width: 44, padding: 0, flexShrink: 0 }}>
               <Printer size={16} />
             </button>
+            {/* La comanda de cocina (a10). Ni las rectificativas ni lo anulado: ahí no se cocina nada. */}
+            {!esRect && !rect && (
+              <button onClick={() => reimprimirComandaDe(t)} disabled={ocupado} title="Reimprimir la comanda de cocina"
+                aria-label="Reimprimir la comanda de cocina"
+                style={{ ...btnSecundario, height: 40, width: 44, padding: 0, flexShrink: 0 }}>
+                <ChefHat size={16} />
+              </button>
+            )}
             {!esRect && !rect && (
               <button onClick={() => setAnulando(t)} disabled={ocupado} title="Anular"
                 style={{ ...btnSecundario, height: 40, width: 44, padding: 0, flexShrink: 0, color: T.danger }}>

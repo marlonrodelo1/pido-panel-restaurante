@@ -25,9 +25,11 @@ import {
   aceptarPedido, rechazarPedido, cancelarPedido, marcarListo, marcarRecogido,
   marcarEntregado, cerrarPedidoCobrado, MOTIVOS_RECHAZO, MOTIVOS_CANCELACION,
 } from '../lib/accionesPedido'
-import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada } from '../lib/printService'
+import { imprimirTicketTpv, imprimirTicketClienteSolo, impresoraConfigurada, reimprimirComanda } from '../lib/printService'
+import { crearDestinoDe } from '../lib/destinosImpresion'
+import { quienDeVenta } from '../lib/comandaVenta'
 import { unlockAudio, startAlarm, stopAlarm } from '../lib/alarm'
-import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil, Wallet, CreditCard } from 'lucide-react'
+import { Bike, ShoppingBag, Store, LayoutGrid, List, RefreshCw, ArrowRight, ArrowLeft, Plus, Layers, Inbox, MapPin, Phone, User, ChevronDown, ChevronUp, Printer, FileText, Check, Ban, Bell, Pencil, Wallet, CreditCard, ChefHat } from 'lucide-react'
 
 // UNA sola forma para todo lo que se pulsa aquí. Antes convivían píldoras muy
 // redondeadas con botones de esquina suave y parecían dos aplicaciones distintas.
@@ -1230,6 +1232,27 @@ function Acciones({
     toast(ok ? 'Ticket impreso' : 'La impresora no responde', ok ? 'success' : 'error')
   }
 
+  // REIMPRIMIR LA COMANDA (a10, 23 oct 2026): si la cocina se quedó sin papel o
+  // la comanda no salió, aquí se vuelve a sacar, repartida por impresoras y
+  // marcada «REIMPRESION». «Imprimir ticket» saca solo el papel del cliente.
+  async function pulsarReimprimirComanda() {
+    if (ocupado) return
+    if (!impresoraConfigurada()) { toast('No hay impresora configurada', 'error'); return }
+    if (!(p.items || []).length) { toast('Este pedido no tiene líneas que mandar a cocina', 'error'); return }
+    setOcupado(true)
+    try {
+      const est = restaurante?.id || p.establecimiento_id
+      const destinoDe = await crearDestinoDe(est)
+      // En una venta de mostrador, su número de cliente y su nombre, si este
+      // aparato los recuerda (a9).
+      const quien = p.origen_pedido === 'tpv' ? quienDeVenta(est, p.idempotency_key) : null
+      const ok = await reimprimirComanda(p, p.items || [], restaurante, destinoDe, quien || {})
+      toast(ok ? 'Comanda reimpresa' : 'La impresora no responde: la comanda no ha salido', ok ? 'success' : 'error')
+    } finally {
+      setOcupado(false)
+    }
+  }
+
   // Guarda los datos fiscales del cliente en el pedido y saca la factura.
   async function guardarFactura() {
     const datos = {
@@ -1443,6 +1466,10 @@ function Acciones({
     secundarios.push(
       <button key="reimprimir" disabled={ocupado} onClick={pulsarReimprimir} style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>
         <Printer size={15} style={{ marginRight: 6 }} /> Imprimir ticket
+      </button>,
+      // La comanda de cocina, aparte del ticket del cliente (a10).
+      <button key="reimprimir-comanda" disabled={ocupado} onClick={pulsarReimprimirComanda} style={{ ...btnMedio, opacity: ocupado ? 0.6 : 1 }}>
+        <ChefHat size={15} style={{ marginRight: 6 }} /> Reimprimir comanda
       </button>,
     )
   }

@@ -108,3 +108,22 @@ export function nombrePuesto(ficha) {
   if (!n || /^Sin nombre \d{1,2}:\d{2}$/.test(n)) return null
   return n
 }
+
+// Las líneas de una venta ya grabada (`pedido_items`) con la forma de las del
+// mostrador, para volver a sacar su comanda (a10). Los extras se guardan con el
+// precio pegado («Queso (+0.50€)»); a cocina el precio solo le estorba, así que
+// se quita, como en la comanda que salió al vender. El `producto_id` va TAL CUAL
+// para que cada línea vuelva a SU impresora (null = línea libre, a la cocina).
+export function lineasComandaDeItems(items) {
+  return (items || []).map((it) => ({
+    producto_id: it.producto_id,
+    cantidad: it.cantidad || 1,
+    nombre: it.nombre_producto || '',
+    tamano: it.tamano || null,
+    extrasTexto: (Array.isArray(it.extras) ? it.extras : (it.extras ? [it.extras] : []))
+      .map((e) => String(e).replace(/\s*\(\+\s*\d+(?:[.,]\d+)?\s*€\)\s*$/, '').trim())
+      .filter(Boolean)
+      .join(', '),
+    notas: it.notas || null,
+  }))
+}

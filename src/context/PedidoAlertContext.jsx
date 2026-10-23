@@ -30,7 +30,11 @@ const esApp = isNative || esEscritorio
 // Las lineas se piden aqui porque el payload del realtime trae la fila de
 // `pedidos` y nada mas: sin `pedido_items` el ticket saldria con el total y sin
 // decir que hay que cocinar.
-async function imprimirPedidoAceptadoSolo(p, restaurante) {
+//
+// `conTpv` (a10): con el TPV, cada aviso dice el botón de SU papel en Pedidos
+// («Reimprimir comanda» / «Imprimir ticket»: allí no hay ningún «Reimprimir»).
+// Sin TPV (la pantalla de pedidos de la tablet) se dice lo de siempre.
+async function imprimirPedidoAceptadoSolo(p, restaurante, conTpv = false) {
   if (!reservarImpresion(p.id)) return   // ya lo imprimio otro camino
   try {
     const { data: items } = await supabase
@@ -45,9 +49,11 @@ async function imprimirPedidoAceptadoSolo(p, restaurante) {
     // arregla.
     if (!r?.cocina) {
       soltarImpresion(p.id)
-      toast(`La comanda de ${p.codigo || 'un pedido'} no ha salido por la impresora`, 'error')
+      toast(`La comanda de ${p.codigo || 'un pedido'} no ha salido por la impresora${conTpv ? ': sácala con «Reimprimir comanda» en Pedidos' : ''}`, 'error')
     } else if (!r?.cliente) {
-      toast(`${p.codigo || 'Pedido'}: comanda impresa, pero el ticket del cliente no salio. Usa Reimprimir.`, 'error')
+      toast(conTpv
+        ? `${p.codigo || 'Pedido'}: comanda impresa, pero el ticket del cliente no salió: sácalo con «Imprimir ticket» en Pedidos.`
+        : `${p.codigo || 'Pedido'}: comanda impresa, pero el ticket del cliente no salio. Usa Reimprimir.`, 'error')
     }
   } catch {
     soltarImpresion(p.id)
@@ -68,7 +74,7 @@ async function imprimirPedidoAceptadoSolo(p, restaurante) {
 //
 // La reserva de `ticketsImpresos` es la misma que usa Pedidos para la mesa: si las
 // dos pantallas ven el INSERT, solo una saca papel.
-async function imprimirPedidoKiosko(p, restaurante) {
+async function imprimirPedidoKiosko(p, restaurante, conTpv = false) {
   if (!reservarImpresion(p.id)) return
   try {
     let items = []
@@ -86,7 +92,7 @@ async function imprimirPedidoKiosko(p, restaurante) {
     const r = await imprimirPedido(p, items, restaurante, destinoDe)
     if (!r?.cocina) {
       soltarImpresion(p.id)
-      toast(`La comanda del kiosko ${p.codigo || ''} no ha salido por la impresora`, 'error')
+      toast(`La comanda del kiosko ${p.codigo || ''} no ha salido por la impresora${conTpv ? ': sácala con «Reimprimir comanda» en Pedidos' : ''}`, 'error')
     }
   } catch {
     soltarImpresion(p.id)
@@ -95,7 +101,11 @@ async function imprimirPedidoKiosko(p, restaurante) {
 }
 
 export function PedidoAlertProvider({ children, onNuevoPedido }) {
-  const { restaurante } = useRest()
+  const { restaurante, tpvConfig } = useRest()
+  // ¿Este local cobra con el TPV? Solo cambia el texto de los avisos de impresión
+  // (a10). En una ref porque el realtime de abajo se monta una vez por local.
+  const conTpvRef = useRef(false)
+  useEffect(() => { conTpvRef.current = !!tpvConfig?.activo }, [tpvConfig?.activo])
   const [pedidosNuevos, setPedidosNuevos] = useState([])
   // silenciada = el usuario pulsó "Silenciar"; se resetea cuando la lista se vacía
   // o cuando llega un pedido nuevo después (queremos que un nuevo pedido vuelva a sonar).
@@ -148,7 +158,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         // hasta que alguien acepta y aquí no hay nada que aceptar) y sale la comanda.
         if (payload.new.kiosko && payload.new.origen_pedido === 'mesa') {
           if (esApp) notificarNuevoPedido(payload.new.codigo)
-          if (hayImpresoraNativa) imprimirPedidoKiosko(payload.new, restaurante)
+          if (hayImpresoraNativa) imprimirPedidoKiosko(payload.new, restaurante, conTpvRef.current)
           return
         }
         // Solo pedidos PAGADOS (estado 'nuevo'). Un pedido con tarjeta se inserta
@@ -201,7 +211,7 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
           // socket a la impresora, y preguntando por Capacitor el ordenador del
           // mostrador se quedaria sin papel.
           if (p.estado === 'preparando' && restaurante?.auto_aceptar && hayImpresoraNativa) {
-            imprimirPedidoAceptadoSolo(p, restaurante)
+            imprimirPedidoAceptadoSolo(p, restaurante, conTpvRef.current)
           }
           setPedidosNuevos(prev => {
             const remaining = prev.filter(x => x.id !== p.id)
