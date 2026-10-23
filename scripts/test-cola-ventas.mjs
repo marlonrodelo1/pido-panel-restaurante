@@ -4,7 +4,9 @@
  * cada fallo de la cola es dinero que está en el cajón y no en el sistema. La
  * parte que DECIDE (qué se reintenta, qué se atasca, cuándo se puede cerrar la
  * caja) está en `src/lib/colaVentasLogica.js`, sin pantalla, sin red y sin
- * localStorage, justo para poder probarla aquí con un servidor de mentira.
+ * localStorage, justo para poder probarla aquí con un servidor de mentira. Lo
+ * mismo con la de las impresoras y el cajón sin red (`src/lib/impresionSinRed.js`)
+ * y con el papel del ticket (`src/lib/escpos.js`).
  *
  *   npm run test:cola
  */
@@ -17,6 +19,10 @@ import {
 } from '../src/lib/colaVentasLogica.js'
 import { esFalloSinRespuesta, esErrorDeRed } from '../src/lib/estadoRed.js'
 import { generarTicketTpv } from '../src/lib/escpos.js'
+import {
+  abreCajonSinRed, destinosAGuardar, destinosDeGuardado, anotarIpLocal, ponerIpsLocales,
+  conciliarIpsLocales, cambiarIpEnLista, conLimite, VIDA_IP_LOCAL_MS,
+} from '../src/lib/impresionSinRed.js'
 
 // ── Ayudas ───────────────────────────────────────────────────────────────────
 let n = 0
@@ -314,6 +320,92 @@ test('ticket con internet: sin fecha de la operación aparte (el papel no cambia
 test('ticket de una venta del corte numerada después: sale la fecha de la operación', () => {
   const t = texto(generarTicketTpv({ ...ticketBase, fecha_operacion: '2026-10-24T20:15:00.000Z' }, {}, [], est, null))
   assert.match(t, /Fecha de la operacion\s+24\/10\/2026/)
+})
+
+// ── Impresoras y cajón sin red (a8) ──────────────────────────────────────────
+test('cajón sin red: se lee como el servidor (efectivo / datáfono), no el ajuste que no existe', () => {
+  // Valores por defecto de la tabla: efectivo sí, datáfono no.
+  assert.equal(abreCajonSinRed({ abrir_cajon_efectivo: true, abrir_cajon_datafono: false }, 'efectivo'), true)
+  assert.equal(abreCajonSinRed({ abrir_cajon_efectivo: true, abrir_cajon_datafono: false }, 'datafono'), false)
+  // 🔴 Antes: configurado para NO abrir en efectivo… se abría igual.
+  assert.equal(abreCajonSinRed({ abrir_cajon_efectivo: false }, 'efectivo'), false)
+  // 🔴 Antes: configurado para abrir con datáfono… no se abría nunca.
+  assert.equal(abreCajonSinRed({ abrir_cajon_datafono: true }, 'datafono'), true)
+  // Sin configuración en el aparato: lo de fábrica.
+  assert.equal(abreCajonSinRed(null, 'efectivo'), true)
+  assert.equal(abreCajonSinRed(null, 'datafono'), false)
+  // El ajuste viejo inventado ya no manda nada.
+  assert.equal(abreCajonSinRed({ abrir_cajon: true, abrir_cajon_datafono: false }, 'datafono'), false)
+})
+
+test('qué va a cada impresora se guarda y se recupera igual', () => {
+  const entrada = {
+    catDe: new Map([['p1', 'c1'], ['p2', 'c2']]),
+    destinoCat: new Map([['c1', 'imp-cocina'], ['c2', null]]),
+  }
+  const guardado = JSON.parse(JSON.stringify(destinosAGuardar(entrada, 1)))
+  const vuelta = destinosDeGuardado(guardado)
+  assert.equal(vuelta.catDe.get('p1'), 'c1')
+  assert.equal(vuelta.destinoCat.get('c1'), 'imp-cocina')
+  assert.equal(vuelta.destinoCat.get('c2'), null)
+  assert.equal(destinosDeGuardado(null), null)
+  assert.equal(destinosDeGuardado({ catDe: 'roto' }), null)
+})
+
+test('IP corregida sin internet: vale ya en el aparato, y se concilia con la nube al volver', () => {
+  const ahora = 1_000_000
+  const nube = [{ id: 'coc', ip: '192.168.1.11' }, { id: 'caja', ip: '192.168.1.20' }]
+  // El aparato encuentra la cocina en .12 y no puede guardarlo en la nube.
+  let pend = anotarIpLocal({}, nube[0], '192.168.1.12', ahora)
+  assert.deepEqual(pend.coc, { ip: '192.168.1.12', desde: '192.168.1.11', at: ahora, subida_at: null })
+  // El espejo del aparato la usa.
+  assert.equal(ponerIpsLocales(nube, pend, ahora)[0].ip, '192.168.1.12')
+  assert.equal(ponerIpsLocales(nube, pend, ahora)[1].ip, '192.168.1.20')
+  // Vuelve internet: la nube sigue con la vieja → manda la de aquí y se sube.
+  const r1 = conciliarIpsLocales(nube, pend, ahora + 1000)
+  assert.equal(r1.lista[0].ip, '192.168.1.12')
+  assert.deepEqual(r1.porSubir, [{ id: 'coc', ip: '192.168.1.12' }])
+  // La siguiente lectura (sin permiso para subirla, sigue vieja): no se reintenta antes de 10 min.
+  const r2 = conciliarIpsLocales(nube, r1.pendientes, ahora + 2000)
+  assert.equal(r2.lista[0].ip, '192.168.1.12')
+  assert.deepEqual(r2.porSubir, [])
+  // La nube ya la tiene → se olvida.
+  const r3 = conciliarIpsLocales(cambiarIpEnLista(nube, 'coc', '192.168.1.12'), r1.pendientes, ahora + 3000)
+  assert.deepEqual(r3.pendientes, {})
+  // Alguien la cambió a mano en la nube a otra → manda la nube.
+  const r4 = conciliarIpsLocales(cambiarIpEnLista(nube, 'coc', '192.168.1.50'), r1.pendientes, ahora + 3000)
+  assert.equal(r4.lista[0].ip, '192.168.1.50')
+  assert.deepEqual(r4.pendientes, {})
+  // Pasadas 12 h, se olvida.
+  const r5 = conciliarIpsLocales(nube, pend, ahora + VIDA_IP_LOCAL_MS + 1)
+  assert.equal(r5.lista[0].ip, '192.168.1.11')
+  assert.deepEqual(r5.pendientes, {})
+})
+
+test('dos cambios de IP sin internet: `desde` sigue siendo la de la nube', () => {
+  const nube = { id: 'coc', ip: '10.0.0.11' }
+  let pend = anotarIpLocal({}, nube, '10.0.0.12', 1)
+  pend = anotarIpLocal(pend, { id: 'coc', ip: '10.0.0.12' }, '10.0.0.13', 2)
+  assert.equal(pend.coc.desde, '10.0.0.11')
+  assert.equal(pend.coc.ip, '10.0.0.13')
+})
+
+test('con internet y nada pendiente, la lista de la nube sale TAL CUAL', () => {
+  const nube = [{ id: 'a', ip: '1.1.1.1' }]
+  const r = conciliarIpsLocales(nube, {})
+  assert.equal(r.lista, nube)            // el mismo objeto: nada cambia
+  assert.deepEqual(r.porSubir, [])
+})
+
+test('una consulta colgada no espera más del límite; una rápida contesta lo suyo', async () => {
+  let avisos = 0
+  const colgada = new Promise(() => {})
+  const r1 = await conLimite(colgada, 20, { error: 'tarde' }, () => { avisos += 1 })
+  assert.deepEqual(r1, { error: 'tarde' })
+  assert.equal(avisos, 1)
+  const r2 = await conLimite(Promise.resolve({ data: 1 }), 1000, { error: 'tarde' }, () => { avisos += 1 })
+  assert.deepEqual(r2, { data: 1 })
+  assert.equal(avisos, 1)
 })
 
 // ── ¿Hay red? (estadoRed) ────────────────────────────────────────────────────

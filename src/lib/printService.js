@@ -8,6 +8,10 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarComandaModificacion, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
 import { bytesDelLogo } from './logoTicket'
 import { supabase } from './supabase'
+import { redCaida, avisarFalloRed } from './estadoRed'
+import {
+  ponerIpsLocales, conciliarIpsLocales, anotarIpLocal, quitarIpLocal, cambiarIpEnLista, conLimite,
+} from './impresionSinRed'
 
 // EL PUENTE CON LA IMPRESORA. Hay DOS implementaciones y el resto del fichero no
 // necesita saber en cual esta:
@@ -159,31 +163,97 @@ export function invalidarImpresoras() {
   impCache = { est: null, hasta: 0, lista: null }
 }
 
+// Las IP que ESTE aparato ha corregido sin poder guardarlas en la nube (a8,
+// ver `lib/impresionSinRed.js`).
+const IPS_LOCALES_KEY = (est) => `pidoo_tpv_impresoras_ip_local_${est}`
+function leerIpsLocales(est) {
+  try {
+    const v = JSON.parse(localStorage.getItem(IPS_LOCALES_KEY(est)) || 'null')
+    return v && typeof v === 'object' ? v : {}
+  } catch { return {} }
+}
+function guardarIpsLocales(est, pendientes) {
+  try {
+    if (pendientes && Object.keys(pendientes).length) localStorage.setItem(IPS_LOCALES_KEY(est), JSON.stringify(pendientes))
+    else localStorage.removeItem(IPS_LOCALES_KEY(est))
+  } catch { /* nada */ }
+}
+
+function leerEspejo(est) {
+  try {
+    const v = JSON.parse(localStorage.getItem(IMPRESORAS_KEY(est)) || 'null')
+    return Array.isArray(v) ? ponerIpsLocales(v, leerIpsLocales(est)) : null
+  } catch { return null }
+}
+
 export async function cargarImpresoras(establecimientoId = estActual, { fresco = false } = {}) {
   if (!establecimientoId) return null
   const ahora = Date.now()
   if (!fresco && impCache.est === establecimientoId && impCache.hasta > ahora) return impCache.lista
+  // 🔴 SIN RED NO SE PREGUNTA (a8, 22 oct 2026). Con la fibra caída la consulta
+  // no falla: se queda colgada, y cada comanda, ticket o cajón esperaba detrás.
+  // Con el corte ya comprobado, el espejo del aparato directamente.
+  if (redCaida()) {
+    const espejo = leerEspejo(establecimientoId)
+    if (espejo) {
+      impCache = { est: establecimientoId, hasta: ahora + 15000, lista: espejo }
+      return espejo
+    }
+  }
   try {
-    const { data, error } = await supabase.from('tpv_impresoras')
-      .select('*')
-      .eq('establecimiento_id', establecimientoId).eq('activa', true)
-      .order('orden').order('created_at')
+    // Como mucho 5 s (a8): si no contesta, el espejo y que se compruebe la red.
+    const { data, error } = await conLimite(
+      supabase.from('tpv_impresoras')
+        .select('*')
+        .eq('establecimiento_id', establecimientoId).eq('activa', true)
+        .order('orden').order('created_at'),
+      5000,
+      { data: null, error: { message: 'sin respuesta en 5 s' } },
+      avisarFalloRed,
+    )
     if (error) throw error
-    const lista = data || []
+    // Las IP corregidas en este aparato durante un corte, encima de lo de la
+    // nube hasta que la nube las tenga (sin ninguna pendiente, la lista tal cual).
+    const pend = leerIpsLocales(establecimientoId)
+    const { lista, pendientes, porSubir } = conciliarIpsLocales(data || [], pend)
+    if (Object.keys(pend).length) guardarIpsLocales(establecimientoId, pendientes)
+    for (const s of porSubir) subirIpLocal(establecimientoId, s.id, s.ip)
     impCache = { est: establecimientoId, hasta: ahora + 60000, lista }
     try { localStorage.setItem(IMPRESORAS_KEY(establecimientoId), JSON.stringify(lista)) } catch { /* nada */ }
     return lista
   } catch {
     // Sin red: el espejo del último día que sí la hubo. Imprimir manda.
-    try {
-      const v = JSON.parse(localStorage.getItem(IMPRESORAS_KEY(establecimientoId)) || 'null')
-      if (Array.isArray(v)) {
-        impCache = { est: establecimientoId, hasta: ahora + 15000, lista: v }
-        return v
-      }
-    } catch { /* nada */ }
+    const v = leerEspejo(establecimientoId)
+    if (v) {
+      impCache = { est: establecimientoId, hasta: ahora + 15000, lista: v }
+      return v
+    }
     return impCache.est === establecimientoId ? impCache.lista : null
   }
+}
+
+// La IP nueva vale YA en este aparato (caché + espejo + pendiente), haya o no
+// internet para guardarla en la nube.
+function fijarIpLocal(est, imp, nuevaIp) {
+  if (!est || !imp?.id || !nuevaIp) return
+  guardarIpsLocales(est, anotarIpLocal(leerIpsLocales(est), imp, nuevaIp))
+  if (impCache.est === est && Array.isArray(impCache.lista)) {
+    impCache = { ...impCache, lista: cambiarIpEnLista(impCache.lista, imp.id, nuevaIp) }
+  }
+  try {
+    const v = JSON.parse(localStorage.getItem(IMPRESORAS_KEY(est)) || 'null')
+    if (Array.isArray(v)) localStorage.setItem(IMPRESORAS_KEY(est), JSON.stringify(cambiarIpEnLista(v, imp.id, nuevaIp)))
+  } catch { /* nada */ }
+}
+
+// Sube a la nube una IP corregida en este aparato. En segundo plano: si no se
+// puede (sin red o sin permiso), sigue pendiente y se usa igual aquí.
+function subirIpLocal(est, id, ip) {
+  supabase.from('tpv_impresoras').update({ ip }).eq('id', id).select('id')
+    .then(({ data, error }) => {
+      if (!error && data?.length) guardarIpsLocales(est, quitarIpLocal(leerIpsLocales(est), id))
+    })
+    .catch(() => {})
 }
 
 // Lectura SÍNCRONA del espejo, para los gates de "¿hay impresora?" que no
@@ -276,12 +346,20 @@ async function rescatarIpImpresora(imp) {
     if (candidatas.length !== 1) return null
     const nueva = candidatas[0]
     console.warn('[Print] "' + imp.nombre + '" cambió de IP: ' + imp.ip + ' → ' + nueva)
-    // Se guarda en la nube para TODOS los aparatos. Si este no pudiera
-    // escribir, al menos el envío de ahora sale por la IP nueva.
+    // 🔴 La IP nueva vale YA en este aparato, se pueda guardar en la nube o no
+    // (a8, 22 oct 2026). Antes solo se usaba si la nube aceptaba el cambio: sin
+    // internet, cada comanda volvía a la IP vieja, fallaba y salía por la caja.
+    const est = imp.establecimiento_id || estActual
+    fijarIpLocal(est, imp, nueva)
+    // Y se guarda en la nube para TODOS los aparatos. Si no se puede (sin red,
+    // sin permiso), sigue pendiente aquí y se sube cuando se pueda.
     try {
       const { data } = await supabase.from('tpv_impresoras')
         .update({ ip: nueva }).eq('id', imp.id).select('id')
-      if (data?.length) invalidarImpresoras()
+      if (data?.length) {
+        guardarIpsLocales(est, quitarIpLocal(leerIpsLocales(est), imp.id))
+        invalidarImpresoras()
+      }
     } catch { /* nada */ }
     return nueva
   } catch {

@@ -28,6 +28,7 @@ import {
   pulsoCajon, getPrinterConfig, savePrinterConfig, comprobarImpresoraActiva, impresoraConfigurada,
 } from '../lib/printService'
 import { crearDestinoDe } from '../lib/destinosImpresion'
+import { abreCajonSinRed } from '../lib/impresionSinRed'
 import { resumenJornada, inicioJornada } from '../lib/jornada'
 import {
   encolarVenta, sincronizarCola, ventasPendientes, siguienteNumeroOff, tokenSinEsperar,
@@ -1097,7 +1098,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       extras: l.extrasTexto ? String(l.extrasTexto).split(', ').filter(Boolean) : [],
       precio_unitario: l.precio_c / 100, cantidad: l.cantidad, notas: l.notas || null,
     }))
-    const abrirCajonOff = metodo_pago === 'efectivo' && (tpvConfig?.abrir_cajon ?? true)
+    // 🔴 El ajuste de verdad (a8, 22 oct 2026): `abrir_cajon` no existe en
+    // `tpv_config`, así que sin red el cajón se abría SIEMPRE en efectivo
+    // (aunque estuviera configurado que no) y NUNCA con datáfono. Ahora se lee
+    // como lo lee el servidor: abrir_cajon_efectivo / abrir_cajon_datafono.
+    const abrirCajonOff = abreCajonSinRed(tpvConfig, metodo_pago)
     if (tpvConfig?.ticket_cliente_auto === false) {
       if (abrirCajonOff) pulsoCajon().catch(() => {})
     } else {

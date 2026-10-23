@@ -8,24 +8,54 @@
 // para no consultar la carta en cada impresión. Mientras un restaurante no
 // tenga impresoras dadas de alta en la nube, sigue funcionando el camino
 // clásico de este aparato (`impresora_destino`: 'cocina'/'barra').
+//
+// 🔴 SIN INTERNET (a8, 22 oct 2026): el reparto se GUARDA EN EL APARATO con cada
+// lectura buena y, si el servidor no contesta (o la red ya se sabe caída), se
+// usa esa copia. Antes un fallo devolvía null y, con dos impresoras, TODA la
+// comanda salía por la de caja: la cocina no recibía nada.
 import { supabase } from './supabase'
 import { impresoraCocinaConfigurada, cargarImpresoras, impresoraCajaDe } from './printService'
+import { redCaida, avisarFalloRed } from './estadoRed'
+import { destinosAGuardar, destinosDeGuardado, conLimite } from './impresionSinRed'
 
 const TTL_MS = 60000
 const cache = new Map()   // establecimientoId -> { hasta, catDe: Map(prod->cat), destinoCat: Map(cat->destino) }
+const claveEspejo = (est, columna) => `pidoo_tpv_destinos_${est}_${columna}`
+
+// La copia del aparato, puesta en la caché por poco tiempo (se vuelve a
+// preguntar enseguida: en cuanto haya red manda el servidor).
+function desdeElAparato(establecimientoId, columnaDestino) {
+  try {
+    const g = destinosDeGuardado(JSON.parse(localStorage.getItem(claveEspejo(establecimientoId, columnaDestino)) || 'null'))
+    if (!g) return null
+    const entrada = { hasta: Date.now() + 15000, columna: columnaDestino, ...g }
+    cache.set(establecimientoId, entrada)
+    return entrada
+  } catch { return null }
+}
 
 async function cargarCarta(establecimientoId, columnaDestino) {
   let entrada = cache.get(establecimientoId)
   if (entrada && entrada.columna === columnaDestino && entrada.hasta >= Date.now()) return entrada
+  // Con la red ya comprobada como caída, ni se pregunta: se quedaría colgada.
+  if (redCaida()) {
+    const delAparato = desdeElAparato(establecimientoId, columnaDestino)
+    if (delAparato) return delAparato
+  }
+  // Como mucho 5 s: la comanda no puede esperar a una consulta colgada.
+  const vencida = { data: null, error: { message: 'sin respuesta en 5 s' } }
+  let avisado = false
+  const avisar = () => { if (!avisado) { avisado = true; avisarFalloRed() } }
   const [prods, cats] = await Promise.all([
-    supabase.from('productos').select('id, categoria_id').eq('establecimiento_id', establecimientoId),
-    supabase.from('categorias').select('id, ' + columnaDestino).eq('establecimiento_id', establecimientoId),
+    conLimite(supabase.from('productos').select('id, categoria_id').eq('establecimiento_id', establecimientoId), 5000, vencida, avisar),
+    conLimite(supabase.from('categorias').select('id, ' + columnaDestino).eq('establecimiento_id', establecimientoId), 5000, vencida, avisar),
   ])
-  if (prods.error || cats.error) return null
+  if (prods.error || cats.error) return desdeElAparato(establecimientoId, columnaDestino)
   const catDe = new Map((prods.data || []).map((p) => [p.id, p.categoria_id]))
   const destinoCat = new Map((cats.data || []).map((c) => [c.id, c[columnaDestino]]))
   entrada = { hasta: Date.now() + TTL_MS, columna: columnaDestino, catDe, destinoCat }
   cache.set(establecimientoId, entrada)
+  try { localStorage.setItem(claveEspejo(establecimientoId, columnaDestino), JSON.stringify(destinosAGuardar(entrada))) } catch { /* lleno */ }
   return entrada
 }
 
