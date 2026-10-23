@@ -115,7 +115,7 @@ export default function TpvVentasSinApuntar({ establecimientoId, onVolver, onVol
               <div style={{ fontSize: 12, lineHeight: 1.45, color: v.atascada ? T.danger : AMBAR }}>
                 {v.atascada
                   ? <>No la acepta el servidor: {v.motivo || 'sin motivo'}</>
-                  : <>Falla al mandarla{v.fallos > 1 ? ` (${v.fallos} veces)` : ''}: {v.ultimoFallo || 'error del servidor'}. Se vuelve a intentar sola.</>}
+                  : <>Falla al mandarla{v.fallos > 1 ? ` (${v.fallos} veces)` : ''}: {String(v.ultimoFallo || 'error del servidor').replace(/\.+$/, '')}. Se vuelve a intentar sola.</>}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                 <button disabled={ocupado || sinRed}
