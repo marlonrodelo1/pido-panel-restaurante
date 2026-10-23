@@ -36,11 +36,12 @@ import {
 } from '../lib/colaVentas'
 import TpvVentasSinApuntar from '../components/TpvVentasSinApuntar'
 import { redCaida, esFalloSinRespuesta, comprobarRed, marcarRedOk, avisarFalloRed } from '../lib/estadoRed'
+import { QUIEN_VACIO, asignarNumeroCliente, recordarQuien, nombrePuesto, tieneQuien } from '../lib/comandaVenta'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
   Menu, ChefHat, FileText, Inbox, Calculator, Bike, Wallet, ArrowDownLeft, ArrowUpRight, Lock,
   Boxes, ClipboardCheck, ClipboardList, Clock, ToggleLeft, PhoneCall, ArrowLeft,
-  Maximize2, Minimize2, StickyNote, Bookmark,
+  Maximize2, Minimize2, StickyNote, Bookmark, Tag,
   ShoppingBag, Utensils, Smartphone,
 } from 'lucide-react'
 import { estadoLector } from '../lib/cobroLector'
@@ -372,6 +373,39 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // quedaba mudo y parecía que el clic no había hecho nada.
   const [comandando, setComandando] = useState(false)
   const rondaRef = useRef(0)            // nº de comanda dentro de la venta en curso
+  // Las líneas que están saliendo AHORA por «Comandar» (a9): si se cobra en ese
+  // segundo, no se vuelven a mandar a cocina con el cobro.
+  const enviandoACocinaRef = useRef(new Set())
+
+  // DE QUIÉN ES LA VENTA (a9, 23 oct 2026): el número de cliente del día (se
+  // pone con la primera comanda) y el nombre, si se lo ponen. Salen grandes en la
+  // comanda. Va con la venta: se guarda con ella, se aparca con ella y se vacía
+  // al cerrarla. La ref es para los que imprimen; el estado, para pintarlo.
+  const quienRef = useRef(QUIEN_VACIO)
+  const [quien, setQuien] = useState(QUIEN_VACIO)
+  const fijarQuien = (q) => {
+    const nuevo = { numero: q?.numero ?? null, nombre: q?.nombre || null }
+    quienRef.current = nuevo
+    setQuien(nuevo)
+    return nuevo
+  }
+  // El número se pone la primera vez que algo de la venta va a cocina.
+  const conNumero = () => (quienRef.current.numero != null
+    ? quienRef.current
+    : fijarQuien({ ...quienRef.current, numero: asignarNumeroCliente(restaurante.id) }))
+  const [nombrando, setNombrando] = useState(false)
+
+  // AL COBRAR, LO QUE FALTA VA A COCINA (a9, 23 oct 2026). Antes, si se cobraba
+  // sin pulsar «Comandar», la cocina no recibía nada y el TPV no avisaba (en una
+  // pizzería se cobra al pedir). Por defecto sale sola; en este aparato se puede
+  // cambiar desde el menú a «preguntar» antes de cobrar.
+  const claveModoComanda = restaurante?.id ? `pidoo_tpv_comanda_al_cobrar_${restaurante.id}` : null
+  const [comandaAlCobrar, setComandaAlCobrar] = useState(() => {
+    try { return (claveModoComanda && localStorage.getItem(claveModoComanda)) === 'preguntar' ? 'preguntar' : 'sola' } catch { return 'sola' }
+  })
+  // La respuesta a «¿la mando a cocina?» del cobro en curso (solo en «preguntar»).
+  const mandarACocinaRef = useRef(true)
+  const [preguntaCocina, setPreguntaCocina] = useState(null)   // null | 'efectivo' | 'tarjeta'
 
   // uuid v4 de verdad también sin crypto.randomUUID (WebView viejas): el
   // fallback anterior (Date.now()+random) no pasaba el regex del servidor y en
@@ -393,6 +427,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         firmaRef.current = v.firma || null
         restaurandoRef.current = true
         setParaLlevar(!!v.para_llevar)
+        fijarQuien(v.quien || QUIEN_VACIO)
         setCarrito(v.lineas)
       }
     } catch { /* respaldo roto: se empieza de cero */ }
@@ -409,6 +444,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         idemRef.current = null
         firmaRef.current = null
         rondaRef.current = 0   // la numeración de comandas empieza con cada venta
+        // …y el número de cliente y el nombre, que son de ESA venta (a9).
+        if (tieneQuien(quienRef.current)) fijarQuien(QUIEN_VACIO)
         try { localStorage.removeItem(claveVenta) } catch { /* nada */ }
       }
       return
@@ -428,9 +465,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     try {
       localStorage.setItem(claveVenta, JSON.stringify({
         clave: idemRef.current, firma, lineas: carrito, para_llevar: paraLlevar,
+        // a9: el número de cliente y el nombre vuelven con la venta al recargar.
+        ...(tieneQuien(quien) ? { quien } : null),
       }))
     } catch { /* storage lleno: la venta sigue, solo pierde el respaldo */ }
-  }, [carrito, claveVenta, paraLlevar])
+  }, [carrito, claveVenta, paraLlevar, quien])
 
   // La carta, en una función REUTILIZABLE: se llama al entrar, desde el menú
   // ("Recargar la carta") y al volver de la capa de Carta. Una tablet de
@@ -533,12 +572,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     if (bloqueadaPorCobro()) return
     if (!carrito.length) return
     if (aparcadas.length >= 12) { toast('Ya hay 12 ventas aparcadas: recupera o borra alguna', 'error'); return }
-    const etiqueta = (nombre || '').trim()
+    // El nombre tecleado es también el de la venta (sale en sus comandas, a9).
+    const puesto = (nombre || '').trim().slice(0, 40) || quienRef.current.nombre || null
+    const etiqueta = puesto
       || `Sin nombre ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
     guardarAparcadas([...aparcadas, {
       id: uuidv4(), nombre: etiqueta, lineas: carrito,
       clave: idemRef.current, firma: firmaRef.current, ronda: rondaRef.current,
       para_llevar: paraLlevar, creada: Date.now(),
+      cliente: quienRef.current.numero, nombre_venta: puesto,
     }])
     setCarrito([])   // el efecto del carrito limpia refs y el respaldo activo
     setParaLlevar(false)
@@ -556,9 +598,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       if (lista.length >= 12) { toast('No cabe: cobra o borra alguna aparcada primero', 'error'); return }
       lista = [...lista, {
         id: uuidv4(),
-        nombre: `Sin nombre ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`,
+        nombre: quienRef.current.nombre
+          || `Sin nombre ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`,
         lineas: carrito, clave: idemRef.current, firma: firmaRef.current, ronda: rondaRef.current,
         para_llevar: paraLlevar, creada: Date.now(),
+        cliente: quienRef.current.numero, nombre_venta: quienRef.current.nombre,
       }]
     }
     guardarAparcadas(lista)
@@ -567,6 +611,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     idemRef.current = ficha.clave || null
     firmaRef.current = ficha.firma || null
     rondaRef.current = ficha.ronda || 0
+    // Su número de cliente y su nombre vuelven con ella (a9).
+    fijarQuien({ numero: ficha.cliente ?? null, nombre: nombrePuesto(ficha) })
     setParaLlevar(!!ficha.para_llevar)
     setCarrito(Array.isArray(ficha.lineas) ? ficha.lineas : [])
     setModalAparcadas(false)
@@ -597,6 +643,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     idemRef.current = null
     firmaRef.current = null
     rondaRef.current = 0
+    fijarQuien(QUIEN_VACIO)
     setParaLlevar(!!venta.payload?.para_llevar)
     setCarrito(lineas.map((l) => ({ ...l, comandada: true })))
     setModalCola(false)
@@ -882,6 +929,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // a 0 al vaciarse).
   async function comandar() {
     if (!sinComandar.length) { toast('No hay nada nuevo que mandar a cocina'); return }
+    // Con un cobro en vuelo, lo que falte ya sale con él (a9): mandarlo también
+    // aquí serían dos papeles iguales.
+    if (enVueloRef.current) { toast('Espera a que termine el cobro', 'error'); return }
     // Doble toque = dos comandas iguales = comida duplicada. Candado síncrono.
     if (comandandoRef.current) return
     comandandoRef.current = true
@@ -890,23 +940,96 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // envío tarda segundos y lo que se pique en ese hueco NO ha salido en este
     // papel — antes se marcaba TODO el carrito como comandado y esas líneas se
     // quedaban sin cocinar sin que nadie se enterase.
-    const claves = new Set(sinComandar.map((l) => l.clave))
+    const lineas = sinComandar
+    const claves = new Set(lineas.map((l) => l.clave))
+    for (const c of claves) enviandoACocinaRef.current.add(c)
+    // El número de cliente se pone con la primera comanda de la venta (a9).
+    const q = conNumero()
     try {
       // Con varias impresoras, cada línea va a la suya según su CATEGORÍA
       // (configurado en la nube; las líneas libres, a la de cocina). El helper
       // resuelve también el camino clásico cocina/barra de este aparato.
       const destinoDe = await crearDestinoDe(restaurante.id)
       // «PARA LLEVAR» sale grande al pie de la comanda: cocina lo empaqueta.
-      const ok = await imprimirComandaTpv(sinComandar, restaurante,
-        { numero: rondaRef.current + 1, nota: paraLlevar ? 'PARA LLEVAR' : null }, destinoDe)
+      const ok = await imprimirComandaTpv(lineas, restaurante,
+        { numero: rondaRef.current + 1, nota: paraLlevar ? 'PARA LLEVAR' : null, cliente: q.numero, nombre: q.nombre }, destinoDe)
       if (!ok) { toast('La impresora no responde: la comanda no ha salido', 'error'); return }
       rondaRef.current += 1
       setCarrito((prev) => prev.map((l) => (claves.has(l.clave) ? { ...l, comandada: true } : l)))
-      toast('Comanda enviada a cocina', 'success')
+      toast(`Comanda enviada a cocina · cliente ${q.numero}`, 'success')
     } finally {
+      for (const c of claves) enviandoACocinaRef.current.delete(c)
       comandandoRef.current = false
       setComandando(false)
     }
+  }
+
+  // Lo que todavía no ha salido a cocina, en el momento de cobrar (a9). Lo que
+  // está saliendo justo ahora por «Comandar» no cuenta: ya va de camino.
+  const pendientesDeCocina = (lineas) => lineas.filter((l) => !l.comandada && !enviandoACocinaRef.current.has(l.clave))
+
+  // AL COBRAR, LO QUE FALTA SALE A COCINA (a9, 23 oct 2026). Se manda DESPUÉS de
+  // que la venta quede grabada (o guardada en la cola sin internet): un cobro que
+  // falla no deja comida hecha sin cobrar. Y quien llama imprime el ticket y abre
+  // el cajón cuando la comanda ha salido, no a la vez: con una sola impresora, dos
+  // envíos seguidos se los come la térmica mientras corta.
+  //
+  // Nunca falla ni lanza: si la impresora no responde lo dice, y la venta está
+  // cobrada igual. Devuelve si salió.
+  async function mandarACocinaAlCobrar(c, { codigo = null, sinRed = false } = {}) {
+    if (!c?.lineas?.length) return true
+    let ok = false
+    try {
+      const destinoDe = await crearDestinoDe(restaurante.id)
+      ok = await imprimirComandaTpv(c.lineas, restaurante, {
+        numero: c.ronda, nota: c.paraLlevar ? 'PARA LLEVAR' : null,
+        cliente: c.quien?.numero ?? null, nombre: c.quien?.nombre || null, codigo,
+      }, destinoDe)
+    } catch { ok = false }
+    if (!ok && impresoraConfigurada()) {
+      toast(sinRed
+        ? 'Cobrado, pero la comanda NO ha salido por la impresora: díselo a cocina de palabra.'
+        : 'Cobrado, pero la comanda NO ha salido por la impresora: sácala con «Reimprimir comanda» en Pedidos.', 'error')
+    }
+    return ok
+  }
+
+  // Lo que hay que mandar a cocina con ESTE cobro, decidido al pulsar cobrar: las
+  // líneas pendientes, de quién es la venta y su ronda. En «preguntar», solo si se
+  // dijo que sí. El número de cliente se pone aquí si la venta aún no lo tenía.
+  function cocinaDeEsteCobro() {
+    const mandar = comandaAlCobrar !== 'preguntar' || mandarACocinaRef.current
+    const lineas = mandar ? pendientesDeCocina(carrito) : []
+    const q = lineas.length ? conNumero() : quienRef.current
+    return { lineas, quien: q, ronda: rondaRef.current + 1, paraLlevar }
+  }
+
+  // «Preguntar» (a9): si al cobrar queda algo sin mandar a cocina, se pregunta
+  // antes, con botones que dicen lo que hacen. Devuelve true si ha preguntado
+  // (el cobro sigue desde la ventana).
+  function preguntarAntesDeCobrar(metodo) {
+    mandarACocinaRef.current = true
+    if (comandaAlCobrar !== 'preguntar' || !pendientesDeCocina(carrito).length) return false
+    setPreguntaCocina(metodo)
+    return true
+  }
+
+  function seguirCobroTrasPregunta(mandar) {
+    const metodo = preguntaCocina
+    setPreguntaCocina(null)
+    mandarACocinaRef.current = mandar
+    if (metodo === 'efectivo') setModalPago(true)
+    else if (metodo === 'tarjeta') cobrarConTarjetaYa()
+  }
+
+  function cambiarComandaAlCobrar() {
+    setMenu(false)
+    const nuevo = comandaAlCobrar === 'preguntar' ? 'sola' : 'preguntar'
+    try { if (claveModoComanda) localStorage.setItem(claveModoComanda, nuevo) } catch { /* nada */ }
+    setComandaAlCobrar(nuevo)
+    toast(nuevo === 'preguntar'
+      ? 'Al cobrar, si falta algo por mandar a cocina, te preguntará (en este aparato)'
+      : 'Al cobrar, lo que falte por mandar a cocina sale solo (en este aparato)', 'success')
   }
 
   const informandoRef = useRef(false)
@@ -989,10 +1112,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // misma clave y el servidor devuelve la venta ya grabada en vez de repetirla.
   function cobrarEnEfectivo() {
     if (!carrito.length) return
+    if (preguntarAntesDeCobrar('efectivo')) return   // a9: «¿lo mando a cocina?»
     setModalPago(true)      // hace falta preguntar con cuánto paga, para el cambio
   }
 
-  async function cobrarConTarjeta() {
+  function cobrarConTarjeta() {
+    if (!carrito.length || enVueloRef.current) return
+    if (preguntarAntesDeCobrar('tarjeta')) return    // a9: «¿lo mando a cocina?»
+    cobrarConTarjetaYa()
+  }
+
+  async function cobrarConTarjetaYa() {
     if (!carrito.length || enVueloRef.current) return
     // Con tarjeta no hay cambio que calcular: el importe se teclea en el datáfono
     // y aquí solo se deja constancia. Un paso menos en cada venta con tarjeta.
@@ -1031,6 +1161,11 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setCobroLector(null)
     setUltimaVenta(null)
     if (venta._lineas?.length) {
+      // Vuelve como estaba: lo que faltaba por mandar a cocina sigue pendiente
+      // (con el lector la comanda solo sale cuando el cobro se confirma, a9), y
+      // con su número de cliente, su nombre y su ronda.
+      rondaRef.current = Math.max(0, (venta._cocina?.ronda || 1) - 1)
+      fijarQuien(venta._cocina?.quien || QUIEN_VACIO)
       setCarrito(venta._lineas)
       setParaLlevar(!!venta._paraLlevar)
     }
@@ -1071,9 +1206,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // `horaVenta` (a7): el momento en que se pulsó cobrar. Es la MISMA en la cola
   // (viaja al servidor como `fecha_operacion` al sincronizar) y en el ticket
   // provisional, para que el papel del cliente y lo apuntado digan la misma hora.
-  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, motivo = 'red', horaVenta = null) {
+  //
+  // `cocina` (a9): lo que falta por mandar a cocina con este cobro. La comanda
+  // sale igual sin internet (la impresora está en la red del local), con el
+  // número OFF de la venta, y el ticket provisional detrás.
+  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, motivo = 'red', horaVenta = null, cocina = null) {
     const numeroOff = siguienteNumeroOff(restaurante.id)
     const hora = horaVenta || new Date().toISOString()
+    // De quién era, para que «Reimprimir comanda» lo saque cuando la venta se apunte.
+    if (cocina?.quien) recordarQuien(restaurante.id, cuerpo?.idempotency_key, cocina.quien)
     // Con lo que se vendió en texto (para reconocerla en «Ventas sin apuntar») y
     // con las líneas tal cual (para poder pasarla al mostrador si el servidor la
     // rechaza). `guardada` falso = el aparato no ha podido guardarla (a6).
@@ -1103,13 +1244,21 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // (aunque estuviera configurado que no) y NUNCA con datáfono. Ahora se lee
     // como lo lee el servidor: abrir_cajon_efectivo / abrir_cajon_datafono.
     const abrirCajonOff = abreCajonSinRed(tpvConfig, metodo_pago)
-    if (tpvConfig?.ticket_cliente_auto === false) {
-      if (abrirCajonOff) pulsoCajon().catch(() => {})
+    const papelDelCliente = () => {
+      if (tpvConfig?.ticket_cliente_auto === false) {
+        if (abrirCajonOff) pulsoCajon().catch(() => {})
+      } else {
+        imprimirTicketTpv(ticket, { codigo: null, para_llevar: paraLlevar }, items, restaurante, {
+          pieTicket: tpvConfig?.pie_ticket, provisional: true,
+          abrirCajonTambien: abrirCajonOff,
+        }).catch(() => {})
+      }
+    }
+    // Primero la comanda (si falta algo por mandar) y luego el ticket y el cajón.
+    if (cocina?.lineas?.length) {
+      mandarACocinaAlCobrar(cocina, { codigo: `OFF-${numeroOff}`, sinRed: true }).then(papelDelCliente)
     } else {
-      imprimirTicketTpv(ticket, { codigo: null, para_llevar: paraLlevar }, items, restaurante, {
-        pieTicket: tpvConfig?.pie_ticket, provisional: true,
-        abrirCajonTambien: abrirCajonOff,
-      }).catch(() => {})
+      papelDelCliente()
     }
 
     setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
@@ -1122,11 +1271,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       setVentaNoGuardada({ numeroOff, total_c: totalPantalla, metodo: metodo_pago })
       return
     }
+    // El número de cliente, para decírselo a quien espera (a9).
+    const deCliente = cocina?.quien?.numero != null ? ` (cliente ${cocina.quien.numero})` : ''
     toast(motivo === 'tiempo'
-      ? `El servidor no ha contestado: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola (si ya había entrado, no se cobra dos veces).`
+      ? `El servidor no ha contestado: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola (si ya había entrado, no se cobra dos veces).`
       : motivo === 'sesion'
-        ? `La sesión se estaba renovando: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola en unos segundos.`
-        : `Sin conexión: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
+        ? `La sesión se estaba renovando: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola en unos segundos.`
+        : `Sin conexión: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
     // Si hay internet (cobro cortado por tiempo o por la sesión), la cola no
     // espera a su vuelta de 60 s: se intenta enseguida.
     if (!redCaida()) setTimeout(() => window.dispatchEvent(new CustomEvent('pidoo:cola-intentar')), 5000)
@@ -1151,6 +1302,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     const lineasPantalla = carrito
     // La hora REAL de la venta (a7): si acaba en la cola, es la que se apunta.
     const horaVenta = new Date().toISOString()
+    // Lo que falta por mandar a cocina y de quién es la venta (a9). Se decide
+    // ahora, con el carrito tal cual; sale cuando la venta queda grabada.
+    const cocina = cocinaDeEsteCobro()
     let cuerpo = null
     // ¿El token es el guardado en el aparato porque la sesión no se pudo
     // renovar a tiempo? (a5, ver `tokenSinEsperar`)
@@ -1186,7 +1340,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // fallo de red confirmado por su propia comprobación, y se quita con la
       // primera respuesta del servidor: con internet esto no pasa.)
       if (!lector && redCaida()) {
-        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta)
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta, cocina)
         return
       }
       // a5: el PRIMER cobro del corte. Con la fibra caída y el router encendido
@@ -1222,7 +1376,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // tiempo) y el servidor no lo acepta. NO se ha cobrado nada en el servidor:
       // la venta va a la cola, que la manda con la sesión ya renovada.
       if (resp.status === 401 && tokenDeRespaldo && !lector) {
-        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'sesion', horaVenta)
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'sesion', horaVenta, cocina)
         return
       }
       if (!resp.ok || !body?.ok) {
@@ -1238,7 +1392,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       }
 
       // A partir de aquí LA VENTA YA ESTÁ COBRADA Y GRABADA.
-      setUltimaVenta(body)
+      // `_quien` (a9): su número de cliente, para enseñarlo en «Cobrado».
+      setUltimaVenta({ ...body, _quien: cocina.quien })
+      // De quién era, para que «Reimprimir comanda» lo vuelva a sacar (a10).
+      recordarQuien(restaurante.id, cuerpo.idempotency_key, cocina.quien)
       setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
       setParaLlevar(false)
       setModalPago(false)
@@ -1246,10 +1403,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // Con el lector: la venta ya está grabada (como datáfono) y ahora se cobra en el lector.
       // El ticket sale cuando el lector confirma (o si se cobra de otra forma). Si la venta
       // venía repetida y ya estaba pagada con tarjeta, no hay nada que cobrar.
+      // La comanda de lo que faltaba (a9) también espera a que se confirme el cobro:
+      // si el cliente no paga, la venta se anula y vuelve al mostrador sin cocinar nada.
       if (lector && body.pedido?.id && body.pedido?.metodo_pago !== 'tarjeta') {
         if (body.sin_ticket) toast('Venta guardada, pero sin número de ticket. Avisa a Pidoo.', 'error')
         // Las líneas se guardan para devolverlas al mostrador si al final no paga con tarjeta.
-        setCobroLector({ ...body, _lineas: lineasPantalla, _paraLlevar: !!cuerpo?.para_llevar })
+        setCobroLector({ ...body, _lineas: lineasPantalla, _paraLlevar: !!cuerpo?.para_llevar, _cocina: cocina })
         return
       }
 
@@ -1266,7 +1425,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         }
       }
 
-      imprimirVenta(body, metodo_pago)
+      // a9: si faltaba algo por mandar a cocina, la comanda primero y el ticket
+      // y el cajón detrás. Si no faltaba nada, como siempre.
+      if (cocina.lineas.length) {
+        mandarACocinaAlCobrar(cocina, { codigo: body.pedido?.codigo || null })
+          .then(() => imprimirVenta(body, metodo_pago))
+      } else {
+        imprimirVenta(body, metodo_pago)
+      }
     } catch (err) {
       // FALLO DE RED (sin internet, o el fetch ni salió): la venta NO se
       // pierde ni se bloquea — va a la COLA LOCAL con su misma clave de
@@ -1275,7 +1441,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // `repetida` y no se cobra dos veces.
       const esRed = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
       if (esRed && cuerpo) {
-        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta)
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta, cocina)
       } else if (err?.name === 'AbortError' && cuerpo && !lector) {
         // 🔴 CORTADO POR TIEMPO = A LA COLA (a5, 22 oct 2026). Antes salía
         // «vuelve a pulsar» y la venta NO se guardaba: con la fibra caída cada
@@ -1284,7 +1450,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         // y si ya había entrado el servidor contesta «repetida» y no se cobra
         // dos veces. El dinero ya está en el cajón.
         cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla,
-          redCaida() ? 'red' : 'tiempo', horaVenta)
+          redCaida() ? 'red' : 'tiempo', horaVenta, cocina)
       } else if (err?.name === 'AbortError') {
         // El servidor no contestó a tiempo con la red viva: reintentar tal
         // cual es seguro por la clave de idempotencia. (Solo con el lector: el
@@ -1743,10 +1909,26 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           ...(altoCompleto ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : null),
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
-            <strong style={{ fontSize: 15, color: T.text }}>Venta en curso</strong>
+            {/* El número de cliente sale en cuanto la venta va a cocina (a9): es el
+                que se le dice a quien espera y el que lleva la comanda. */}
+            <strong style={{ fontSize: 15, color: T.text }}>
+              Venta en curso{quien.numero != null ? ` · cliente ${quien.numero}` : ''}
+            </strong>
             {/* `flexWrap`: con «Aparcadas», «Aparcar», «Para llevar», «Libre» y
                 «Vaciar» a la vez, la fila no cabe en la columna estrecha. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {/* El NOMBRE de la venta (a9): sale en grande en la comanda. */}
+              {carrito.length > 0 && (
+                <button onClick={() => setNombrando(true)} title="Nombre de la venta: sale en la comanda"
+                  style={{
+                    border: 'none', background: 'none', cursor: 'pointer',
+                    color: quien.nombre ? T.accent : T.muted, fontWeight: quien.nombre ? 700 : 400,
+                    display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: 'inherit',
+                    maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                  <Tag size={14} style={{ flexShrink: 0 }} /> {quien.nombre || 'Nombre'}
+                </button>
+              )}
               {aparcadas.length > 0 && (
                 <button onClick={() => setModalAparcadas(true)} style={{
                   border: 'none', background: 'none', cursor: 'pointer', color: T.accent,
@@ -1880,10 +2062,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           {/* Comandar va ANTES de cobrar y no cobra: en un mostrador con cocina lo
               primero es que empiecen a hacerlo. Solo aparece si hay algo pendiente. */}
           {sinComandar.length > 0 && (
-            <button onClick={comandar} disabled={comandando} style={{
+            <button onClick={comandar} disabled={comandando || cobrando} style={{
               ...btnSecundario, width: '100%', height: 48, fontSize: 15, marginBottom: 8,
               borderColor: T.accent, color: T.accent,
-              opacity: comandando ? 0.6 : 1, cursor: comandando ? 'default' : 'pointer',
+              opacity: (comandando || cobrando) ? 0.6 : 1, cursor: (comandando || cobrando) ? 'default' : 'pointer',
             }}>
               <ChefHat size={17} style={{ marginRight: 8 }} />
               {comandando
@@ -1936,6 +2118,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
               </div>
               <div style={{ color: T.muted }}>
                 Ticket {ultimaVenta.ticket.serie}-{String(ultimaVenta.ticket.numero).padStart(6, '0')}{ultimaVenta.pedido?.codigo ? ` · ${ultimaVenta.pedido.codigo}` : ''}
+                {ultimaVenta._quien?.numero != null && (
+                  <strong style={{ color: T.text }}>{` · cliente ${ultimaVenta._quien.numero}`}</strong>
+                )}
+                {ultimaVenta._quien?.nombre ? ` · ${ultimaVenta._quien.nombre}` : ''}
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={reimprimir} style={{ ...btnSecundario, height: 36, fontSize: 13 }}>
@@ -1991,14 +2177,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             const venta = cobroLector
             setCobroLector(null)
             toast(`Cobrado ${eur(cents(venta.pedido?.total))} con tarjeta${tarjeta?.ultimos4 ? ` ···· ${tarjeta.ultimos4}` : ''}`, 'success')
-            imprimirVenta(venta, 'datafono')
+            // a9: cobro confirmado → lo que faltaba a cocina, y luego el ticket.
+            mandarACocinaAlCobrar(venta._cocina, { codigo: venta.pedido?.codigo || null })
+              .then(() => imprimirVenta(venta, 'datafono'))
           }}
           onOtraForma={async () => {
             const venta = cobroLector
             if (!await confirmar(`¿Lo cobraste DE VERDAD con el datáfono del banco? La venta de ${eur(cents(venta.pedido?.total))} se queda apuntada como cobrada. Si el cliente no ha pagado, pulsa «Anular la venta».`)) return
             setCobroLector(null)
             toast(`Venta de ${eur(cents(venta.pedido?.total))} apuntada con el datáfono del banco`, 'success')
-            imprimirVenta(venta, 'datafono')
+            mandarACocinaAlCobrar(venta._cocina, { codigo: venta.pedido?.codigo || null })
+              .then(() => imprimirVenta(venta, 'datafono'))
           }}
           onAnular={anularVentaLector} />
       )}
@@ -2096,9 +2285,35 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
       {aparcandoNombre != null && (
         <ModalTexto titulo="Aparcar esta venta" etiqueta="Ponle un nombre para reconocerla"
-          placeholder="Mesa 3, el rubio de la barra…" inicial="" maxLength={40}
+          placeholder="Mesa 3, el rubio de la barra…" inicial={quien.nombre || ''} maxLength={40}
           boton="Aparcar" onCerrar={() => setAparcandoNombre(null)}
           onAceptar={(v) => aparcarVenta(v)} />
+      )}
+
+      {/* El nombre de la venta (a9): sale grande en la comanda. */}
+      {nombrando && (
+        <ModalTexto titulo="Nombre de la venta"
+          etiqueta="Sale en grande en la comanda, para que cocina sepa de quién es"
+          placeholder="Juan, mesa 3, el de la moto…" inicial={quien.nombre || ''} maxLength={30}
+          boton="Guardar el nombre" onCerrar={() => setNombrando(false)}
+          onAceptar={(v) => {
+            const nombre = (v || '').trim().slice(0, 30) || null
+            const cambia = nombre !== quienRef.current.nombre
+            fijarQuien({ ...quienRef.current, nombre })
+            setNombrando(false)
+            // Lo que ya salió a cocina no lleva el nombre nuevo: hay que decírselo.
+            if (cambia && nombre && carrito.some((l) => l.comandada)) {
+              toast('Lo que ya está en cocina salió sin este nombre: díselo a cocina', 'error')
+            }
+          }} />
+      )}
+
+      {/* «Preguntar» (a9): queda algo sin mandar a cocina y se va a cobrar. */}
+      {preguntaCocina && (
+        <ModalCocinaPendiente lineas={pendientesDeCocina(carrito)}
+          onMandar={() => seguirCobroTrasPregunta(true)}
+          onSinMandar={() => seguirCobroTrasPregunta(false)}
+          onCerrar={() => setPreguntaCocina(null)} />
       )}
 
       {modalAparcadas && (
@@ -2263,6 +2478,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
               ? 'Solo salen las comandas. Pulsa para que el ticket salga solo'
               : 'Sale solo en cada venta. Pulsa para sacarlo solo cuando lo pidas'}
             onClick={cambiarTicketAuto} />
+          {/* a9: qué pasa al cobrar con lo que no se ha mandado a cocina. Es de
+              ESTE aparato (se guarda en él), no del restaurante. */}
+          <OpcionMenu icono={<ChefHat size={19} color={T.accent} />}
+            texto={comandaAlCobrar === 'preguntar' ? 'Comanda al cobrar: preguntar' : 'Comanda al cobrar: sale sola'}
+            nota={comandaAlCobrar === 'preguntar'
+              ? 'Si falta algo por mandar a cocina, pregunta antes de cobrar. Pulsa para que salga solo'
+              : 'Lo que no se haya mandado a cocina sale solo al cobrar. Pulsa para que pregunte'}
+            onClick={cambiarComandaAlCobrar} />
           <OpcionMenu icono={<Inbox size={19} color={T.accent} />} texto="Abrir cajón"
             nota="Sin cobrar nada"
             onClick={async () => {
@@ -2477,6 +2700,40 @@ function ModalTexto({ titulo, etiqueta, placeholder, inicial = '', boton, maxLen
             onKeyDown={(e) => { if (e.key === 'Enter') onAceptar(v) }} />
         </div>
         <button onClick={() => onAceptar(v)} style={{ ...btnAccion, height: 50, fontSize: 15 }}>{boton}</button>
+      </div>
+    </Modal>
+  )
+}
+
+// «¿LO MANDO A COCINA?» antes de cobrar (a9, modo «preguntar» del menú). Tres
+// botones que dicen lo que hacen: el `confirmar` de siempre solo tiene
+// «Cancelar» y «Confirmar», y aquí «Cancelar» no se sabría si cancela el cobro o
+// la comanda.
+function ModalCocinaPendiente({ lineas, onMandar, onSinMandar, onCerrar }) {
+  const unidades = lineas.reduce((s, l) => s + (l.cantidad || 0), 0)
+  return (
+    <Modal titulo="Falta mandar a cocina" onCerrar={onCerrar}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ fontSize: 14, color: T.text, lineHeight: 1.5 }}>
+          {unidades === 1 ? 'Esto no ha salido' : `Estas ${unidades} cosas no han salido`} todavía a cocina:
+        </div>
+        <div style={{ display: 'grid', gap: 4, maxHeight: '32vh', overflowY: 'auto' }}>
+          {lineas.map((l) => (
+            <div key={l.clave} style={{ fontSize: 14, color: T.text, fontWeight: 600 }}>
+              {l.cantidad} x {l.nombre}{l.tamano ? ` · ${l.tamano}` : ''}
+              {l.extrasTexto ? <span style={{ color: T.accent, fontWeight: 500 }}>{` · ${l.extrasTexto}`}</span> : null}
+            </div>
+          ))}
+        </div>
+        <button onClick={onMandar} style={{ ...btnAccion, height: 54, fontSize: 16 }}>
+          <ChefHat size={18} style={{ marginRight: 8 }} /> Mandar a cocina y cobrar
+        </button>
+        <button onClick={onSinMandar} style={{ ...btnSecundario, height: 48, fontSize: 15 }}>
+          Cobrar sin mandar a cocina
+        </button>
+        <button onClick={onCerrar} style={{ ...btnSecundario, height: 44, fontSize: 14, color: T.muted }}>
+          Volver a la venta
+        </button>
       </div>
     </Modal>
   )

@@ -1,0 +1,116 @@
+/* Pruebas de COCINA Y TICKETS del TPV (auditoría 05: a9, a10 y a13; 23 oct 2026).
+ *
+ * Por qué existe: lo que sale en el papel de la cocina y del cliente no se ve
+ * hasta que alguien lo imprime en el local, y Duende imprime a diario. Aquí se
+ * comprueba el papel decodificado a texto y la parte que decide (número de
+ * cliente, nombre de la venta), sin pantalla, sin red y sin impresora.
+ *
+ *   npm run test:cocina
+ */
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { generarComandaTpv } from '../src/lib/escpos.js'
+import {
+  claveJornada, siguienteNumero, asignarNumeroCliente, anadirQuien, buscarQuien,
+  recordarQuien, quienDeVenta, nombrePuesto, tieneQuien,
+} from '../src/lib/comandaVenta.js'
+
+// El papel, decodificado a texto (solo ASCII basta para buscar las frases).
+const texto = (bytes) => Array.from(bytes, (b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : ' ')).join('')
+
+// Un almacén en memoria con la misma forma que localStorage.
+function almacen() {
+  const m = new Map()
+  return {
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => { m.set(k, String(v)) },
+    removeItem: (k) => { m.delete(k) },
+  }
+}
+
+const linea = { cantidad: 2, nombre: 'Pizza Barbacoa', tamano: 'Familiar', extrasTexto: 'Extra queso', notas: 'Sin cebolla' }
+
+// ── a9: de quién es la comanda ───────────────────────────────────────────────
+test('comanda sin número ni nombre: el papel de siempre (pruebas de impresora)', () => {
+  const t = texto(generarComandaTpv([linea], { nombre: 'Max' }, { numero: 1 }))
+  assert.match(t, /MOSTRADOR #1/)
+  assert.doesNotMatch(t, /CLIENTE/)
+  // Los mismos bytes que antes de a9: sin opciones nuevas no cambia nada.
+  const a = generarComandaTpv([linea], { nombre: 'Max' }, { numero: 1, nota: 'PARA LLEVAR' })
+  const b = generarComandaTpv([linea], { nombre: 'Max' }, { numero: 1, nota: 'PARA LLEVAR', cliente: null, nombre: null, codigo: null })
+  assert.deepEqual(a, b)
+})
+
+test('comanda con número de cliente, nombre y código', () => {
+  const t = texto(generarComandaTpv([linea], { nombre: 'Max' }, { numero: 2, cliente: 23, nombre: 'Juan', codigo: 'PD-ABC123' }))
+  assert.match(t, /MOSTRADOR #2/)
+  assert.match(t, /CLIENTE 23/)
+  assert.match(t, /JUAN/)
+  assert.match(t, /PD-ABC123/)
+  assert.match(t, /2 x Pizza Barbacoa \(Familiar\)/)
+})
+
+test('un nombre largo se parte por palabras, no se corta', () => {
+  const t = texto(generarComandaTpv([linea], {}, { cliente: 4, nombre: 'el chico de la moto roja de la esquina' }))
+  assert.match(t, /EL CHICO DE LA MOTO ROJA/)
+  assert.match(t, /DE LA ESQUINA/)
+})
+
+test('número de cliente: sigue la cuenta en el día y vuelve a 1 a las 5:00', () => {
+  const noche = new Date(2026, 9, 24, 23, 50)
+  const madrugada = new Date(2026, 9, 25, 2, 10)   // sigue siendo la jornada del 24
+  const manana = new Date(2026, 9, 25, 9, 0)
+  assert.equal(claveJornada(noche), '2026-10-24')
+  assert.equal(claveJornada(madrugada), '2026-10-24')
+  assert.equal(claveJornada(manana), '2026-10-25')
+  let r = siguienteNumero(null, noche)
+  assert.equal(r.numero, 1)
+  r = siguienteNumero(r.guardado, madrugada)
+  assert.equal(r.numero, 2)
+  r = siguienteNumero(r.guardado, manana)
+  assert.equal(r.numero, 1)
+  // Lo guardado roto no rompe nada: empieza en 1.
+  assert.equal(siguienteNumero({ dia: '2026-10-25', n: 'x' }, manana).numero, 1)
+})
+
+test('número de cliente: se guarda en el aparato, por restaurante', () => {
+  const a = almacen()
+  const hoy = new Date(2026, 9, 24, 13, 0)
+  assert.equal(asignarNumeroCliente('est1', a, hoy), 1)
+  assert.equal(asignarNumeroCliente('est1', a, hoy), 2)
+  assert.equal(asignarNumeroCliente('est2', a, hoy), 1)
+  assert.equal(asignarNumeroCliente('est1', a, hoy), 3)
+})
+
+test('número de cliente: sin almacén (incógnito, lleno) la cuenta sigue en memoria', () => {
+  const roto = { getItem: () => { throw new Error('no') }, setItem: () => { throw new Error('lleno') } }
+  const hoy = new Date(2026, 9, 24, 13, 0)
+  assert.equal(asignarNumeroCliente('estX', roto, hoy), 1)
+  assert.equal(asignarNumeroCliente('estX', roto, hoy), 2)
+})
+
+test('se recuerda de quién fue cada venta cobrada (para reimprimir su comanda)', () => {
+  const a = almacen()
+  recordarQuien('est', 'k1', { numero: 7, nombre: 'Ana' }, a)
+  recordarQuien('est', 'k2', { numero: 8, nombre: null }, a)
+  recordarQuien('est', 'k3', { numero: null, nombre: null }, a)   // nada que recordar
+  assert.deepEqual(quienDeVenta('est', 'k1', a), { numero: 7, nombre: 'Ana' })
+  assert.deepEqual(quienDeVenta('est', 'k2', a), { numero: 8, nombre: null })
+  assert.equal(quienDeVenta('est', 'k3', a), null)
+  assert.equal(quienDeVenta('otro', 'k1', a), null)
+  // La misma clave otra vez se sustituye, y la lista no crece sin fin.
+  let lista = []
+  for (let i = 0; i < 10; i++) lista = anadirQuien(lista, 'k' + i, { numero: i }, 5)
+  assert.equal(lista.length, 5)
+  assert.equal(buscarQuien(lista, 'k0'), null)
+  assert.deepEqual(buscarQuien(anadirQuien(lista, 'k9', { numero: 99 }, 5), 'k9'), { numero: 99, nombre: null })
+})
+
+test('el nombre puesto de una aparcada: el tecleado sí, la etiqueta automática no', () => {
+  assert.equal(nombrePuesto({ nombre: 'Mesa 3' }), 'Mesa 3')
+  assert.equal(nombrePuesto({ nombre: 'Sin nombre 21:05' }), null)
+  assert.equal(nombrePuesto({ nombre: 'Juan', nombre_venta: null }), null)
+  assert.equal(nombrePuesto({ nombre: 'Sin nombre 21:05', nombre_venta: 'Pepe' }), 'Pepe')
+  assert.equal(tieneQuien({ numero: null, nombre: null }), false)
+  assert.equal(tieneQuien({ numero: 0, nombre: null }), true)
+})

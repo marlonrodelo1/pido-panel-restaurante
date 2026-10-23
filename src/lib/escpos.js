@@ -669,7 +669,12 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
 export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   // `titulo` distingue el papel cuando hay DOS impresoras: el de la plancha
   // dice COCINA y el de las bebidas dice BARRA.
-  const { nota = null, numero = null, titulo = '** COCINA **' } = opciones
+  // `cliente` (número del día), `nombre` (el que le puso el camarero) y
+  // `codigo` (PD-… al cobrar, OFF-… sin internet): de quién es (a9).
+  const {
+    nota = null, numero = null, titulo = '** COCINA **',
+    cliente = null, nombre = null, codigo = null,
+  } = opciones
   const bytes = []
 
   bytes.push(...init(), ...codepage850(), ...center())
@@ -678,6 +683,15 @@ export function generarComandaTpv(lineas, restaurante, opciones = {}) {
   bytes.push(...normalSize(), ...boldOff())
   if (restaurante?.nombre) bytes.push(...line(restaurante.nombre))
   bytes.push(...line('MOSTRADOR' + (numero ? ' #' + numero : '')))
+  // DE QUIÉN ES (a9, 23 oct 2026). Antes solo salía «MOSTRADOR #1» y con varias
+  // pizzas en el horno nadie sabía de quién era cada una. El número de cliente y
+  // el nombre van tan grandes como los platos: es lo que se canta al entregar.
+  // Sin ellos (pruebas de impresora) el papel sale igual que siempre.
+  if (cliente != null && cliente !== '') {
+    bytes.push(...boldOn(), ...size(2, 2), ...line('CLIENTE ' + cliente), ...normalSize(), ...boldOff())
+  }
+  if (nombre) bytes.push(...bloqueGrande(String(nombre).toUpperCase(), { negrita: true }))
+  if (codigo) bytes.push(...line(codigo))
   bytes.push(...line(formatDate()))
   bytes.push(...separator('='), ...left())
 

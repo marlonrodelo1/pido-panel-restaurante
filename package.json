@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test:qr": "node --test scripts/test-qr-carta.mjs",
     "test:cola": "node --test scripts/test-cola-ventas.mjs",
+    "test:cocina": "node --test scripts/test-cocina-tickets.mjs",
     "postinstall": "node scripts/fix-stripe-terminal.mjs"
   },
   "dependencies": {
