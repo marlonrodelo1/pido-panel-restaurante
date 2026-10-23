@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:qr": "node --test scripts/test-qr-carta.mjs",
+    "test:cola": "node --test scripts/test-cola-ventas.mjs",
     "postinstall": "node scripts/fix-stripe-terminal.mjs"
   },
   "dependencies": {

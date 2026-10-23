@@ -23,10 +23,13 @@ import { VIAS, etiquetaLinea } from '../lib/jornada'
 import { toast } from '../App'
 import { T, cents, eur, btnAccion, btnSecundario, inputOscuro } from '../lib/tpvTheme'
 import { imprimirReporteCaja, pulsoCajon } from '../lib/printService'
-import { ventasPendientes } from '../lib/colaVentas'
-import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus, Inbox } from 'lucide-react'
+import { ventasPendientes, estadoCola, sincronizarCola } from '../lib/colaVentas'
+import { decisionCierre, notaCierreSinApuntar } from '../lib/colaVentasLogica'
+import { redCaida } from '../lib/estadoRed'
+import TpvVentasSinApuntar from './TpvVentasSinApuntar'
+import { Wallet, ArrowDownLeft, ArrowUpRight, Lock, Unlock, Printer, Calculator, Minus, Plus, Inbox, AlertTriangle } from 'lucide-react'
 
-export default function TpvCaja({ establecimientoId, restaurante, vistaInicial = 'resumen', onCerrarModal }) {
+export default function TpvCaja({ establecimientoId, restaurante, vistaInicial = 'resumen', onCerrarModal, onVolverACobrar }) {
   // La BASE del cajón (15 sep 2026): lo que se deja cada noche para dar cambio.
   // Al cerrar, lo que pase de ahí se va a la caja mayor. La edita el dueño en el
   // panel web (`tpv_config.fondo_base`) y la cuenta de verdad la hace el servidor
@@ -51,6 +54,17 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
   const [confirmando, setConfirmando] = useState(false)
   const [ultimoCierre, setUltimoCierre] = useState(null)
   const [cerrada, setCerrada] = useState(null)       // la caja recién cerrada, para el resumen
+  // Ventas de este aparato que el servidor aún no tiene (a6, 22 oct 2026). Se
+  // relee con cada cambio de la cola: el cierre las enseña antes de contar.
+  const [cola, setCola] = useState(() => estadoCola(establecimientoId))
+  useEffect(() => {
+    const releer = (e) => { if (!e?.detail?.est || e.detail.est === establecimientoId) setCola(estadoCola(establecimientoId)) }
+    window.addEventListener('pidoo:cola-ventas', releer)
+    return () => window.removeEventListener('pidoo:cola-ventas', releer)
+  }, [establecimientoId])
+  // El aviso del cierre con ventas en la cola: { decision: 'esperar_red' |
+  // 'confirmar', resumen }. 'confirmar' deja cerrar sin ellas.
+  const [avisoCola, setAvisoCola] = useState(null)
   // 🔴 SE MIDE EL RECUADRO, NO LA VENTANA (7 sep 2026). Estaba con
   // `useEsMonitor()`, que mira el ancho de la PANTALLA: con el PC del local a
   // 1280 px y esta caja dentro de un modal de 440, se pintaban dos columnas en
@@ -187,19 +201,43 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     limpiar(); setVista('resumen'); cargar()
   }
 
-  async function cerrar() {
+  async function cerrar({ sinLasDeLaCola = false } = {}) {
     setConfirmando(false)
+    setAvisoCola(null)
     // El Z cuadra contra lo APUNTADO en el servidor: con ventas cobradas sin
     // conexión aún en la cola local, cerraría descuadrado a la fuerza (el
     // dinero está en el cajón pero el servidor no lo sabe todavía).
-    const pendientes = ventasPendientes(establecimientoId)
-    if (pendientes) {
-      toast(`Hay ${pendientes} venta${pendientes > 1 ? 's' : ''} cobrada${pendientes > 1 ? 's' : ''} sin conexión pendiente${pendientes > 1 ? 's' : ''} de apuntar: conecta internet, espera al aviso de sincronizado y cierra entonces`, 'error')
-      return
+    //
+    // 🔴 PERO UNA VENTA ATASCADA YA NO BLOQUEA EL Z PARA SIEMPRE (a6, 22 oct
+    // 2026). Antes bastaba una sola que el servidor no aceptara para que este
+    // aparato no pudiera cerrar nunca más. Ahora: primero se intenta mandar lo
+    // que haya; si aún quedan ventas que NO han llegado por falta de red, se
+    // espera a internet (sin red tampoco se puede cerrar); si solo quedan ventas
+    // CON PROBLEMA, se pregunta y se puede cerrar sin ellas, dejándolo escrito.
+    let notaCola = null
+    if (ventasPendientes(establecimientoId)) {
+      // Con la red ya comprobada como caída no se espera a nadie: no llegaría.
+      if (!redCaida()) {
+        setOcupado(true)
+        try { await sincronizarCola(establecimientoId) } catch { /* se mira abajo lo que queda */ }
+        setOcupado(false)
+      }
+      const resumen = estadoCola(establecimientoId)
+      setCola(resumen)
+      const decision = decisionCierre(resumen)
+      if (decision === 'esperar_red') {
+        setAvisoCola({ decision, resumen })
+        return
+      }
+      if (decision === 'confirmar') {
+        if (!sinLasDeLaCola) { setAvisoCola({ decision, resumen }); return }
+        notaCola = notaCierreSinApuntar(resumen, eur)
+      }
     }
     setOcupado(true)
     const { data, error } = await supabase.rpc('tpv_cerrar_caja', {
-      p_establecimiento_id: establecimientoId, p_contado: importeC / 100, p_notas: motivo || null,
+      p_establecimiento_id: establecimientoId, p_contado: importeC / 100,
+      p_notas: [motivo.trim(), notaCola].filter(Boolean).join(' · ') || null,
     })
     setOcupado(false)
     if (error) { errorCaja(error); return }
@@ -439,6 +477,15 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
     )
   }
 
+  // ── Ventas sin apuntar de este aparato (a6) ───────────────────────────────
+  if (vista === 'cola') {
+    return (
+      <TpvVentasSinApuntar establecimientoId={establecimientoId}
+        onVolver={() => setVista(estado?.abierta ? 'cierre' : 'resumen')}
+        onVolverACobrar={onVolverACobrar} />
+    )
+  }
+
   // ── Historial de cierres ──────────────────────────────────────────────────
   if (vista === 'historial') {
     return (
@@ -545,6 +592,24 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
           <strong style={{ fontSize: 16, color: T.text }}>{restaurante?.nombre || 'Caja'}</strong>
           <div style={{ fontSize: 12, color: T.muted }}>Resumen del turno</div>
         </div>
+
+        {/* a6: ventas cobradas en este aparato que el servidor aún no tiene. Su
+            efectivo está en el cajón pero NO en el teórico: se dice antes de
+            contar, no al final. */}
+        {cola?.total > 0 && (
+          <button onClick={() => setVista('cola')} style={{
+            textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+            padding: '10px 12px', borderRadius: 12, lineHeight: 1.45, fontSize: 12,
+            background: 'rgba(255,122,107,0.10)', border: `1px solid ${T.danger}`, color: T.text,
+          }}>
+            <strong style={{ color: T.danger, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertTriangle size={14} /> {cola.total} venta{cola.total > 1 ? 's' : ''} de este aparato sin apuntar ({eur(cola.importe_c)})
+            </strong>
+            {cola.conProblema
+              ? 'El servidor no acepta alguna: tócalo para resolverlas antes de cerrar. Si cierras sin ellas, el cierre lo dejará escrito.'
+              : 'Se mandan solas con internet. Tócalo para verlas.'}
+          </button>
+        )}
 
         <div style={{
           borderRadius: 14, padding: 16,
@@ -681,7 +746,7 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                 <button onClick={() => setConfirmando(false)} style={{ ...btnSecundario, flex: 1, height: 48 }}>
                   Cancelar
                 </button>
-                <button onClick={cerrar} disabled={ocupado}
+                <button onClick={() => cerrar()} disabled={ocupado}
                   style={{ ...btnAccion, flex: 1, height: 48, opacity: ocupado ? 0.5 : 1 }}>
                   {ocupado ? 'Cerrando…' : (descuadreGrande ? 'Cerrar igualmente' : 'Finalizar')}
                 </button>
@@ -689,6 +754,47 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
             </div>
           </div>
         )}
+
+        {/* a6: el cierre con ventas de este aparato aún en la cola (después de
+            intentar mandarlas). 'esperar_red': no han llegado al servidor y sin
+            red no se puede cerrar; 'confirmar': solo quedan ventas que el
+            servidor no acepta, y se puede cerrar sin ellas. */}
+        {avisoCola && (() => {
+          const r = avisoCola.resumen || {}
+          const esperar = avisoCola.decision === 'esperar_red'
+          return (
+            <div style={{
+              position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+            }} onClick={() => setAvisoCola(null)}>
+              <div onClick={(e) => e.stopPropagation()} style={{
+                background: T.surface, borderRadius: 16, padding: 22, maxWidth: 440, width: '100%',
+                border: `1px solid ${T.border}`, display: 'grid', gap: 12,
+              }}>
+                <strong style={{ fontSize: 16, color: T.text, textAlign: 'center' }}>
+                  {esperar ? 'Faltan ventas por llegar al servidor' : 'Hay ventas que el servidor no acepta'}
+                </strong>
+                <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55 }}>
+                  {esperar
+                    ? `${r.esperandoRed} venta${r.esperandoRed > 1 ? 's' : ''} cobrada${r.esperandoRed > 1 ? 's' : ''} en este aparato todavía no ${r.esperandoRed > 1 ? 'han' : 'ha'} llegado al servidor. Sin ellas el cierre no cuadraría, y sin conexión tampoco se puede cerrar: en cuanto vuelva internet se mandan solas. Espera al aviso de sincronizado y cierra entonces.`
+                    : `${r.conProblema} venta${r.conProblema > 1 ? 's' : ''} de este aparato (${eur(r.importeConProblema_c || 0)}) no ${r.conProblema > 1 ? 'se han' : 'se ha'} podido apuntar. Si cierras ahora quedan FUERA de este cierre: el cajón tendrá ${eur(r.efectivoConProblema_c || 0)} de más y saldrá como sobrante. Se apuntará en el comentario del cierre, y las ventas siguen en «Ventas sin apuntar» para resolverlas.`}
+                </div>
+                <button onClick={() => { setAvisoCola(null); setVista('cola') }} style={{ ...btnSecundario, height: 46 }}>
+                  Ver las ventas sin apuntar
+                </button>
+                {!esperar && (
+                  <button onClick={() => cerrar({ sinLasDeLaCola: true })} disabled={ocupado}
+                    style={{ ...btnAccion, height: 48, opacity: ocupado ? 0.5 : 1 }}>
+                    {ocupado ? 'Cerrando…' : 'Cerrar la caja sin ellas'}
+                  </button>
+                )}
+                <button onClick={() => setAvisoCola(null)} style={{ ...btnSecundario, height: 44 }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )
+        })()}
       </>
     )
   }

@@ -29,7 +29,11 @@ import {
 } from '../lib/printService'
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import { resumenJornada, inicioJornada } from '../lib/jornada'
-import { encolarVenta, sincronizarCola, ventasPendientes, ventasAtascadas, siguienteNumeroOff, tokenSinEsperar } from '../lib/colaVentas'
+import {
+  encolarVenta, sincronizarCola, ventasPendientes, siguienteNumeroOff, tokenSinEsperar,
+  estadoCola, descartarVentaAtascada,
+} from '../lib/colaVentas'
+import TpvVentasSinApuntar from '../components/TpvVentasSinApuntar'
 import { redCaida, esFalloSinRespuesta, comprobarRed, marcarRedOk, avisarFalloRed } from '../lib/estadoRed'
 import {
   Search, Plus, Minus, Trash2, Printer, Banknote, CreditCard, X, AlertTriangle,
@@ -193,24 +197,37 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // fallos de verdad comprobados (y se quita con la primera respuesta).
   const [sinRed, setSinRed] = useState(() => redCaida())
   const [colaN, setColaN] = useState(0)
-  const atascadasAvisadasRef = useRef(0)
+  // En qué está la cola (a6, 22 oct 2026): cuántas esperan a la red y cuántas
+  // tienen un problema que necesita a alguien. Antes solo había un número y el
+  // aviso decía «Sincronizando…» sin fin aunque el servidor las hubiera rechazado.
+  const [colaEstado, setColaEstado] = useState(null)
+  const [modalCola, setModalCola] = useState(false)
+  // Una venta que este aparato NO ha podido guardar (almacenamiento lleno): se
+  // dice con un aviso que hay que cerrar a mano, no con un toast de 3 s.
+  const [ventaNoGuardada, setVentaNoGuardada] = useState(null)
+  const problemasAvisadosRef = useRef(0)
   useEffect(() => {
     if (!restaurante?.id) return
     const est = restaurante.id
-    setColaN(ventasPendientes(est))
+    const pintarCola = () => {
+      setColaN(ventasPendientes(est))
+      setColaEstado(estadoCola(est))
+    }
+    pintarCola()
     const alta = () => setSinRed(redCaida())
     const baja = () => setSinRed(redCaida())
-    const cambioCola = (e) => { if (e?.detail?.est === est) setColaN(e.detail.n) }
+    const cambioCola = (e) => { if (e?.detail?.est === est) pintarCola() }
     const intentar = async () => {
       if (!navigator.onLine || !ventasPendientes(est)) return
       const r = await sincronizarCola(est)
       if (r?.enviadas) toast(`Sincronizada${r.enviadas > 1 ? 's' : ''} ${r.enviadas} venta${r.enviadas > 1 ? 's' : ''} cobrada${r.enviadas > 1 ? 's' : ''} sin conexión`, 'success')
-      const atasc = ventasAtascadas(est)
-      if (atasc && atasc !== atascadasAvisadasRef.current) {
-        toast(`${atasc} venta${atasc > 1 ? 's' : ''} cobrada${atasc > 1 ? 's' : ''} sin conexión no se pudo apuntar: avisa a Pidoo (el dinero está en el cajón)`, 'error')
+      // Solo se avisa cuando APARECE una venta con problema nueva, no en cada vuelta.
+      const conProblema = estadoCola(est).conProblema
+      if (conProblema > problemasAvisadosRef.current) {
+        toast(`${conProblema} venta${conProblema > 1 ? 's' : ''} cobrada${conProblema > 1 ? 's' : ''} en este aparato sin apuntar: tócalas en el aviso de arriba (el dinero está en el cajón)`, 'error')
       }
-      atascadasAvisadasRef.current = atasc
-      setColaN(ventasPendientes(est))
+      problemasAvisadosRef.current = conProblema
+      pintarCola()
     }
     // La red ha cambiado (comprobado): se pinta, y si ha vuelto se manda la cola.
     const cambioRed = () => {
@@ -553,6 +570,38 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setCarrito(Array.isArray(ficha.lineas) ? ficha.lineas : [])
     setModalAparcadas(false)
     toast(`Recuperada: ${ficha.nombre}`, 'success')
+  }
+
+  // «Pasar al mostrador» una venta de la cola que el servidor ha RECHAZADO (a6,
+  // 22 oct 2026): casi siempre es la carta (un producto o un extra que ya no
+  // existe). Sus líneas vuelven al mostrador para cobrarla otra vez con la carta
+  // de ahora, y la venta sale de la cola (archivada en el aparato). Va con una
+  // clave de idempotencia NUEVA: la vieja no llegó a grabarse (el servidor dijo
+  // que no). Las líneas vuelven como ya comandadas: la cocina ya la hizo.
+  // Devuelve false si no se puede (otra venta a medias en el mostrador).
+  function volverACobrar(venta) {
+    if (bloqueadaPorCobro()) return false
+    if (carrito.length) {
+      toast('Antes cobra o aparca la venta que hay en el mostrador', 'error')
+      return false
+    }
+    const lineas = Array.isArray(venta?.carrito) ? venta.carrito : []
+    if (!lineas.length) {
+      toast('Esta venta no se puede pasar al mostrador: pícala a mano y descártala después', 'error')
+      return false
+    }
+    descartarVentaAtascada(restaurante.id, venta.payload?.idempotency_key, 'al_mostrador')
+    // Las refs ANTES que el carrito (como al recuperar una aparcada): sin clave,
+    // el efecto del carrito le pone una nueva.
+    idemRef.current = null
+    firmaRef.current = null
+    rondaRef.current = 0
+    setParaLlevar(!!venta.payload?.para_llevar)
+    setCarrito(lineas.map((l) => ({ ...l, comandada: true })))
+    setModalCola(false)
+    setPestana('mostrador')
+    toast(`OFF-${venta.numeroOff} está en el mostrador: revísala y cóbrala SIN pedir el dinero otra vez (ya está en el cajón)`, 'success')
+    return true
   }
 
   async function borrarAparcada(id) {
@@ -1019,7 +1068,14 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // no se pudo renovar a tiempo). En los tres casos la venta es la misma.
   function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, motivo = 'red') {
     const numeroOff = siguienteNumeroOff(restaurante.id)
-    encolarVenta(restaurante.id, { payload: cuerpo, numeroOff, total_c: totalPantalla, metodo: metodo_pago })
+    // Con lo que se vendió en texto (para reconocerla en «Ventas sin apuntar») y
+    // con las líneas tal cual (para poder pasarla al mostrador si el servidor la
+    // rechaza). `guardada` falso = el aparato no ha podido guardarla (a6).
+    const { guardada } = encolarVenta(restaurante.id, {
+      payload: cuerpo, numeroOff, total_c: totalPantalla, metodo: metodo_pago,
+      lineas: lineasPantalla.map((l) => `${l.cantidad} x ${l.nombre}${l.tamano ? ` (${l.tamano})` : ''}`),
+      carrito: lineasPantalla,
+    })
 
     const igic = Number(tpvConfig?.igic_pct) || 0
     const total = totalPantalla / 100
@@ -1049,6 +1105,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
     setParaLlevar(false)
     setModalPago(false)
+    if (!guardada) {
+      // 🔴 Antes esto se daba por guardado aunque no lo estuviera (a6). El ticket
+      // ha salido y el dinero está en el cajón, pero el aparato no tiene la venta:
+      // hay que apuntarla a mano y decírselo a Pidoo.
+      setVentaNoGuardada({ numeroOff, total_c: totalPantalla, metodo: metodo_pago })
+      return
+    }
     toast(motivo === 'tiempo'
       ? `El servidor no ha contestado: venta OFF-${numeroOff} guardada en este aparato. Se apuntará sola (si ya había entrado, no se cobra dos veces).`
       : motivo === 'sesion'
@@ -1361,19 +1424,29 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       {/* MODO SIN INTERNET: el mostrador sigue (carta local, comandas por la
           red del local, ventas a la cola con ticket provisional). El banner
           dice en qué situación se está, y desaparece cuando todo está al día. */}
-      {(sinRed || colaN > 0) && (
-        <div style={{
-          padding: '9px 14px', borderRadius: 10, marginBottom: 10,
-          fontSize: 13, fontWeight: 700, lineHeight: 1.4,
-          background: sinRed ? 'rgba(245,158,11,0.14)' : 'rgba(96,165,250,0.12)',
-          border: `1px solid ${sinRed ? 'rgba(245,158,11,0.5)' : 'rgba(96,165,250,0.45)'}`,
-          color: sinRed ? '#F5A623' : '#7EB5F7',
-        }}>
-          {sinRed
-            ? `Sin conexión · modo local — el mostrador sigue: comandas, efectivo y datáfono. Las ventas se guardan en este aparato${colaN ? ` (${colaN} pendiente${colaN > 1 ? 's' : ''})` : ''} y se apuntarán solas al volver internet.`
-            : `Sincronizando ${colaN} venta${colaN > 1 ? 's' : ''} cobrada${colaN > 1 ? 's' : ''} sin conexión…`}
-        </div>
-      )}
+      {/* a6: con ventas en la cola el aviso se TOCA y abre «Ventas sin apuntar».
+          Si alguna tiene problema (el servidor no la acepta) lo dice en rojo, en
+          vez del «Sincronizando…» sin fin de antes. */}
+      {(sinRed || colaN > 0) && (() => {
+        const nProblema = colaEstado?.conProblema || 0
+        const rojo = !sinRed && nProblema > 0
+        return (
+          <div onClick={colaN > 0 ? () => setModalCola(true) : undefined} style={{
+            padding: '9px 14px', borderRadius: 10, marginBottom: 10,
+            fontSize: 13, fontWeight: 700, lineHeight: 1.4,
+            cursor: colaN > 0 ? 'pointer' : 'default',
+            background: sinRed ? 'rgba(245,158,11,0.14)' : rojo ? 'rgba(255,122,107,0.12)' : 'rgba(96,165,250,0.12)',
+            border: `1px solid ${sinRed ? 'rgba(245,158,11,0.5)' : rojo ? T.danger : 'rgba(96,165,250,0.45)'}`,
+            color: sinRed ? '#F5A623' : rojo ? T.danger : '#7EB5F7',
+          }}>
+            {sinRed
+              ? `Sin conexión · modo local — el mostrador sigue: comandas, efectivo y datáfono. Las ventas se guardan en este aparato${colaN ? ` (${colaN} pendiente${colaN > 1 ? 's' : ''})` : ''} y se apuntarán solas al volver internet.`
+              : rojo
+                ? `${nProblema} venta${nProblema > 1 ? 's' : ''} cobrada${nProblema > 1 ? 's' : ''} en este aparato sin apuntar: el servidor no ${nProblema > 1 ? 'las' : 'la'} acepta. Toca aquí para ver${nProblema > 1 ? 'las' : 'la'} y resolver${nProblema > 1 ? 'las' : 'la'}.`
+                : `Sincronizando ${colaN} venta${colaN > 1 ? 's' : ''} cobrada${colaN > 1 ? 's' : ''} sin conexión… (toca para verlas)`}
+          </div>
+        )
+      })()}
 
       {/* El turno no se ha podido comprobar (sin red) y no hay ninguno guardado
           como abierto: no se tapa la carta, se dice. Al volver internet se
@@ -1955,7 +2028,41 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         <Modal titulo="Caja del mostrador" onCerrar={() => setModalCaja(false)}
           ancho={esMonitor ? 940 : 440}>
           <TpvCaja establecimientoId={restaurante.id} restaurante={restaurante}
-            vistaInicial={cajaVista} onCerrarModal={() => setModalCaja(false)} />
+            vistaInicial={cajaVista} onCerrarModal={() => setModalCaja(false)}
+            onVolverACobrar={(v) => {
+              const ok = volverACobrar(v)
+              if (ok) setModalCaja(false)
+              return ok
+            }} />
+        </Modal>
+      )}
+
+      {/* a6: las ventas de este aparato que el servidor aún no tiene. */}
+      {modalCola && (
+        <Modal titulo="Ventas sin apuntar" onCerrar={() => setModalCola(false)} ancho={560}>
+          <TpvVentasSinApuntar establecimientoId={restaurante.id}
+            onVolver={() => setModalCola(false)}
+            onVolverACobrar={volverACobrar} />
+        </Modal>
+      )}
+
+      {/* a6: el aparato no ha podido guardar la venta (almacenamiento lleno). */}
+      {ventaNoGuardada && (
+        <Modal titulo="¡Esta venta NO se ha guardado!" onCerrar={() => setVentaNoGuardada(null)} cerrarAlFondo={false}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ fontSize: 14, color: T.text, lineHeight: 1.55 }}>
+              La venta <strong>OFF-{ventaNoGuardada.numeroOff}</strong> de{' '}
+              <strong>{eur(ventaNoGuardada.total_c)}</strong> ({ventaNoGuardada.metodo === 'datafono' ? 'datáfono' : 'efectivo'})
+              se ha cobrado, pero este aparato no tiene sitio para guardarla y <strong>no se apuntará sola</strong>.
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>
+              Apúntala en papel (número, importe y forma de pago) y avisa a Pidoo. Hasta que se libere
+              espacio, las ventas sin internet tampoco se podrán guardar.
+            </div>
+            <button onClick={() => setVentaNoGuardada(null)} style={{ ...btnAccion, height: 50, fontSize: 15 }}>
+              Ya la he apuntado
+            </button>
+          </div>
         </Modal>
       )}
 
@@ -2161,6 +2268,13 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           <OpcionMenu icono={<Wallet size={19} color={T.accent} />} texto="Estado de la caja"
             nota="Cuánto debería haber ahora mismo"
             onClick={() => { setMenu(false); setCajaVista('resumen'); setModalCaja(true) }} />
+          {/* a6: solo cuando hay algo en la cola de este aparato. */}
+          {colaN > 0 && (
+            <OpcionMenu icono={<AlertTriangle size={19} color={colaEstado?.conProblema ? T.danger : T.accent} />}
+              texto={`Ventas sin apuntar (${colaN})`}
+              nota="Cobradas en este aparato que el servidor aún no tiene"
+              onClick={() => { setMenu(false); setModalCola(true) }} />
+          )}
 
           <GrupoMenu titulo="Informes" />
           <OpcionMenu icono={<ClipboardList size={19} color={T.accent} />} texto="Tickets del día"
