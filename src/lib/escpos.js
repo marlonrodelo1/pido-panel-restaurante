@@ -344,7 +344,7 @@ export function generarTicketCliente(pedido, items, restaurante, logoBytes = nul
 
   // EL LOGO ES EL DEL RESTAURANTE, NUNCA EL DE PIDOO.
   //
-  // Este papel es una factura simplificada que emite el RESTAURANTE: lleva su nombre,
+  // Este papel lo emite el RESTAURANTE: lleva su nombre,
   // su direccion y su telefono. Poner encima el logo de Pidoo daria a entender que el
   // vendedor es Pidoo, que no lo es — Pidoo cobra una comision por traerle el pedido.
   //
@@ -375,26 +375,38 @@ export function generarTicketCliente(pedido, items, restaurante, logoBytes = nul
     bytes.push(...line('Tel: ' + restaurante.telefono))
   }
 
+  // 🔴 NO ES UNA FACTURA (a13, 23 oct 2026). Con los datos del cliente («Crear
+  // factura» de un reparto, una recogida o un pedido por teléfono) este papel se
+  // titulaba «FACTURA SIMPLIFICADA» sin serlo: no lleva el NIF ni la razón social
+  // del restaurante, ni el IGIC, ni una serie, y el número es el código del
+  // pedido. Hasta que la gestoría diga cómo dar factura de verdad a estos
+  // pedidos, se llama JUSTIFICANTE y lo dice. La factura simplificada de verdad
+  // es la del mostrador (`generarTicketTpv`), que no cambia.
   bytes.push(
     ...separator('='),
     ...boldOn(),
-    ...line(factura ? 'FACTURA SIMPLIFICADA' : 'TICKET DE PEDIDO'),
+    ...line(factura ? 'JUSTIFICANTE DE PEDIDO' : 'TICKET DE PEDIDO'),
     ...boldOff(),
+    ...(factura ? line('No válido como factura') : []),
     ...separator('-'),
     ...left(),
   )
 
   // Order info
+  // «Canal: PIDO» solo si el pedido entró por Pidoo (a13): uno cogido por
+  // teléfono, en la mesa o en el kiosko es del propio restaurante, y decir PIDO
+  // ahí es falso. Sin origen (llamadas viejas), como siempre.
+  const entroPorPidoo = !pedido?.origen_pedido || ORIGENES_DE_PIDOO.includes(pedido.origen_pedido)
   bytes.push(
     ...twoColumns('Pedido:', pedido.codigo || '---'),
     ...twoColumns('Fecha:', formatDate(pedido.created_at)),
-    ...twoColumns('Canal:', 'PIDO'),
+    ...(entroPorPidoo ? twoColumns('Canal:', 'PIDO') : []),
     ...twoColumns('Pago:', textoTicket(pedido.metodo_pago)),
     ...separator('-'),
   )
 
-  // Datos fiscales del CLIENTE, cuando pide factura: con nombre, NIF y
-  // domicilio del destinatario este papel le vale para deducir.
+  // Datos del CLIENTE, cuando los pide («Crear justificante»): nombre, NIF y
+  // domicilio del destinatario, para que sepa a nombre de quién va.
   if (factura && (factura.nombre || factura.nif)) {
     bytes.push(...boldOn(), ...line('DATOS DEL CLIENTE'), ...boldOff())
     if (factura.nombre) bytes.push(...line(factura.nombre))

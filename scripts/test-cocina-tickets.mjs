@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { generarComandaTpv, generarComandaCocina } from '../src/lib/escpos.js'
+import { generarComandaTpv, generarComandaCocina, generarTicketCliente, generarTicketTpv } from '../src/lib/escpos.js'
 import {
   claveJornada, siguienteNumero, asignarNumeroCliente, anadirQuien, buscarQuien,
   recordarQuien, quienDeVenta, nombrePuesto, tieneQuien, lineasComandaDeItems,
@@ -149,4 +149,49 @@ test('las líneas guardadas vuelven a cocina sin precios y con su producto (para
   assert.equal(l[1].producto_id, null)       // línea libre: a la cocina
   assert.equal(l[1].extrasTexto, '')
   assert.equal(l[2].producto_id, undefined)  // sin el campo: el camino de siempre (caja)
+})
+
+// ── a13: el papel de los repartos y del teléfono no es una factura ───────────
+const pedidoTel = {
+  codigo: 'PD-TEL001', created_at: '2026-10-24T19:30:00.000Z', metodo_pago: 'efectivo',
+  origen_pedido: 'telefonico', total: 13, guest_nombre: 'Ana', guest_telefono: '600000000',
+}
+const itemsTel = [{ cantidad: 1, nombre_producto: 'Pizza', precio_unitario: 13, extras: [] }]
+const datosCliente = { nombre: 'Ana SL', nif: 'B12345678', direccion: 'Calle 1' }
+
+test('«Crear justificante»: ni «FACTURA SIMPLIFICADA» ni «Canal: PIDO» en un pedido del local', () => {
+  const t = texto(generarTicketCliente(pedidoTel, itemsTel, { nombre: 'Max' }, null, datosCliente))
+  assert.doesNotMatch(t, /FACTURA SIMPLIFICADA/)
+  assert.match(t, /JUSTIFICANTE DE PEDIDO/)
+  assert.match(t, /No v.lido como factura/)
+  assert.match(t, /B12345678/)
+  assert.doesNotMatch(t, /Canal:/)
+})
+
+test('ticket normal de un pedido por teléfono o de la mesa: sin «Canal: PIDO»', () => {
+  for (const origen of ['telefonico', 'mesa']) {
+    const t = texto(generarTicketCliente({ ...pedidoTel, origen_pedido: origen }, itemsTel, {}))
+    assert.match(t, /TICKET DE PEDIDO/)
+    assert.doesNotMatch(t, /Canal:/)
+    assert.doesNotMatch(t, /No v.lido como factura/)
+  }
+})
+
+test('pedido que entró por Pidoo (o sin origen): «Canal: PIDO» como siempre', () => {
+  for (const origen of ['pido', 'tienda_publica', 'marketplace_socio', undefined]) {
+    const t = texto(generarTicketCliente({ ...pedidoTel, origen_pedido: origen }, itemsTel, {}))
+    assert.match(t, /Canal:\s+PIDO/)
+  }
+  // Con los datos del cliente, también justificante y no factura.
+  const t = texto(generarTicketCliente({ ...pedidoTel, origen_pedido: 'pido' }, itemsTel, {}, null, datosCliente))
+  assert.match(t, /JUSTIFICANTE DE PEDIDO/)
+  assert.doesNotMatch(t, /FACTURA SIMPLIFICADA/)
+})
+
+test('el ticket del MOSTRADOR sigue siendo factura simplificada (no cambia)', () => {
+  const t = texto(generarTicketTpv({
+    serie: 'A', numero: 12, total: 10, base_imponible: 9.35, igic_pct: 7, cuota_igic: 0.65,
+    metodo_pago: 'efectivo', emitido_at: '2026-10-26T09:00:00.000Z',
+  }, {}, [], { nombre: 'Max', nif: 'X' }, null, false, null, null, datosCliente))
+  assert.match(t, /FACTURA SIMPLIFICADA/)
 })

@@ -1253,7 +1253,13 @@ function Acciones({
     }
   }
 
-  // Guarda los datos fiscales del cliente en el pedido y saca la factura.
+  // Qué papel sale con los datos del cliente (a13, 23 oct 2026). Solo la venta del
+  // MOSTRADOR tiene factura simplificada de verdad (serie, número, NIF del local e
+  // IGIC). En un reparto, una recogida o un pedido por teléfono sale un
+  // JUSTIFICANTE con los datos del cliente: llamarlo factura era decir algo que no es.
+  const papel = p.origen_pedido === 'tpv' ? 'factura' : 'justificante'
+
+  // Guarda los datos fiscales del cliente en el pedido y saca la factura (o el justificante).
   async function guardarFactura() {
     const datos = {
       nombre: fact.nombre.trim(),
@@ -1277,7 +1283,9 @@ function Acciones({
     setOcupado(false)
     setPaso(null)
     onCambiado?.()
-    toast(ok ? 'Factura impresa con los datos del cliente' : 'Datos guardados, pero la impresora no responde', ok ? 'success' : 'error')
+    toast(ok
+      ? (papel === 'factura' ? 'Factura impresa con los datos del cliente' : 'Justificante impreso con los datos del cliente')
+      : 'Datos guardados, pero la impresora no responde', ok ? 'success' : 'error')
   }
 
   const btnGrande = { ...btnAccion, width: '100%', height: 48, borderRadius: RADIO, fontSize: 15 }
@@ -1352,7 +1360,12 @@ function Acciones({
   if (paso === 'factura') {
     return (
       <div style={caja}>
-        <Titulo>Datos fiscales del cliente</Titulo>
+        <Titulo>{papel === 'factura' ? 'Datos fiscales del cliente' : 'Datos del cliente para el justificante'}</Titulo>
+        {papel === 'justificante' && (
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, lineHeight: 1.45 }}>
+            Sale un justificante del pedido con estos datos. No es una factura.
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 8 }}>
           <input value={fact.nombre} onChange={(e) => setFact((f) => ({ ...f, nombre: e.target.value }))}
             placeholder="Nombre o razón social" maxLength={60}
@@ -1368,7 +1381,7 @@ function Acciones({
           <button disabled={ocupado} onClick={guardarFactura}
             style={{ ...btnGrande, flex: 1, opacity: ocupado ? 0.6 : 1 }}>
             <FileText size={16} style={{ marginRight: 6 }} />
-            {ocupado ? 'Imprimiendo…' : 'Guardar e imprimir factura'}
+            {ocupado ? 'Imprimiendo…' : `Guardar e imprimir ${papel}`}
           </button>
           <button onClick={() => setPaso(null)} style={{ ...btnSecundario, height: 48, borderRadius: RADIO, padding: '0 16px' }}>
             Atrás
@@ -1482,7 +1495,9 @@ function Acciones({
           setPaso('factura')
         }}>
         <FileText size={15} style={{ marginRight: 6 }} />
-        {p.factura_datos ? 'Factura de nuevo' : 'Crear factura'}
+        {papel === 'factura'
+          ? (p.factura_datos ? 'Factura de nuevo' : 'Crear factura')
+          : (p.factura_datos ? 'Justificante de nuevo' : 'Crear justificante')}
       </button>,
     )
   }
@@ -1509,7 +1524,7 @@ function Acciones({
     <div style={{ marginTop: 12 }}>
       {p.factura_datos && p.estado === 'entregado' && (
         <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>
-          Factura a nombre de <strong style={{ color: T.text }}>{p.factura_datos.nombre}</strong> · {p.factura_datos.nif}
+          {papel === 'factura' ? 'Factura' : 'Justificante'} a nombre de <strong style={{ color: T.text }}>{p.factura_datos.nombre}</strong> · {p.factura_datos.nif}
         </div>
       )}
       <div style={{ display: 'grid', gap: 8 }}>{botones}</div>
