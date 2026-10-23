@@ -99,6 +99,26 @@ export function nuevaEntrada({ payload, numeroOff, total_c, metodo, hora, lineas
   }
 }
 
+// ── LA HORA REAL DE LA VENTA (a7, 22 oct 2026) ────────────────────────────────
+// Lo que viaja a `tpv-venta` desde la cola: el cuerpo de siempre MÁS
+// `fecha_operacion`, la hora a la que se cobró de verdad (la que quedó en la cola
+// y en el ticket provisional), en ISO con zona. Antes la venta del corte se
+// apuntaba con la hora a la que llegaba al servidor: una del sábado que llegaba
+// el lunes contaba el lunes (RD 1619/2012, arts. 7.1 y 11: la fecha de la
+// operación va aparte si no es la de expedición).
+//   - El servidor nuevo (tpv-venta v10) la usa si es de hace más de 5 min y como
+//     mucho de 72 h; si no, apunta como siempre. Nunca rechaza por ella.
+//   - El servidor viejo (v9) no lee ese campo: lo ignora y apunta como siempre.
+// Las ventas que ya estaban en la cola antes de esto también la llevan: sale de
+// `hora`, que se guardaba desde el primer día. Si el cuerpo ya trae una, manda.
+export function cuerpoParaEnviar(venta) {
+  const payload = venta?.payload || {}
+  if (typeof payload.fecha_operacion === 'string' && payload.fecha_operacion) return payload
+  const ms = venta?.hora ? Date.parse(venta.hora) : NaN
+  if (!Number.isFinite(ms)) return payload
+  return { ...payload, fecha_operacion: new Date(ms).toISOString() }
+}
+
 // La misma clave no entra dos veces (doble toque sobre el mismo fallo).
 export function anadirSiNoEsta(cola, entrada) {
   const lista = Array.isArray(cola) ? cola : []

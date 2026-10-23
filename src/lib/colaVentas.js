@@ -21,6 +21,7 @@ import { supabase } from './supabase'
 import { marcarRedOk, avisarFalloRed } from './estadoRed'
 import {
   sincronizar, resumenCola, nuevaEntrada, anadirSiNoEsta, marcarParaReintentar, quitarDeCola,
+  cuerpoParaEnviar,
 } from './colaVentasLogica'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -104,6 +105,8 @@ export function encolarVenta(est, { payload, numeroOff, total_c, metodo, hora, l
 
 // Manda UNA venta. Nunca lanza: { errorRed } si no hubo respuesta, o
 // { status, body } con lo que contestó (body null si no era JSON).
+// Viaja con la hora real de la venta (`fecha_operacion`, a7): ver
+// `cuerpoParaEnviar`.
 async function enviarVenta(venta, token) {
   const corte = new AbortController()
   const reloj = setTimeout(() => corte.abort(), 30000)
@@ -112,10 +115,13 @@ async function enviarVenta(venta, token) {
       method: 'POST',
       signal: corte.signal,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(venta.payload),
+      body: JSON.stringify(cuerpoParaEnviar(venta)),
     })
     marcarRedOk()
     const body = await resp.json().catch(() => null)
+    // El servidor nuevo avisa si la hora no se pudo usar (reloj del aparato mal
+    // puesto, o más de 72 h): la venta entra igual, con la hora de llegada.
+    if (body?.aviso_fecha) console.warn('[colaVentas] La hora de la venta OFF-' + venta.numeroOff + ' no se ha usado:', body.aviso_fecha)
     return { status: resp.status, body }
   } catch {
     // Fallo de RED: seguimos sin internet de verdad. Se para y se reintenta

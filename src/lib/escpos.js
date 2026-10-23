@@ -571,6 +571,9 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
     bytes.push(...normalSize())
     bytes.push(...line('Cobrado sin conexion'))
     bytes.push(...line('Pendiente de sincronizar'))
+    // La hora REAL de la venta (a7, 22 oct 2026): la misma que se guarda en la
+    // cola y que se apuntará como fecha de la operación al sincronizar.
+    bytes.push(...line('Hora de la venta: ' + formatDate(ticket.fecha_operacion || ticket.emitido_at)))
     bytes.push(...boldOff(), ...left(), ...separator('-'))
   } else {
     bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
@@ -588,6 +591,17 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
     'Serie ' + ticket.serie + '  Num. ' + String(ticket.numero ?? '').padStart(6, '0'),
     formatDate(ticket.emitido_at)
   ))
+  // Venta cobrada sin internet y numerada después (a7, 22 oct 2026): la fecha de
+  // arriba es la de EXPEDICIÓN y esta, la de la OPERACIÓN (RD 1619/2012, art.
+  // 7.1). Solo sale si el ticket la trae y es de otro momento (más de 5 min):
+  // una venta con internet no la lleva y su papel no cambia.
+  if (!provisional && ticket.fecha_operacion) {
+    const op = Date.parse(ticket.fecha_operacion)
+    const ex = Date.parse(ticket.emitido_at)
+    if (Number.isFinite(op) && (!Number.isFinite(ex) || Math.abs(ex - op) > 5 * 60 * 1000)) {
+      bytes.push(...twoColumns('Fecha de la operacion', formatDate(ticket.fecha_operacion)))
+    }
+  }
   bytes.push(...separator('-'))
 
   // Datos fiscales del CLIENTE, cuando pide factura: con nombre, NIF y

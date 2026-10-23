@@ -13,9 +13,10 @@ import assert from 'node:assert/strict'
 import {
   clasificarEnvio, debeParar, motivoDeRespuesta, nuevaEntrada, anadirSiNoEsta,
   aplicarResultado, marcarParaReintentar, quitarDeCola, resumenCola, decisionCierre,
-  notaCierreSinApuntar, sincronizar, tieneProblema,
+  notaCierreSinApuntar, sincronizar, tieneProblema, cuerpoParaEnviar,
 } from '../src/lib/colaVentasLogica.js'
 import { esFalloSinRespuesta, esErrorDeRed } from '../src/lib/estadoRed.js'
+import { generarTicketTpv } from '../src/lib/escpos.js'
 
 // ── Ayudas ───────────────────────────────────────────────────────────────────
 let n = 0
@@ -263,6 +264,56 @@ test('una venta descartada a mano a mitad de la vuelta ya no se manda', async ()
   }
   await sincronizar({ ...a, enviar })
   assert.deepEqual(mandadas, [k(v1)])
+})
+
+// ── La hora real de la venta (a7) ────────────────────────────────────────────
+test('la cola manda la hora real de la venta como fecha_operacion, sin tocar lo demás', () => {
+  const v = venta({ hora: '2026-10-24T20:15:30.000Z' })
+  const cuerpo = cuerpoParaEnviar(v)
+  assert.equal(cuerpo.fecha_operacion, '2026-10-24T20:15:30.000Z')
+  // ISO con zona, como la pide tpv-venta v10.
+  assert.match(cuerpo.fecha_operacion, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+  const { fecha_operacion, ...resto } = cuerpo
+  assert.ok(fecha_operacion)
+  assert.deepEqual(resto, v.payload)                        // el cuerpo de siempre, intacto
+  assert.equal('fecha_operacion' in v.payload, false)       // y sin mutar lo guardado
+})
+
+test('fecha_operacion: la del cuerpo manda; sin hora válida no se inventa ninguna', () => {
+  const conPropia = { ...venta(), payload: { idempotency_key: 'x', fecha_operacion: '2026-10-20T10:00:00.000Z' } }
+  assert.equal(cuerpoParaEnviar(conPropia).fecha_operacion, '2026-10-20T10:00:00.000Z')
+  assert.equal('fecha_operacion' in cuerpoParaEnviar({ payload: { a: 1 }, hora: 'no es una fecha' }), false)
+  assert.equal('fecha_operacion' in cuerpoParaEnviar({ payload: { a: 1 } }), false)
+  // Una hora guardada con zona distinta sale normalizada a UTC.
+  assert.equal(cuerpoParaEnviar({ payload: {}, hora: '2026-10-24T21:15:30+01:00' }).fecha_operacion, '2026-10-24T20:15:30.000Z')
+})
+
+// El papel, decodificado a texto (solo ASCII basta para buscar las frases).
+const texto = (bytes) => Array.from(bytes, (b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : ' ')).join('')
+const ticketBase = {
+  serie: 'A', numero: 12, total: 10, base_imponible: 9.35, igic_pct: 7, cuota_igic: 0.65,
+  metodo_pago: 'efectivo', emitido_at: '2026-10-26T09:00:00.000Z',
+}
+const est = { nombre: 'Max', nif: 'X' }
+
+test('ticket provisional: lleva la hora de la venta', () => {
+  const t = texto(generarTicketTpv({ ...ticketBase, serie: 'OFF', numero: 3, fecha_operacion: '2026-10-24T20:15:00.000Z', emitido_at: '2026-10-24T20:15:00.000Z' },
+    { para_llevar: false }, [], est, null, false, null, null, null, true))
+  assert.match(t, /TICKET PROVISIONAL/)
+  assert.match(t, /Hora de la venta: 24\/10\/2026/)
+})
+
+test('ticket con internet: sin fecha de la operación aparte (el papel no cambia)', () => {
+  const t1 = texto(generarTicketTpv(ticketBase, {}, [], est, null))
+  assert.doesNotMatch(t1, /Fecha de la operacion/)
+  // Aunque la trajera, si es del mismo momento (<= 5 min) tampoco sale.
+  const t2 = texto(generarTicketTpv({ ...ticketBase, fecha_operacion: '2026-10-26T08:57:00.000Z' }, {}, [], est, null))
+  assert.doesNotMatch(t2, /Fecha de la operacion/)
+})
+
+test('ticket de una venta del corte numerada después: sale la fecha de la operación', () => {
+  const t = texto(generarTicketTpv({ ...ticketBase, fecha_operacion: '2026-10-24T20:15:00.000Z' }, {}, [], est, null))
+  assert.match(t, /Fecha de la operacion\s+24\/10\/2026/)
 })
 
 // ── ¿Hay red? (estadoRed) ────────────────────────────────────────────────────

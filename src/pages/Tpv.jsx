@@ -1066,13 +1066,18 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // `motivo` (a5) solo cambia el aviso: 'red' (sin internet), 'tiempo' (el
   // servidor no contestó a tiempo: no se sabe si entró) o 'sesion' (la sesión
   // no se pudo renovar a tiempo). En los tres casos la venta es la misma.
-  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, motivo = 'red') {
+  //
+  // `horaVenta` (a7): el momento en que se pulsó cobrar. Es la MISMA en la cola
+  // (viaja al servidor como `fecha_operacion` al sincronizar) y en el ticket
+  // provisional, para que el papel del cliente y lo apuntado digan la misma hora.
+  function cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, motivo = 'red', horaVenta = null) {
     const numeroOff = siguienteNumeroOff(restaurante.id)
+    const hora = horaVenta || new Date().toISOString()
     // Con lo que se vendió en texto (para reconocerla en «Ventas sin apuntar») y
     // con las líneas tal cual (para poder pasarla al mostrador si el servidor la
     // rechaza). `guardada` falso = el aparato no ha podido guardarla (a6).
     const { guardada } = encolarVenta(restaurante.id, {
-      payload: cuerpo, numeroOff, total_c: totalPantalla, metodo: metodo_pago,
+      payload: cuerpo, numeroOff, total_c: totalPantalla, metodo: metodo_pago, hora,
       lineas: lineasPantalla.map((l) => `${l.cantidad} x ${l.nombre}${l.tamano ? ` (${l.tamano})` : ''}`),
       carrito: lineasPantalla,
     })
@@ -1083,7 +1088,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     const ticket = {
       serie: 'OFF', numero: numeroOff, total,
       base_imponible: base, igic_pct: igic, cuota_igic: total - base,
-      metodo_pago, emitido_at: new Date().toISOString(),
+      metodo_pago, emitido_at: hora, fecha_operacion: hora,
       entregado_efectivo: entregado_c != null ? entregado_c / 100 : null,
       cambio: entregado_c != null ? Math.max(0, entregado_c - totalPantalla) / 100 : null,
     }
@@ -1139,6 +1144,8 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // hay que guardar la venta sin conexión, esto es lo que se guarda.
     const totalPantalla = totalCarrito
     const lineasPantalla = carrito
+    // La hora REAL de la venta (a7): si acaba en la cola, es la que se apunta.
+    const horaVenta = new Date().toISOString()
     let cuerpo = null
     // ¿El token es el guardado en el aparato porque la sesión no se pudo
     // renovar a tiempo? (a5, ver `tokenSinEsperar`)
@@ -1174,7 +1181,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // fallo de red confirmado por su propia comprobación, y se quita con la
       // primera respuesta del servidor: con internet esto no pasa.)
       if (!lector && redCaida()) {
-        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla)
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta)
         return
       }
       // a5: el PRIMER cobro del corte. Con la fibra caída y el router encendido
@@ -1210,7 +1217,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // tiempo) y el servidor no lo acepta. NO se ha cobrado nada en el servidor:
       // la venta va a la cola, que la manda con la sesión ya renovada.
       if (resp.status === 401 && tokenDeRespaldo && !lector) {
-        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'sesion')
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'sesion', horaVenta)
         return
       }
       if (!resp.ok || !body?.ok) {
@@ -1263,7 +1270,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // `repetida` y no se cobra dos veces.
       const esRed = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
       if (esRed && cuerpo) {
-        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla)
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta)
       } else if (err?.name === 'AbortError' && cuerpo && !lector) {
         // 🔴 CORTADO POR TIEMPO = A LA COLA (a5, 22 oct 2026). Antes salía
         // «vuelve a pulsar» y la venta NO se guardaba: con la fibra caída cada
@@ -1272,7 +1279,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         // y si ya había entrado el servidor contesta «repetida» y no se cobra
         // dos veces. El dinero ya está en el cajón.
         cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla,
-          redCaida() ? 'red' : 'tiempo')
+          redCaida() ? 'red' : 'tiempo', horaVenta)
       } else if (err?.name === 'AbortError') {
         // El servidor no contestó a tiempo con la red viva: reintentar tal
         // cual es seguro por la clave de idempotencia. (Solo con el lector: el
