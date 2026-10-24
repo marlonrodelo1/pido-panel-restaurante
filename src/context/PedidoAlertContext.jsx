@@ -7,6 +7,7 @@ import { startAlarm, stopAlarm, unlockAudio, requestNotificationPermission, noti
 import { imprimirPedido, hayImpresoraNativa, esEscritorio } from '../lib/printService'
 import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
+import { redCaida } from '../lib/estadoRed'
 // Ciclo de modulos App ↔ este contexto: funciona porque `toast` se llama en
 // runtime, mucho despues de inicializar (PedidosEnVivo hace exactamente lo mismo).
 import { toast } from '../App'
@@ -101,11 +102,13 @@ async function imprimirPedidoKiosko(p, restaurante, conTpv = false) {
 }
 
 export function PedidoAlertProvider({ children, onNuevoPedido }) {
-  const { restaurante, tpvConfig } = useRest()
+  const { restaurante, tpvActivo } = useRest()
   // ¿Este local cobra con el TPV? Solo cambia el texto de los avisos de impresión
   // (a10). En una ref porque el realtime de abajo se monta una vez por local.
+  // `tpvActivo` y no `tpvConfig.activo`: con el TPV pausado desde Ajustes no se
+  // llega a su Pedidos, y el aviso no puede mandar a un botón que no se ve.
   const conTpvRef = useRef(false)
-  useEffect(() => { conTpvRef.current = !!tpvConfig?.activo }, [tpvConfig?.activo])
+  useEffect(() => { conTpvRef.current = !!tpvActivo }, [tpvActivo])
   const [pedidosNuevos, setPedidosNuevos] = useState([])
   // silenciada = el usuario pulsó "Silenciar"; se resetea cuando la lista se vacía
   // o cuando llega un pedido nuevo después (queremos que un nuevo pedido vuelva a sonar).
@@ -147,6 +150,54 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
     let retryT = null
     fetchNuevos()
     retryT = setTimeout(() => { if (!subscribed) fetchNuevos() }, 1500)
+
+    // 🔴 LO QUE EL SERVIDOR ACEPTÓ SOLO MIENTRAS ESTE APARATO NO ESCUCHABA
+    // (revisión del 24 oct 2026, punto 12 del informe 05). Con la aceptación
+    // automática, la comanda sale con el UPDATE a 'preparando' del realtime (más
+    // abajo). Durante un corte ese aviso no llega y al reconectar no se reenvía:
+    // los pedidos de la web y de Lucía aceptados en el corte no salían NUNCA por
+    // la impresora, y el repartidor llegaba a por un pedido que la cocina no
+    // había visto. Ahora se apunta desde cuándo no se escucha (el canal se cae o
+    // la red se da por caída) y, al volver, se buscan los aceptados desde
+    // entonces (con 2 min de margen) que sigan en 'preparando', y se sacan como
+    // si hubiera llegado su aviso. La reserva de `ticketsImpresos` evita sacar dos
+    // veces el que ya salió en este aparato.
+    let sordoDesde = null
+    let recuperando = false
+    // ¿El canal de realtime está escuchando? Si la red vuelve antes de que el
+    // canal se reconecte, lo aceptado en ese hueco tampoco llegaría: entonces se
+    // busca, pero NO se da por recuperado hasta que el canal vuelva (y se mira
+    // otra vez entonces; la reserva evita sacar dos veces el mismo).
+    let canalVivo = false
+    const marcarSordo = () => { if (sordoDesde == null) sordoDesde = Date.now() }
+    const recuperarAceptados = async () => {
+      if (sordoDesde == null || recuperando) return
+      if (!restaurante?.auto_aceptar || !hayImpresoraNativa) { sordoDesde = null; return }
+      recuperando = true
+      // Como mucho 3 h atrás: un pedido aceptado hace más y aún «en preparación»
+      // ya no espera su comanda (un PC que ha estado dormido no saca la noche).
+      const desde = new Date(Math.max(sordoDesde - 2 * 60000, Date.now() - 3 * 3600000)).toISOString()
+      try {
+        const { data, error } = await supabase.from('pedidos').select('*')
+          .eq('establecimiento_id', restaurante.id)
+          .eq('canal', 'pido')
+          .eq('estado', 'preparando')
+          .gte('aceptado_at', desde)
+          .order('aceptado_at', { ascending: true })
+          .limit(50)
+        if (error) return               // se vuelve a intentar con el siguiente aviso
+        if (canalVivo) sordoDesde = null
+        for (const p of data || []) {
+          // El kiosko sale con su INSERT (no con un UPDATE) y el mostrador no se acepta.
+          if (p.kiosko || p.origen_pedido === 'tpv') continue
+          imprimirPedidoAceptadoSolo(p, restaurante, conTpvRef.current)
+        }
+      } catch { /* sin red: se vuelve a intentar con el siguiente aviso */ } finally {
+        recuperando = false
+      }
+    }
+    const alCambiarRed = () => { if (redCaida()) marcarSordo(); else recuperarAceptados() }
+    window.addEventListener('pidoo:red', alCambiarRed)
 
     const channel = supabase.channel('pedidos-rest-' + restaurante.id)
       .on('postgres_changes', {
@@ -226,12 +277,19 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         // (race condition al abrir la app desde push).
         if (status === 'SUBSCRIBED') {
           subscribed = true
+          canalVivo = true
           fetchNuevos()
+          // Vuelve a escuchar tras haberse caído: lo aceptado mientras tanto.
+          recuperarAceptados()
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          canalVivo = false
+          marcarSordo()
         }
       })
 
     return () => {
       if (retryT) clearTimeout(retryT)
+      window.removeEventListener('pidoo:red', alCambiarRed)
       supabase.removeChannel(channel)
     }
   }, [restaurante?.id, fetchNuevos])

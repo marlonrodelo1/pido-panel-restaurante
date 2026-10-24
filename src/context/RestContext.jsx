@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, sesionSinRenovar } from '../lib/supabase'
 import { registerWebPush, unregisterWebPush } from '../lib/webPush'
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications'
 import { establecerContextoImpresion, cargarImpresoras, establecerTicketClienteAuto } from '../lib/printService'
@@ -119,6 +119,13 @@ export function RestProvider({ children }) {
   // si al arrancar no hay red, se entra con él: el TPV puede seguir vendiendo.
   const claveEspejo = (uid) => `pidoo_espejo_restaurante_${uid}`
 
+  // ¿Esta lectura de un módulo (tpv_config, stock_config) vale para pisar lo que
+  // hay? Con error, no (a4). Y «sin fila» tampoco si la sesión está sin renovar:
+  // la consulta ha podido ir con la clave pública, que no ve esas tablas, y
+  // ponerlo a null quitaba el TPV en mitad del servicio y lo guardaba así en la
+  // copia del aparato (revisión del 24 oct). Una fila que llega siempre vale.
+  const lecturaBuena = (error, fila) => !error && (!!fila || !sesionSinRenovar())
+
   // Mezcla `parcial` en el espejo de ese usuario (restaurante, tpvConfig,
   // stockConfig). Solo con lecturas BUENAS: es con lo que se entra sin internet.
   function actualizarEspejo(uid, parcial) {
@@ -221,10 +228,13 @@ export function RestProvider({ children }) {
         // el día que no haya internet.
         const guardarEspejo = (parcial) => actualizarEspejo(userId, { restaurante: data, ...parcial })
         guardarEspejo({})
+        // 🔴 «Sin fila» con la sesión sin renovar no es «sin módulo» (revisión
+        // del 24 oct): la consulta ha podido salir con la clave pública y la
+        // tabla no se la enseña. Entonces se queda lo que había (ver `lecturaBuena`).
         supabase.from('tpv_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
-          .then(({ data: cfg, error }) => { if (!error) { setTpvConfig(cfg || null); guardarEspejo({ tpvConfig: cfg || null }) } })
+          .then(({ data: cfg, error }) => { if (lecturaBuena(error, cfg)) { setTpvConfig(cfg || null); guardarEspejo({ tpvConfig: cfg || null }) } })
         supabase.from('stock_config').select('*').eq('establecimiento_id', data.id).maybeSingle()
-          .then(({ data: cfg, error }) => { if (!error) { setStockConfig(cfg || null); guardarEspejo({ stockConfig: cfg || null }) } })
+          .then(({ data: cfg, error }) => { if (lecturaBuena(error, cfg)) { setStockConfig(cfg || null); guardarEspejo({ stockConfig: cfg || null }) } })
         // Impresoras de la nube: se fija el establecimiento como contexto de
         // impresión y se precargan (deja espejo local para poder imprimir
         // aunque justo se caiga la red).
@@ -232,7 +242,10 @@ export function RestProvider({ children }) {
         cargarImpresoras(data.id, { fresco: true }).catch(() => {})
         registerWebPush('restaurante', { establecimiento_id: data.id, user_id: userId })
         registerPushNotifications('restaurante', { establecimiento_id: data.id, user_id: userId })
-      } else if (sinRespuesta || !navigator.onLine) {
+      } else if (sinRespuesta || !navigator.onLine || sesionSinRenovar()) {
+        // (Con la sesión sin renovar, la cuenta de un compañero del EQUIPO no
+        // encuentra su restaurante: `establecimiento_usuarios` no se enseña sin
+        // sesión. Tampoco es «no hay negocio».)
         // 🔴 SIN RED NO SE SABE NADA DEL SERVIDOR (a4, 22 oct 2026). Antes aquí
         // se ponía el restaurante a null y salía «No encontramos un negocio
         // vinculado a esta cuenta» con un único botón, «Cerrar sesión», que sin
@@ -244,8 +257,12 @@ export function RestProvider({ children }) {
         // Cuenta autenticada pero sin establecimiento vinculado: marcar
         // explicitamente "no encontrado" para no quedar en "Cargando..." infinito.
         // Aquí SÍ se sabe: todas las consultas contestaron y ninguna lo trae.
+        // Y se quita el «sin conexión» de antes: si no, el reintento de cada 30 s
+        // seguía vivo y esta pantalla se alternaba con la de «Sin conexión».
         setRestaurante(null)
         setRestauranteNotFound(true)
+        setSinConexion(false)
+        setDesdeEspejo(false)
       }
     } catch (err) {
       console.error('[RestContext] Error cargando restaurante:', err)
@@ -286,13 +303,13 @@ export function RestProvider({ children }) {
       if (document.visibilityState !== 'visible') return
       supabase.from('tpv_config').select('*').eq('establecimiento_id', restaurante.id).maybeSingle()
         .then(({ data: cfg, error }) => {
-          if (error) return
+          if (!lecturaBuena(error, cfg)) return
           setTpvConfig(cfg || null)
           actualizarEspejo(uid, { tpvConfig: cfg || null })
         })
       supabase.from('stock_config').select('*').eq('establecimiento_id', restaurante.id).maybeSingle()
         .then(({ data: cfg, error }) => {
-          if (error) return
+          if (!lecturaBuena(error, cfg)) return
           setStockConfig(cfg || null)
           actualizarEspejo(uid, { stockConfig: cfg || null })
         })

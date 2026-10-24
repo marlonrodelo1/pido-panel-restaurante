@@ -15,9 +15,9 @@ import assert from 'node:assert/strict'
 import {
   clasificarEnvio, debeParar, motivoDeRespuesta, nuevaEntrada, anadirSiNoEsta,
   aplicarResultado, marcarParaReintentar, quitarDeCola, resumenCola, decisionCierre,
-  notaCierreSinApuntar, sincronizar, tieneProblema, cuerpoParaEnviar,
+  notaCierreSinApuntar, sincronizar, tieneProblema, cuerpoParaEnviar, cobroVaALaCola,
 } from '../src/lib/colaVentasLogica.js'
-import { esFalloSinRespuesta, esErrorDeRed } from '../src/lib/estadoRed.js'
+import { esFalloSinRespuesta, esErrorDeRed, renovacionSeReintenta, sesionSinRenovarDe } from '../src/lib/estadoRed.js'
 import { generarTicketTpv } from '../src/lib/escpos.js'
 import {
   abreCajonSinRed, destinosAGuardar, destinosDeGuardado, anotarIpLocal, ponerIpsLocales,
@@ -428,4 +428,64 @@ test('qué errores son de red', () => {
   assert.equal(esErrorDeRed(new Error('NetworkError when attempting to fetch resource.')), true)
   assert.equal(esErrorDeRed(new Error('duplicate key value')), false)
   assert.equal(esErrorDeRed(null), false)
+})
+
+// ── Revisión del 24 oct 2026 ─────────────────────────────────────────────────
+test('cobro directo: el servidor caído o que no es el nuestro va a la cola', () => {
+  // Respuesta cortada (2xx sin cuerpo de Pidoo): la venta puede estar grabada.
+  assert.equal(cobroVaALaCola({ status: 200, body: {} }), true)
+  assert.equal(cobroVaALaCola({ status: 200, body: null }), true)
+  // Sesión o servidor desbordado.
+  for (const status of [401, 408, 425, 429]) assert.equal(cobroVaALaCola({ status, body: { error: 'x' } }), true, String(status))
+  // Páginas que no son de tpv-venta (Cloudflare 522, la pasarela de edges).
+  assert.equal(cobroVaALaCola({ status: 522, body: {} }), true)
+  assert.equal(cobroVaALaCola({ status: 503, body: { code: 'x', message: 'Service Unavailable' } }), true)
+  assert.equal(cobroVaALaCola({ status: 404, body: { code: 'NOT_FOUND', message: 'Function not found' } }), true)
+  // tpv-venta diciendo que la base de datos o las sesiones no contestan (v10) y
+  // los 5xx de la v9 que son el servidor caído.
+  for (const error of ['bd_no_disponible', 'auth_no_disponible', 'generar_codigo_failed', 'productos_error', 'extras_error']) {
+    assert.equal(cobroVaALaCola({ status: 503, body: { error } }), true, error)
+  }
+})
+
+test('cobro directo: un «no» de Pidoo y un fallo de ESA venta se avisan como siempre', () => {
+  assert.equal(cobroVaALaCola({ status: 200, body: { ok: true } }), false)
+  for (const [status, error] of [[403, 'tpv_no_contratado'], [403, 'tpv_no_activo'], [409, 'tpv_pausado'], [403, 'forbidden'],
+    [400, 'producto_no_encontrado'], [400, 'extras_invalidos'], [404, 'establecimiento_no_encontrado'],
+    [500, 'pedido_insert_failed'], [500, 'items_insert_failed']]) {
+    assert.equal(cobroVaALaCola({ status, body: { error } }), false, error)
+  }
+})
+
+test('la cola manda también la hora del envío, solo cuando lleva la de la venta', () => {
+  const v = venta({ hora: '2026-10-24T20:15:30.000Z' })
+  const c = cuerpoParaEnviar(v, { enviadoAt: '2026-10-24T21:00:00.000Z' })
+  assert.equal(c.fecha_operacion, '2026-10-24T20:15:30.000Z')
+  assert.equal(c.enviado_at, '2026-10-24T21:00:00.000Z')
+  assert.equal('enviado_at' in cuerpoParaEnviar({ payload: { a: 1 } }, { enviadoAt: '2026-10-24T21:00:00.000Z' }), false)
+  assert.equal('enviado_at' in cuerpoParaEnviar(v), false)
+  assert.equal('enviado_at' in v.payload, false)          // sin mutar lo guardado
+})
+
+test('renovación de la sesión: un 5xx, 408, 429 o una página HTML se reintentan; un «no» de verdad no', () => {
+  const url = 'https://x.supabase.co/auth/v1/token?grant_type=refresh_token'
+  for (const status of [500, 520, 522, 524, 408, 429]) assert.equal(renovacionSeReintenta({ url, status }), true, String(status))
+  assert.equal(renovacionSeReintenta({ url, status: 403, contentType: 'text/html; charset=UTF-8' }), true)
+  // Token caducado o ya usado: JSON 400/401. Pasa tal cual y la sesión se borra.
+  assert.equal(renovacionSeReintenta({ url, status: 400, contentType: 'application/json' }), false)
+  assert.equal(renovacionSeReintenta({ url, status: 401, contentType: 'application/json' }), false)
+  assert.equal(renovacionSeReintenta({ url, status: 200 }), false)
+  // Solo la renovación: ni el login ni las consultas.
+  assert.equal(renovacionSeReintenta({ url: 'https://x.supabase.co/auth/v1/token?grant_type=password', status: 500 }), false)
+  assert.equal(renovacionSeReintenta({ url: 'https://x.supabase.co/rest/v1/pedidos', status: 500 }), false)
+})
+
+test('sesión sin renovar: caducada o a menos de 90 s; sin sesión guardada, no', () => {
+  const ahora = Date.parse('2026-10-24T20:00:00.000Z')
+  const s = (segs) => ({ refresh_token: 'r', expires_at: Math.floor(ahora / 1000) + segs })
+  assert.equal(sesionSinRenovarDe(s(-600), ahora), true)
+  assert.equal(sesionSinRenovarDe(s(60), ahora), true)
+  assert.equal(sesionSinRenovarDe(s(3000), ahora), false)
+  assert.equal(sesionSinRenovarDe(null, ahora), false)
+  assert.equal(sesionSinRenovarDe({ expires_at: 1 }, ahora), false)
 })

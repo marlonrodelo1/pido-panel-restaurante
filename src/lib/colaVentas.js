@@ -105,8 +105,8 @@ export function encolarVenta(est, { payload, numeroOff, total_c, metodo, hora, l
 
 // Manda UNA venta. Nunca lanza: { errorRed } si no hubo respuesta, o
 // { status, body } con lo que contestó (body null si no era JSON).
-// Viaja con la hora real de la venta (`fecha_operacion`, a7): ver
-// `cuerpoParaEnviar`.
+// Viaja con la hora real de la venta (`fecha_operacion`, a7) y la del envío
+// (`enviado_at`): ver `cuerpoParaEnviar`.
 async function enviarVenta(venta, token) {
   const corte = new AbortController()
   const reloj = setTimeout(() => corte.abort(), 30000)
@@ -115,7 +115,9 @@ async function enviarVenta(venta, token) {
       method: 'POST',
       signal: corte.signal,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(cuerpoParaEnviar(venta)),
+      // `enviado_at`: el reloj del aparato AHORA, para que el servidor corrija
+      // un reloj mal puesto (ver `cuerpoParaEnviar`).
+      body: JSON.stringify(cuerpoParaEnviar(venta, { enviadoAt: new Date().toISOString() })),
     })
     marcarRedOk()
     const body = await resp.json().catch(() => null)

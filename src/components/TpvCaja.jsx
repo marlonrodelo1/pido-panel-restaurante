@@ -220,6 +220,17 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
       if (!redCaida()) {
         setOcupado(true)
         try { await sincronizarCola(establecimientoId) } catch { /* se mira abajo lo que queda */ }
+        // Revisión del 24 oct 2026: si alguna ha fallado por algo que se arregla
+        // solo (la sesión que no se renovó a tiempo, el servidor caído un
+        // momento), antes de ofrecer cerrar sin ellas se renueva la sesión
+        // esperando de verdad (la cola solo espera 8 s) y se mandan otra vez. Un
+        // 401 suelto ya no deja una venta fuera del Z.
+        if (estadoCola(establecimientoId).fallando) {
+          try {
+            await Promise.race([supabase.auth.getSession(), new Promise((r) => setTimeout(r, 15000))])
+            await sincronizarCola(establecimientoId)
+          } catch { /* se mira abajo lo que queda */ }
+        }
         setOcupado(false)
       }
       const resumen = estadoCola(establecimientoId)
@@ -762,6 +773,10 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
         {avisoCola && (() => {
           const r = avisoCola.resumen || {}
           const esperar = avisoCola.decision === 'esperar_red'
+          // Revisión del 24 oct: no es lo mismo que el servidor NO las acepte
+          // (atascadas: hay que revisarlas) que el servidor esté FALLANDO ahora
+          // (se reintentan solas: lo mejor es esperar y volver a cerrar).
+          const soloFallando = !esperar && !r.atascadas && r.fallando > 0
           return (
             <div style={{
               position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)',
@@ -772,12 +787,17 @@ export default function TpvCaja({ establecimientoId, restaurante, vistaInicial =
                 border: `1px solid ${T.border}`, display: 'grid', gap: 12,
               }}>
                 <strong style={{ fontSize: 16, color: T.text, textAlign: 'center' }}>
-                  {esperar ? 'Faltan ventas por llegar al servidor' : 'Hay ventas que el servidor no acepta'}
+                  {esperar
+                    ? 'Faltan ventas por llegar al servidor'
+                    : soloFallando ? 'El servidor está fallando con algunas ventas' : 'Hay ventas que el servidor no acepta'}
                 </strong>
                 <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55 }}>
                   {esperar
                     ? `${r.esperandoRed} venta${r.esperandoRed > 1 ? 's' : ''} cobrada${r.esperandoRed > 1 ? 's' : ''} en este aparato todavía no ${r.esperandoRed > 1 ? 'han' : 'ha'} llegado al servidor. Sin ellas el cierre no cuadraría, y sin conexión tampoco se puede cerrar: en cuanto vuelva internet se mandan solas. Espera al aviso de sincronizado y cierra entonces.`
-                    : `${r.conProblema} venta${r.conProblema > 1 ? 's' : ''} de este aparato (${eur(r.importeConProblema_c || 0)}) no ${r.conProblema > 1 ? 'se han' : 'se ha'} podido apuntar. Si cierras ahora quedan FUERA de este cierre: el cajón tendrá ${eur(r.efectivoConProblema_c || 0)} de más y saldrá como sobrante. Se apuntará en el comentario del cierre, y las ventas siguen en «Ventas sin apuntar» para resolverlas.`}
+                    : `${soloFallando
+                      ? `${r.fallando} venta${r.fallando > 1 ? 's' : ''} de este aparato (${eur(r.importeConProblema_c || 0)}) no ${r.fallando > 1 ? 'se han' : 'se ha'} podido apuntar porque el servidor de Pidoo está fallando ahora mismo (no las ha rechazado): se reintentan solas. Lo mejor es esperar unos minutos y volver a cerrar.`
+                      : `${r.conProblema} venta${r.conProblema > 1 ? 's' : ''} de este aparato (${eur(r.importeConProblema_c || 0)}) no ${r.conProblema > 1 ? 'se han' : 'se ha'} podido apuntar${r.atascadas && r.fallando ? ` (${r.atascadas} rechazada${r.atascadas > 1 ? 's' : ''} por el servidor y ${r.fallando} que se reintenta${r.fallando > 1 ? 'n' : ''} sola${r.fallando > 1 ? 's' : ''})` : ''}.`
+                    } Si cierras ahora quedan FUERA de este cierre: el cajón tendrá ${eur(r.efectivoConProblema_c || 0)} de más y saldrá como sobrante. Se apuntará en el comentario del cierre, y las ventas siguen en «Ventas sin apuntar» para resolverlas.`}
                 </div>
                 <button onClick={() => { setAvisoCola(null); setVista('cola') }} style={{ ...btnSecundario, height: 46 }}>
                   Ver las ventas sin apuntar

@@ -7,7 +7,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { generarComandaCocina, generarTicketCliente, generarTicketTpv, generarComandaTpv, generarComandaModificacion, generarInformeDiaTpv, generarReporteCaja, abrirCajon, textToBytes as escTextToBytes } from './escpos'
 import { bytesDelLogo } from './logoTicket'
-import { supabase } from './supabase'
+import { supabase, sesionSinRenovar } from './supabase'
 import { redCaida, avisarFalloRed } from './estadoRed'
 import {
   ponerIpsLocales, conciliarIpsLocales, anotarIpLocal, quitarIpLocal, cambiarIpEnLista, conLimite,
@@ -213,6 +213,12 @@ export async function cargarImpresoras(establecimientoId = estActual, { fresco =
       avisarFalloRed,
     )
     if (error) throw error
+    // 🔴 «Ninguna impresora» con la sesión sin renovar no es «ninguna impresora»
+    // (revisión del 24 oct): la consulta ha podido salir con la clave pública,
+    // que no ve `tpv_impresoras`. Guardar esa lista vacía dejaba al aparato sin
+    // repartir la comanda entre impresoras el día que no hubiera red. Se sigue
+    // con la copia, como sin respuesta.
+    if (!(data || []).length && sesionSinRenovar()) throw new Error('sesión sin renovar')
     // Las IP corregidas en este aparato durante un corte, encima de lo de la
     // nube hasta que la nube las tenga (sin ninguna pendiente, la lista tal cual).
     const pend = leerIpsLocales(establecimientoId)

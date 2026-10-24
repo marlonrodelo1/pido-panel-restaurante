@@ -40,6 +40,37 @@ export function clasificarEnvio({ errorRed = false, status = 0, body = null } = 
   return 'rechazo'
 }
 
+// EL COBRO DIRECTO, cuando el servidor SÍ contesta pero mal (revisión del 24 oct
+// 2026). Antes solo iba a la cola un cobro sin red o cortado por tiempo: con
+// Supabase caído (un 522 como el del disco lleno, un 503 de las edges) cada cobro
+// acababa en «No se pudo completar la venta» SIN guardarse, y el mostrador dejaba
+// de vender. Devuelve true si la venta tiene que ir a la cola (con su misma clave:
+// si ya había entrado, el servidor contesta «repetida» y no se cobra dos veces).
+//   - 2xx sin cuerpo de Pidoo: llegaron las cabeceras y el cuerpo se cortó. La
+//     venta PUEDE estar grabada: a la cola, que la recoge como repetida.
+//   - 401 (sesión), 408/425/429 (servidor desbordado): se arregla solo.
+//   - Una respuesta que no es de `tpv-venta` (página de un router, de Cloudflare,
+//     error del servidor de edges): a la cola.
+//   - 5xx de `tpv-venta`: solo los errores que son el servidor caído (la base de
+//     datos o el servicio de sesiones que no contestan, el código del pedido que
+//     no sale). Un fallo al grabar el pedido o sus líneas puede ser de ESA venta
+//     (un trigger que la rechaza): se avisa como siempre y se queda en pantalla.
+//   - Cualquier otro «no» de Pidoo (TPV pausado, producto borrado…): como siempre.
+// Ojo: NO es `clasificarEnvio`. Para la cola el TPV pausado es pasajero (entra al
+// quitar la pausa); en el cobro directo es un aviso y la venta no se hace.
+const ERRORES_DE_SERVIDOR_CAIDO = new Set([
+  'bd_no_disponible', 'auth_no_disponible', 'generar_codigo_failed', 'productos_error', 'extras_error',
+])
+
+export function cobroVaALaCola({ status = 0, body = null } = {}) {
+  const deNuestroServidor = !!body && typeof body === 'object' && ('ok' in body || 'error' in body)
+  if (status >= 200 && status < 300) return !deNuestroServidor
+  if (status === 401 || status === 408 || status === 425 || status === 429) return true
+  if (!deNuestroServidor) return true
+  if (status >= 500) return ERRORES_DE_SERVIDOR_CAIDO.has(body.error)
+  return false
+}
+
 // ¿Se para la vuelta aquí? Sin red, sí (las demás tampoco llegarán). Con la
 // sesión caducada, también: las demás llevan el mismo permiso. Un 5xx de UNA
 // venta no frena a las demás: si fuera cosa de esa venta, la bloquearía siempre.
@@ -57,6 +88,8 @@ const MOTIVOS = {
   extra_no_encontrado: 'Un extra de la venta ya no existe.',
   extra_de_otro_restaurante: 'Un extra de la venta es de otro restaurante.',
   generar_codigo_failed: 'El servidor no pudo numerar el pedido.',
+  bd_no_disponible: 'El servidor de Pidoo no responde bien ahora mismo: se reintenta sola.',
+  auth_no_disponible: 'El servidor de sesiones de Pidoo no responde ahora mismo: se reintenta sola.',
 }
 
 // El motivo en palabras, para la pantalla «Ventas sin apuntar».
@@ -111,12 +144,19 @@ export function nuevaEntrada({ payload, numeroOff, total_c, metodo, hora, lineas
 //   - El servidor viejo (v9) no lee ese campo: lo ignora y apunta como siempre.
 // Las ventas que ya estaban en la cola antes de esto también la llevan: sale de
 // `hora`, que se guardaba desde el primer día. Si el cuerpo ya trae una, manda.
-export function cuerpoParaEnviar(venta) {
+//
+// `enviadoAt` (revisión del 24 oct): la hora del aparato en el momento de MANDAR.
+// Las dos horas salen del mismo reloj, así que lo que el servidor puede fiarse es
+// la DIFERENCIA entre ellas: un PC que va 20 min atrasado ya no mueve sus ventas
+// 20 min (el servidor corrige con su propio reloj). Solo viaja con una hora de la
+// venta: sin ella no hay nada que corregir.
+export function cuerpoParaEnviar(venta, { enviadoAt = null } = {}) {
   const payload = venta?.payload || {}
-  if (typeof payload.fecha_operacion === 'string' && payload.fecha_operacion) return payload
+  const conEnvio = (cuerpo) => (enviadoAt && cuerpo.fecha_operacion ? { ...cuerpo, enviado_at: enviadoAt } : cuerpo)
+  if (typeof payload.fecha_operacion === 'string' && payload.fecha_operacion) return conEnvio(payload)
   const ms = venta?.hora ? Date.parse(venta.hora) : NaN
   if (!Number.isFinite(ms)) return payload
-  return { ...payload, fecha_operacion: new Date(ms).toISOString() }
+  return conEnvio({ ...payload, fecha_operacion: new Date(ms).toISOString() })
 }
 
 // La misma clave no entra dos veces (doble toque sobre el mismo fallo).

@@ -19,7 +19,7 @@
 //   - Sobre el naranja el texto va OSCURO. Blanco sobre #FF6B2C da 2,84:1 y no pasa;
 //     #1A1815 encima da 6,24:1.
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, sesionSinRenovar } from '../lib/supabase'
 import { useRest } from '../context/RestContext'
 import { usePedidoAlert } from '../context/PedidoAlertContext'
 import { toast, confirmar } from '../App'
@@ -32,8 +32,9 @@ import { abreCajonSinRed } from '../lib/impresionSinRed'
 import { resumenJornada, inicioJornada } from '../lib/jornada'
 import {
   encolarVenta, sincronizarCola, ventasPendientes, siguienteNumeroOff, tokenSinEsperar,
-  estadoCola, descartarVentaAtascada,
+  estadoCola, descartarVentaAtascada, sincronizandoAhora,
 } from '../lib/colaVentas'
+import { cobroVaALaCola } from '../lib/colaVentasLogica'
 import TpvVentasSinApuntar from '../components/TpvVentasSinApuntar'
 import { redCaida, esFalloSinRespuesta, comprobarRed, marcarRedOk, avisarFalloRed } from '../lib/estadoRed'
 import { QUIEN_VACIO, asignarNumeroCliente, recordarQuien, nombrePuesto, tieneQuien } from '../lib/comandaVenta'
@@ -221,7 +222,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     const cambioCola = (e) => { if (e?.detail?.est === est) pintarCola() }
     const intentar = async () => {
       if (!navigator.onLine || !ventasPendientes(est)) return
+      // Al volver la red saltan dos avisos casi a la vez ('online' y 'pidoo:red'):
+      // los dos reciben LA MISMA vuelta de envío y los dos sacaban «Sincronizadas…».
+      // Quien llega con una vuelta ya en marcha solo repinta: el aviso es de la otra.
+      const yaEnMarcha = sincronizandoAhora()
       const r = await sincronizarCola(est)
+      if (yaEnMarcha) { pintarCola(); return }
       if (r?.enviadas) toast(`Sincronizada${r.enviadas > 1 ? 's' : ''} ${r.enviadas} venta${r.enviadas > 1 ? 's' : ''} cobrada${r.enviadas > 1 ? 's' : ''} sin conexión`, 'success')
       // Solo se avisa cuando APARECE una venta con problema nueva, no en cada vuelta.
       const conProblema = estadoCola(est).conProblema
@@ -309,7 +315,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   const leerTurno = useCallback(async () => {
     if (!restaurante?.id) return
     const res = await supabase.rpc('tpv_estado_caja', { p_establecimiento_id: restaurante.id })
-    if (esFalloSinRespuesta(res)) {
+    // Con la sesión sin renovar la consulta sale con la clave pública y el
+    // servidor contesta «esta caja no es tuya» (PD197): tampoco es «no hay turno»
+    // (revisión del 24 oct). Se trata como sin respuesta.
+    if (esFalloSinRespuesta(res) || (res.error && sesionSinRenovar())) {
       let guardado = null
       try { guardado = JSON.parse(localStorage.getItem(`pidoo_tpv_turno_${restaurante.id}`) || 'null') } catch { /* nada */ }
       setTurno((previo) => previo ?? guardado)
@@ -326,15 +335,24 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
   useEffect(() => { leerTurno() }, [leerTurno])
   useEffect(() => { if (!modalCaja) leerTurno() }, [modalCaja, leerTurno])
+  const turnoSinComprobarRef = useRef(false)
+  useEffect(() => { turnoSinComprobarRef.current = turnoSinComprobar }, [turnoSinComprobar])
   useEffect(() => {
     const alVolver = () => { if (document.visibilityState === 'visible') leerTurno() }
     // Al volver internet, el turno se comprueba de nuevo (estaba «sin comprobar»).
     const alVolverRed = () => { if (!redCaida()) leerTurno() }
     document.addEventListener('visibilitychange', alVolver)
     window.addEventListener('pidoo:red', alVolverRed)
+    // …y al renovarse por fin la sesión, si se quedó «sin comprobar» por ella
+    // (revisión del 24 oct). Fuera del aviso de supabase-js (setTimeout): llamar
+    // a Supabase dentro de él puede quedarse esperando a su propio candado.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((ev) => {
+      if (ev === 'TOKEN_REFRESHED' && turnoSinComprobarRef.current) setTimeout(() => leerTurno(), 0)
+    })
     return () => {
       document.removeEventListener('visibilitychange', alVolver)
       window.removeEventListener('pidoo:red', alVolverRed)
+      subscription?.unsubscribe()
     }
   }, [leerTurno])
 
@@ -542,6 +560,21 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           .in('producto_id', ids).order('orden'),
         supabase.from('producto_extras').select('producto_id, grupo_id').in('producto_id', ids),
       ])
+      // 🔴 Una carta A MEDIAS no se pinta ni se guarda si hay copia (revisión del
+      // 24 oct 2026). Antes, con la red a ratos, llegaban los productos pero no
+      // los tamaños o los extras, y esa carta se guardaba en el aparato: sin
+      // internet las pizzas se vendían sin elegir tamaño (al precio base) y sin
+      // extras. Sin copia, se pinta lo que hay (algo de carta) pero no se guarda.
+      if (t.error || v.error) {
+        if (yaConEspejo) return
+        try {
+          const espejo = JSON.parse(localStorage.getItem(claveEspejo) || 'null')
+          if (espejo?.cats?.length || espejo?.prods?.length) { aplicarCarta(espejo, true); return }
+        } catch { /* espejo roto: se pinta lo que ha llegado */ }
+        aplicarCarta({ cats: cats.data || [], prods: listaProd, gru: gru.data || [], tam: t.data || [], vin: v.data || [] })
+        if (avisar) toast('La carta ha llegado a medias (sin tamaños o sin extras). Vuelve a recargarla.', 'error')
+        return
+      }
       tam = t.data || []
       vin = v.data || []
     }
@@ -970,9 +1003,10 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
 
   // AL COBRAR, LO QUE FALTA SALE A COCINA (a9, 23 oct 2026). Se manda DESPUÉS de
   // que la venta quede grabada (o guardada en la cola sin internet): un cobro que
-  // falla no deja comida hecha sin cobrar. Y quien llama imprime el ticket y abre
-  // el cajón cuando la comanda ha salido, no a la vez: con una sola impresora, dos
-  // envíos seguidos se los come la térmica mientras corta.
+  // falla no deja comida hecha sin cobrar. Y no a la vez que el ticket y el cajón:
+  // con una sola impresora, dos envíos seguidos se los come la térmica mientras
+  // corta. Desde la revisión del 24 oct el papel del cliente sale PRIMERO y esto
+  // detrás (ver `papelYDespuesComanda`): el cajón ya no espera a la cocina.
   //
   // Nunca falla ni lanza: si la impresora no responde lo dice, y la venta está
   // cobrada igual. Devuelve si salió.
@@ -1175,14 +1209,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   // El ticket de una venta ya grabada. Sale aquí y al terminar el cobro con el lector.
   // Con `tpv_config.ticket_cliente_auto = false` (15 oct 2026, Duende) NO sale solo: se saca con
   // «Imprimir ticket» de la venta. El cajón se abre igual, que hay que dar el cambio.
+  // Devuelve cuándo ha terminado con la impresora (nunca falla), para que la
+  // comanda del cobro salga DETRÁS y no a la vez (ver `papelYDespuesComanda`).
   function imprimirVenta(body, metodo_pago) {
-    if (!body?.ticket) return
+    if (!body?.ticket) return Promise.resolve()
     if (tpvConfig?.ticket_cliente_auto === false) {
       const abrir = body.config ? !!body.config.abrir_cajon : metodo_pago === 'efectivo'
-      if (abrir) pulsoCajon().catch(() => {})
-      return
+      return abrir ? pulsoCajon().catch(() => {}) : Promise.resolve()
     }
-    imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
+    return imprimirTicketTpv(body.ticket, body.pedido, body.items, conLogo(body.establecimiento), {
       pieTicket: body.config?.pie_ticket,
       // Si la respuesta viene SIN `config` (venta repetida servida por una
       // edge anterior a la v6), en efectivo el cajón se abre igual: el
@@ -1195,13 +1230,30 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     }).catch(() => {})
   }
 
+  // EL PAPEL DEL CLIENTE PRIMERO Y LA COMANDA DETRÁS (revisión del 24 oct 2026).
+  // a9 sacaba primero la comanda y el ticket y el cajón esperaban a que saliera:
+  // con la impresora de cocina sin contestar (la de Duende cambia de IP), el
+  // cajero se quedaba 3-6 s con el dinero en la mano y el cajón cerrado, y el
+  // doble con dos impresoras caídas. Antes de a9 el cajón se abría nada más
+  // grabarse la venta, y así vuelve a ser: `papel` (ticket y/o cajón) sale ya.
+  // La comanda va detrás, no a la vez (con una sola impresora, dos envíos
+  // seguidos se los come la térmica mientras corta), pero sin esperar más de
+  // 4 s a una caja que no contesta: la cocina tampoco puede quedarse esperando.
+  function papelYDespuesComanda(papel, cocina, opcionesComanda) {
+    const hecho = Promise.resolve().then(papel).catch(() => {})
+    if (!cocina?.lineas?.length) return hecho
+    const tope = new Promise((r) => setTimeout(r, 4000))
+    return Promise.race([hecho, tope]).then(() => mandarACocinaAlCobrar(cocina, opcionesComanda))
+  }
+
   // La venta cobrada SIN INTERNET: a la cola local (misma clave de
   // idempotencia) + ticket PROVISIONAL serie OFF + cajón si es efectivo. El
   // dinero ya está en el cajón: el servicio no se para por el router.
   //
   // `motivo` (a5) solo cambia el aviso: 'red' (sin internet), 'tiempo' (el
-  // servidor no contestó a tiempo: no se sabe si entró) o 'sesion' (la sesión
-  // no se pudo renovar a tiempo). En los tres casos la venta es la misma.
+  // servidor no contestó a tiempo: no se sabe si entró), 'sesion' (la sesión
+  // no se pudo renovar a tiempo) o 'servidor' (contestó, pero caído: revisión
+  // del 24 oct). En todos los casos la venta es la misma.
   //
   // `horaVenta` (a7): el momento en que se pulsó cobrar. Es la MISMA en la cola
   // (viaja al servidor como `fecha_operacion` al sincronizar) y en el ticket
@@ -1244,22 +1296,26 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     // (aunque estuviera configurado que no) y NUNCA con datáfono. Ahora se lee
     // como lo lee el servidor: abrir_cajon_efectivo / abrir_cajon_datafono.
     const abrirCajonOff = abreCajonSinRed(tpvConfig, metodo_pago)
+    const pedidoPapel = { codigo: null, para_llevar: paraLlevar }
     const papelDelCliente = () => {
       if (tpvConfig?.ticket_cliente_auto === false) {
-        if (abrirCajonOff) pulsoCajon().catch(() => {})
-      } else {
-        imprimirTicketTpv(ticket, { codigo: null, para_llevar: paraLlevar }, items, restaurante, {
-          pieTicket: tpvConfig?.pie_ticket, provisional: true,
-          abrirCajonTambien: abrirCajonOff,
-        }).catch(() => {})
+        return abrirCajonOff ? pulsoCajon().catch(() => {}) : undefined
       }
+      return imprimirTicketTpv(ticket, pedidoPapel, items, restaurante, {
+        pieTicket: tpvConfig?.pie_ticket, provisional: true,
+        abrirCajonTambien: abrirCajonOff,
+      }).catch(() => {})
     }
-    // Primero la comanda (si falta algo por mandar) y luego el ticket y el cajón.
-    if (cocina?.lineas?.length) {
-      mandarACocinaAlCobrar(cocina, { codigo: `OFF-${numeroOff}`, sinRed: true }).then(papelDelCliente)
-    } else {
-      papelDelCliente()
-    }
+    // El ticket y el cajón primero; la comanda (si falta algo por mandar), detrás.
+    papelYDespuesComanda(papelDelCliente, cocina, { codigo: `OFF-${numeroOff}`, sinRed: true })
+
+    // 🔴 «Cobrado» enseña ESTA venta (revisión del 24 oct 2026). Antes se quedaba
+    // la anterior con internet: «Imprimir ticket» sacaba el ticket de OTRO cliente
+    // (su número, su importe, su cambio). Ahora sale el provisional OFF de esta.
+    setUltimaVenta({
+      ticket, pedido: { ...pedidoPapel, total }, items, establecimiento: restaurante,
+      config: { pie_ticket: tpvConfig?.pie_ticket }, provisional: true, _quien: cocina?.quien || null,
+    })
 
     setCarrito([])          // el efecto del carrito limpia la clave y el respaldo
     setParaLlevar(false)
@@ -1277,7 +1333,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       ? `El servidor no ha contestado: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola (si ya había entrado, no se cobra dos veces).`
       : motivo === 'sesion'
         ? `La sesión se estaba renovando: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola en unos segundos.`
-        : `Sin conexión: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
+        : motivo === 'servidor'
+          ? `El servidor de Pidoo está fallando: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola cuando se recupere (si ya había entrado, no se cobra dos veces).`
+          : `Sin conexión: venta OFF-${numeroOff}${deCliente} guardada en este aparato. Se apuntará sola al volver internet.`, 'success')
     // Si hay internet (cobro cortado por tiempo o por la sesión), la cola no
     // espera a su vuelta de 60 s: se intenta enseguida.
     if (!redCaida()) setTimeout(() => window.dispatchEvent(new CustomEvent('pidoo:cola-intentar')), 5000)
@@ -1311,15 +1369,6 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
     let tokenDeRespaldo = false
     try {
       if (!idemRef.current) idemRef.current = uuidv4()  // red de seguridad; la pone el efecto del carrito
-      // 🔴 EL COBRO NO ESPERA A RENOVAR LA SESIÓN (a5, 22 oct 2026). Con el
-      // lector se deja como estaba: ese cobro necesita internet sí o sí.
-      let token = null
-      if (lector) {
-        const { data: sess } = await supabase.auth.getSession()
-        token = sess?.session?.access_token
-      } else {
-        ({ token, deRespaldo: tokenDeRespaldo } = await tokenSinEsperar())
-      }
       cuerpo = {
         establecimiento_id: restaurante.id,
         metodo_pago,
@@ -1328,6 +1377,12 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         // Para llevar: el servidor lo guarda al crear el pedido y el almacén
         // gasta los empaques. La cola sin internet reenvía este mismo cuerpo.
         para_llevar: paraLlevar,
+        // La caja que ESTE aparato tiene abierta al cobrar (revisión del 24 oct
+        // 2026). Solo la usa tpv-venta v10 con una venta de la cola que trae su
+        // hora real: si esa hora cae en una caja YA CERRADA que no es esta, no la
+        // lleva allí (un reloj atrasado, a propósito o no, sacaría el dinero del
+        // arqueo de la caja abierta). Con internet no se mira; la v9 la ignora.
+        caja_aparato_id: turno?.abierta ? (turno.caja_id || null) : null,
         // Dos formas de línea, las dos del contrato de tpv-venta: producto de
         // la carta (ids, el precio lo pone el servidor) o línea LIBRE (aquí
         // sí viaja el importe, validado 0-500 en los dos lados).
@@ -1342,6 +1397,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       if (!lector && redCaida()) {
         cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta, cocina)
         return
+      }
+      // 🔴 EL COBRO NO ESPERA A RENOVAR LA SESIÓN (a5, 22 oct 2026). Con el
+      // lector se deja como estaba: ese cobro necesita internet sí o sí.
+      // (Después de mirar la red, no antes: con la red ya caída y la sesión
+      // caducada, cada venta esperaba 2,5 s al token que la cola no necesita.)
+      let token = null
+      if (lector) {
+        const { data: sess } = await supabase.auth.getSession()
+        token = sess?.session?.access_token
+      } else {
+        ({ token, deRespaldo: tokenDeRespaldo } = await tokenSinEsperar())
       }
       // a5: el PRIMER cobro del corte. Con la fibra caída y el router encendido
       // la petición no falla: se queda colgada hasta que el sistema la da por
@@ -1377,6 +1443,19 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // la venta va a la cola, que la manda con la sesión ya renovada.
       if (resp.status === 401 && tokenDeRespaldo && !lector) {
         cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'sesion', horaVenta, cocina)
+        return
+      }
+      // 🔴 EL SERVIDOR CONTESTA, PERO CAÍDO (revisión del 24 oct 2026): un 5xx
+      // de Supabase o de Cloudflare, la base de datos que no responde, el
+      // servicio de sesiones caído (401), o un cuerpo cortado. Antes salía «No se
+      // pudo completar la venta» SIN guardarla y con Supabase caído el mostrador
+      // dejaba de vender. Ahora va a la cola con su misma clave: si ya había
+      // entrado, el servidor contesta «repetida» y no se cobra dos veces. Un «no»
+      // de Pidoo (TPV pausado, producto borrado…) se avisa como siempre: ver
+      // `cobroVaALaCola`. Con el lector no: ese cobro necesita al servidor.
+      if (!lector && cobroVaALaCola({ status: resp.status, body })) {
+        cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla,
+          resp.status === 401 ? 'sesion' : 'servidor', horaVenta, cocina)
         return
       }
       if (!resp.ok || !body?.ok) {
@@ -1425,14 +1504,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
         }
       }
 
-      // a9: si faltaba algo por mandar a cocina, la comanda primero y el ticket
-      // y el cajón detrás. Si no faltaba nada, como siempre.
-      if (cocina.lineas.length) {
-        mandarACocinaAlCobrar(cocina, { codigo: body.pedido?.codigo || null })
-          .then(() => imprimirVenta(body, metodo_pago))
-      } else {
-        imprimirVenta(body, metodo_pago)
-      }
+      // El ticket y el cajón YA, como siempre. Si faltaba algo por mandar a
+      // cocina (a9), la comanda sale detrás (ver `papelYDespuesComanda`).
+      papelYDespuesComanda(() => imprimirVenta(body, metodo_pago), cocina, { codigo: body.pedido?.codigo || null })
     } catch (err) {
       // FALLO DE RED (sin internet, o el fetch ni salió): la venta NO se
       // pierde ni se bloquea — va a la COLA LOCAL con su misma clave de
@@ -1440,8 +1514,17 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
       // envía sola; si por lo que fuera ya había entrado, el servidor contesta
       // `repetida` y no se cobra dos veces.
       const esRed = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(err?.message || '')
-      if (esRed && cuerpo) {
+      if (esRed && cuerpo && !lector) {
         cobrarSinInternet(cuerpo, metodo_pago, entregado_c, totalPantalla, lineasPantalla, 'red', horaVenta, cocina)
+      } else if (esRed && lector) {
+        // 🔴 Con el LECTOR, sin red la venta NO va a la cola como «datáfono»
+        // (revisión del 24 oct, punto 13 del informe 05): salía el aviso verde
+        // sin haberse cobrado nada y el cliente se iba sin pagar. Se queda en el
+        // mostrador para cobrarla de otra forma. El lector se da por no listo:
+        // al volver a pulsar «Tarjeta» se mira otra vez y, si no responde, se
+        // pregunta si se cobra con el datáfono del banco (que sí va a la cola).
+        setLectorListo(false)
+        toast('Sin conexión: el lector necesita internet y NO se ha cobrado nada. Cobra en efectivo o con el datáfono del banco.', 'error')
       } else if (err?.name === 'AbortError' && cuerpo && !lector) {
         // 🔴 CORTADO POR TIEMPO = A LA COLA (a5, 22 oct 2026). Antes salía
         // «vuelve a pulsar» y la venta NO se guardaba: con la fibra caída cada
@@ -1496,7 +1579,7 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
   async function reimprimir() {
     if (!ultimaVenta?.ticket) return
     const r = await imprimirTicketTpv(ultimaVenta.ticket, ultimaVenta.pedido, ultimaVenta.items,
-      conLogo(ultimaVenta.establecimiento), { pieTicket: ultimaVenta.config?.pie_ticket })
+      conLogo(ultimaVenta.establecimiento), { pieTicket: ultimaVenta.config?.pie_ticket, provisional: !!ultimaVenta.provisional })
     toast(r.ticket ? 'Ticket impreso' : 'La impresora no responde', r.ticket ? 'success' : 'error')
   }
 
@@ -2177,17 +2260,15 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
             const venta = cobroLector
             setCobroLector(null)
             toast(`Cobrado ${eur(cents(venta.pedido?.total))} con tarjeta${tarjeta?.ultimos4 ? ` ···· ${tarjeta.ultimos4}` : ''}`, 'success')
-            // a9: cobro confirmado → lo que faltaba a cocina, y luego el ticket.
-            mandarACocinaAlCobrar(venta._cocina, { codigo: venta.pedido?.codigo || null })
-              .then(() => imprimirVenta(venta, 'datafono'))
+            // a9: cobro confirmado → el ticket, y detrás lo que faltaba a cocina.
+            papelYDespuesComanda(() => imprimirVenta(venta, 'datafono'), venta._cocina, { codigo: venta.pedido?.codigo || null })
           }}
           onOtraForma={async () => {
             const venta = cobroLector
             if (!await confirmar(`¿Lo cobraste DE VERDAD con el datáfono del banco? La venta de ${eur(cents(venta.pedido?.total))} se queda apuntada como cobrada. Si el cliente no ha pagado, pulsa «Anular la venta».`)) return
             setCobroLector(null)
             toast(`Venta de ${eur(cents(venta.pedido?.total))} apuntada con el datáfono del banco`, 'success')
-            mandarACocinaAlCobrar(venta._cocina, { codigo: venta.pedido?.codigo || null })
-              .then(() => imprimirVenta(venta, 'datafono'))
+            papelYDespuesComanda(() => imprimirVenta(venta, 'datafono'), venta._cocina, { codigo: venta.pedido?.codigo || null })
           }}
           onAnular={anularVentaLector} />
       )}

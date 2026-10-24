@@ -133,6 +133,36 @@ export function esFalloSinRespuesta(res) {
   return s === 0 || s >= 500 || s === 408 || s === 429
 }
 
+// ── LA SESIÓN CON EL SERVIDOR DE SESIONES CAÍDO (revisión del 24 oct 2026) ──
+//
+// 1) supabase-js BORRA la sesión del aparato (SIGNED_OUT → pantalla de entrar,
+//    que pide la contraseña del dueño e internet) cuando la renovación recibe un
+//    error que no sabe reintentar: solo reintenta un fallo de red y los 502, 503
+//    y 504. Un 500, un 52x de Cloudflare (el 522 del disco lleno) o una página
+//    HTML en vez de JSON se los toma como «sesión rechazada», y no lo son: el
+//    servidor ni la ha mirado. ¿Esta respuesta de la renovación hay que pasarla
+//    como «servidor no disponible» (503) para que la reintente y no la borre?
+//    Un «no» de verdad del servidor de sesiones (token caducado o ya usado) es un
+//    400/401 en JSON: ese pasa tal cual y la sesión se borra como siempre.
+export function renovacionSeReintenta({ url = '', status = 0, contentType = '' } = {}) {
+  if (!/\/auth\/v1\/token\?(?:[^#]*&)?grant_type=refresh_token(?:&|$)/.test(String(url))) return false
+  if (status >= 200 && status < 300) return false
+  if (status >= 500 || status === 408 || status === 429) return true
+  return /text\/html/i.test(String(contentType || ''))
+}
+
+// 2) Con la sesión caducada y sin poder renovarla, supabase-js manda las consultas
+//    con la clave PÚBLICA: las tablas privadas (tpv_config, el turno, las
+//    impresoras) contestan «0 filas» SIN error, y eso no quiere decir «no hay».
+//    ¿La sesión guardada está caducada, o a menos de 90 s (el margen con el que
+//    supabase-js la renueva)? Entonces lo que acaba de volver puede venir sin
+//    permiso. `guardada` es el JSON de la sesión en el aparato.
+export function sesionSinRenovarDe(guardada, ahora = Date.now()) {
+  const exp = Number(guardada?.expires_at)
+  if (!guardada?.refresh_token || !Number.isFinite(exp) || exp <= 0) return false
+  return exp * 1000 - ahora < 90 * 1000
+}
+
 // El sistema también avisa: wifi apagado / encendido. Al volver, se comprueba
 // que haya internet de verdad antes de quitar el aviso.
 if (hayVentana() && typeof window.addEventListener === 'function') {
