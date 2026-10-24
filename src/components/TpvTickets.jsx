@@ -31,8 +31,13 @@ export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, 
     if (desde.getHours() < 5) desde.setDate(desde.getDate() - 1)
     desde.setHours(5, 0, 0, 0)
 
+    // `*` y no la lista de columnas (revisión del 24 oct 2026): «Reimprimir»
+    // saca el ticket con ESTA fila, y la lista corta no traía la base, el IGIC,
+    // lo entregado ni la fecha de la operación de una venta del corte (a7): el
+    // papel salía con «Base 0.00 · IGIC 0 %». Con `*` vale antes y después de la
+    // migración 03 (pedir `fecha_operacion` por su nombre fallaría antes).
     const { data, error } = await supabase.from('tpv_tickets')
-      .select('id, serie, numero, total, metodo_pago, emitido_at, pedido_id, rectifica_ticket_id')
+      .select('*')
       .eq('establecimiento_id', establecimientoId)
       .gte('emitido_at', desde.toISOString())
       .order('emitido_at', { ascending: false })
@@ -45,7 +50,7 @@ export default function TpvTickets({ establecimientoId, restaurante, tpvConfig, 
     const ids = lista.filter((t) => !t.rectifica_ticket_id).map((t) => t.id)
     if (ids.length) {
       const { data: rects } = await supabase.from('tpv_tickets')
-        .select('id, serie, numero, rectifica_ticket_id')
+        .select('*')
         .in('rectifica_ticket_id', ids)
       const m = {}
       for (const r of rects || []) m[r.rectifica_ticket_id] = r

@@ -565,6 +565,13 @@ export function abrirCajon() {
  * recalcula nada: se imprimen los importes que congelo el servidor al emitir el
  * ticket, que son los que constan en `tpv_tickets`.
  */
+// ¿Es una serie de PRUEBA del TPV? PRU, TEST y DEMO, y sus rectificativas (+R).
+// 🔴 La MISMA regla que `tpv_serie_es_prueba` en la base de datos (migración
+// 02_tpv_activar_seguro.sql, auditoría 05 a14): si se cambia una, se cambia la otra.
+export function esSerieDePrueba(serie) {
+  return /^(PRU|TEST|DEMO)R?$/.test(String(serie ?? '').trim().toUpperCase())
+}
+
 export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, abrirElCajon = false, logoBytes = null, anula = null, factura = null, provisional = false) {
   const bytes = []
   const eur = (n) => Number(n || 0).toFixed(2) + ' EUR'
@@ -603,6 +610,16 @@ export function generarTicketTpv(ticket, pedido, items, restaurante, pieTicket, 
     // cola y que se apuntará como fecha de la operación al sincronizar.
     bytes.push(...line('Hora de la venta: ' + formatDate(ticket.fecha_operacion || ticket.emitido_at)))
     bytes.push(...boldOff(), ...left(), ...separator('-'))
+  } else if (esSerieDePrueba(ticket.serie)) {
+    // Serie de PRUEBA (PRU en la instalación, DEMO en Pidoo Demo, TEST): su
+    // ticket no es fiscal y no puede llamarse factura (revisión del 24 oct 2026;
+    // regla de la migración 02, `tpv_serie_es_prueba`). Las series de verdad
+    // (A, B…) siguen con «FACTURA SIMPLIFICADA»: Duende no cambia.
+    bytes.push(...center(), ...boldOn(), ...doubleSize())
+    bytes.push(...line('TICKET DE PRUEBA'))
+    bytes.push(...normalSize())
+    bytes.push(...line('Sin valor fiscal'))
+    bytes.push(...boldOff(), ...left())
   } else {
     bytes.push(...boldOn(), ...line('FACTURA SIMPLIFICADA'), ...boldOff())
   }

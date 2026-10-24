@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { generarComandaTpv, generarComandaCocina, generarTicketCliente, generarTicketTpv } from '../src/lib/escpos.js'
+import { generarComandaTpv, generarComandaCocina, generarTicketCliente, generarTicketTpv, esSerieDePrueba } from '../src/lib/escpos.js'
 import {
   claveJornada, siguienteNumero, asignarNumeroCliente, anadirQuien, buscarQuien,
   recordarQuien, quienDeVenta, nombrePuesto, tieneQuien, lineasComandaDeItems,
@@ -194,4 +194,34 @@ test('el ticket del MOSTRADOR sigue siendo factura simplificada (no cambia)', ()
     metodo_pago: 'efectivo', emitido_at: '2026-10-26T09:00:00.000Z',
   }, {}, [], { nombre: 'Max', nif: 'X' }, null, false, null, null, datosCliente))
   assert.match(t, /FACTURA SIMPLIFICADA/)
+})
+
+// ── Revisión del 24 oct: las series de prueba no imprimen «FACTURA SIMPLIFICADA» ──
+test('serie de PRUEBA (PRU, TEST, DEMO y sus rectificativas): «TICKET DE PRUEBA · Sin valor fiscal»', () => {
+  for (const serie of ['PRU', 'PRUR', 'TEST', 'TESTR', 'DEMO', 'DEMOR', ' pru ']) {
+    const t = texto(generarTicketTpv({
+      serie, numero: 1, total: 10, base_imponible: 9.35, igic_pct: 7, cuota_igic: 0.65,
+      metodo_pago: 'efectivo', emitido_at: '2026-10-26T09:00:00.000Z',
+    }, {}, [], { nombre: 'Max', nif: 'X' }, null))
+    assert.doesNotMatch(t, /FACTURA SIMPLIFICADA/, serie)
+    assert.match(t, /TICKET DE PRUEBA/, serie)
+    assert.match(t, /Sin valor fiscal/, serie)
+  }
+})
+
+test('la regla de serie de prueba es la de la base de datos (^(PRU|TEST|DEMO)R?$)', () => {
+  for (const s of ['PRU', 'pru', 'PRUR', 'TEST', 'TESTR', 'DEMO', 'DEMOR']) assert.equal(esSerieDePrueba(s), true, s)
+  for (const s of ['A', 'AR', 'B', 'OFF', 'PRUE', 'PRUEBA', 'DEM', 'TES', '', null, undefined]) assert.equal(esSerieDePrueba(s), false, String(s))
+})
+
+test('series de verdad y ticket provisional: el papel de siempre', () => {
+  const base = { numero: 3, total: 10, base_imponible: 9.35, igic_pct: 7, cuota_igic: 0.65, metodo_pago: 'efectivo', emitido_at: '2026-10-26T09:00:00.000Z' }
+  for (const serie of ['A', 'AR', 'B']) {
+    const t = texto(generarTicketTpv({ ...base, serie }, {}, [], { nombre: 'Duende' }, null))
+    assert.match(t, /FACTURA SIMPLIFICADA/, serie)
+    assert.doesNotMatch(t, /TICKET DE PRUEBA/, serie)
+  }
+  const off = texto(generarTicketTpv({ ...base, serie: 'OFF' }, {}, [], { nombre: 'Duende' }, null, false, null, null, null, true))
+  assert.match(off, /TICKET PROVISIONAL/)
+  assert.doesNotMatch(off, /TICKET DE PRUEBA/)
 })
