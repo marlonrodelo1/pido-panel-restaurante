@@ -1467,6 +1467,9 @@ export default function Tpv({ modoApp = false, pantallaCompleta = false, huecoAb
           producto_no_encontrado: 'Un producto de la venta ya no está en la carta. Recárgala desde el menú y vuelve a picarlo.',
           extra_no_encontrado: 'Un extra de la venta ya no existe. Recarga la carta desde el menú y vuelve a elegirlo.',
           generar_codigo_failed: 'El servidor no respondió. Vuelve a intentarlo: no se ha cobrado nada.',
+          // Solo llega aquí con el lector (sin él, va a la cola): un intento
+          // anterior de esta venta se quedó a medias y el servidor la rehace.
+          venta_a_medias: 'El servidor está terminando de grabar esta venta. Espera unos segundos y vuelve a pulsar cobrar TAL CUAL: no se cobra dos veces.',
         })[body?.error] || body?.detalle || body?.error || 'No se pudo completar la venta')
       }
 

@@ -30,7 +30,7 @@ import { BotonCategoria, TarjetaProducto } from './TpvCartaPiezas'
 import TpvModalExtras from './TpvModalExtras'
 import { etiquetaBloque, pideVentanaAlTocar, centimosExtras } from '../lib/tpvCarta'
 import { imprimirPedido, imprimirModificacion, impresoraConfigurada } from '../lib/printService'
-import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+import { reservarImpresion, soltarImpresion, marcarComandaAvisada } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import {
   Search, Plus, Minus, Phone, MapPin, User, Bike, ShoppingBag, Check,
@@ -631,6 +631,7 @@ export default function TpvNuevoPedido({ restaurante, modo, pedidoEditar = null,
             // a10: cada aviso dice el botón de SU papel en Pedidos.
             if (!r?.cocina) {
               soltarImpresion(body.pedido.id)
+              marcarComandaAvisada(body.pedido.id)   // la recuperación ya no la saca sola
               toast('El pedido está creado, pero la comanda no ha salido: sácala con «Reimprimir comanda» en Pedidos', 'error')
             } else if (!r?.cliente) {
               toast('Comanda impresa; el ticket del cliente no salió: sácalo con «Imprimir ticket» en Pedidos.', 'error')

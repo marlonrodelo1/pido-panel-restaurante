@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRest } from './RestContext'
 import { startAlarm, stopAlarm, unlockAudio, requestNotificationPermission, notificarNuevoPedido } from '../lib/alarm'
 import { imprimirPedido, hayImpresoraNativa, esEscritorio } from '../lib/printService'
-import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+import { reservarImpresion, soltarImpresion, marcarComandaAvisada, comandaAvisada, nacioAceptado } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import { redCaida } from '../lib/estadoRed'
 // Ciclo de modulos App ↔ este contexto: funciona porque `toast` se llama en
@@ -50,6 +50,8 @@ async function imprimirPedidoAceptadoSolo(p, restaurante, conTpv = false) {
     // arregla.
     if (!r?.cocina) {
       soltarImpresion(p.id)
+      // Se ha pedido que la saquen a mano: la recuperación ya no la saca sola.
+      marcarComandaAvisada(p.id)
       toast(`La comanda de ${p.codigo || 'un pedido'} no ha salido por la impresora${conTpv ? ': sácala con «Reimprimir comanda» en Pedidos' : ''}`, 'error')
     } else if (!r?.cliente) {
       toast(conTpv
@@ -58,7 +60,10 @@ async function imprimirPedidoAceptadoSolo(p, restaurante, conTpv = false) {
     }
   } catch {
     soltarImpresion(p.id)
-    toast('No se pudo imprimir un pedido aceptado automaticamente', 'error')
+    // También es un aviso de «no ha salido»: la recuperación ya no la saca sola.
+    // Por eso el aviso dice cuál es y con qué botón se saca.
+    marcarComandaAvisada(p.id)
+    toast(`No se pudo imprimir la comanda de ${p.codigo || 'un pedido aceptado automaticamente'}${conTpv ? ': sácala con «Reimprimir comanda» en Pedidos' : ''}`, 'error')
   }
 }
 
@@ -161,7 +166,8 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
     // la red se da por caída) y, al volver, se buscan los aceptados desde
     // entonces (con 2 min de margen) que sigan en 'preparando', y se sacan como
     // si hubiera llegado su aviso. La reserva de `ticketsImpresos` evita sacar dos
-    // veces el que ya salió en este aparato.
+    // veces el que ya salió en este aparato; los que nacieron aceptados y los que
+    // este aparato ya avisó como fallidos se saltan (ver el bucle).
     let sordoDesde = null
     let recuperando = false
     // ¿El canal de realtime está escuchando? Si la red vuelve antes de que el
@@ -190,6 +196,14 @@ export function PedidoAlertProvider({ children, onNuevoPedido }) {
         for (const p of data || []) {
           // El kiosko sale con su INSERT (no con un UPDATE) y el mostrador no se acepta.
           if (p.kiosko || p.origen_pedido === 'tpv') continue
+          // Revisión del 25 oct: solo lo que se perdió de verdad, lo mismo que el
+          // camino en vivo saca al recibir el aviso de «aceptado».
+          //   - Nació aceptado (el telefónico del TPV: se inserta ya en
+          //     'preparando'). Nadie lo aceptó, su comanda la saca el aparato que
+          //     lo crea; sacarla aquí era una segunda en cocina.
+          //   - ESTE aparato ya la intentó, no salió y pidió sacarla a mano con
+          //     «Reimprimir comanda». Sacarla ahora sola, sin avisar, daría dos.
+          if (nacioAceptado(p) || comandaAvisada(p.id)) continue
           imprimirPedidoAceptadoSolo(p, restaurante, conTpvRef.current)
         }
       } catch { /* sin red: se vuelve a intentar con el siguiente aviso */ } finally {

@@ -14,7 +14,7 @@
 import { supabase } from './supabase'
 import { sendPush } from './webPush'
 import { imprimirPedido, hayImpresoraNativa } from './printService'
-import { reservarImpresion, soltarImpresion } from './ticketsImpresos'
+import { reservarImpresion, soltarImpresion, marcarComandaAvisada } from './ticketsImpresos'
 import { crearDestinoDe } from './destinosImpresion'
 import { toast } from '../App'
 
@@ -108,6 +108,7 @@ export async function aceptarPedido({ pedido, minutos, restaurante, items = [] }
         // cliente, y la comanda se quedaba sin forma de volver a salir.
         if (!r?.cocina) {
           soltarImpresion(pedido.id)
+          marcarComandaAvisada(pedido.id)   // la recuperación ya no la saca sola
           toast('La comanda no ha salido por la impresora: sácala con «Reimprimir comanda» en el pedido.')
         } else if (!r?.cliente) {
           toast('Comanda impresa; el ticket del cliente no salió: sácalo con «Imprimir ticket» en el pedido.')

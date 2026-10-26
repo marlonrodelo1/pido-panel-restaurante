@@ -5,7 +5,7 @@ import { usePedidoAlert } from '../context/PedidoAlertContext'
 import { stopAlarm, unlockAudio, startAlarm, notificarNuevoPedido } from '../lib/alarm'
 import { sendPush } from '../lib/webPush'
 import { imprimirPedido, imprimirPedidoWeb, hayImpresoraNativa } from '../lib/printService'
-import { reservarImpresion, soltarImpresion } from '../lib/ticketsImpresos'
+import { reservarImpresion, soltarImpresion, marcarComandaAvisada } from '../lib/ticketsImpresos'
 import { crearDestinoDe } from '../lib/destinosImpresion'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -560,6 +560,7 @@ export default function PedidosEnVivo() {
             // fallo a mitad no puede acabar en dos comandas iguales en cocina.
             if (!r?.cocina) {
               soltarImpresion(pedido.id)
+              marcarComandaAvisada(pedido.id)   // la recuperación ya no la saca sola
               toast('La comanda no ha salido por la impresora. Usa Reimprimir.')
             } else if (!r?.cliente) {
               toast('Comanda impresa; el ticket del cliente no salio. Usa Reimprimir.')

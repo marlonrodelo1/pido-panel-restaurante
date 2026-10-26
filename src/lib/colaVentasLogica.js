@@ -28,8 +28,21 @@
 //                se ATASCA con su motivo para que la revise una persona.
 const ERRORES_PASAJEROS = new Set(['no_autorizado', 'tpv_pausado'])
 
+// UNA VENTA A MEDIAS que el servidor da por buena (revisión del 25 oct 2026): el
+// pedido existe, pero sin líneas ni ticket (un intento anterior se quedó a mitad
+// con la base de datos fallando). `tpv-venta` hasta la v10 de esta revisión
+// contestaba `ok` con 0 € y `items: []`, y la cola la quitaba: el dinero estaba en
+// el cajón y en el sistema no había nada. Ahora el servidor contesta 503
+// `venta_a_medias` y la rehace; si un servidor anterior (la v9) contesta así, la
+// venta NO sale de la cola: se queda como «el servidor le está fallando», se ve
+// en «Ventas sin apuntar» y se reintenta sola. Una venta con líneas y sin número
+// de ticket (`sin_ticket` sin `items: []`) sí está apuntada: esa sale.
+export const esVentaAMedias = (body) => !!body?.ok && !!body?.sin_ticket
+  && Array.isArray(body?.items) && body.items.length === 0
+
 export function clasificarEnvio({ errorRed = false, status = 0, body = null } = {}) {
   if (errorRed || !status) return 'red'
+  if (status >= 200 && status < 300 && esVentaAMedias(body)) return 'pasajero'
   if (status >= 200 && status < 300 && body?.ok) return 'ok'
   if (status === 401 || status === 408 || status === 425 || status === 429 || status >= 500) return 'pasajero'
   if (body && typeof body === 'object' && ERRORES_PASAJEROS.has(body.error)) return 'pasajero'
@@ -60,10 +73,16 @@ export function clasificarEnvio({ errorRed = false, status = 0, body = null } = 
 // quitar la pausa); en el cobro directo es un aviso y la venta no se hace.
 const ERRORES_DE_SERVIDOR_CAIDO = new Set([
   'bd_no_disponible', 'auth_no_disponible', 'generar_codigo_failed', 'productos_error', 'extras_error',
+  // Revisión del 25 oct: un intento anterior con esta clave dejó la venta a
+  // medias y el servidor la está rehaciendo. El dinero ya está en la mano.
+  'venta_a_medias',
 ])
 
 export function cobroVaALaCola({ status = 0, body = null } = {}) {
   const deNuestroServidor = !!body && typeof body === 'object' && ('ok' in body || 'error' in body)
+  // Una venta a medias dada por buena (un servidor anterior): a la cola, que no
+  // la quita hasta que esté apuntada de verdad (ver `esVentaAMedias`).
+  if (status >= 200 && status < 300 && esVentaAMedias(body)) return true
   if (status >= 200 && status < 300) return !deNuestroServidor
   if (status === 401 || status === 408 || status === 425 || status === 429) return true
   if (!deNuestroServidor) return true
@@ -90,10 +109,12 @@ const MOTIVOS = {
   generar_codigo_failed: 'El servidor no pudo numerar el pedido.',
   bd_no_disponible: 'El servidor de Pidoo no responde bien ahora mismo: se reintenta sola.',
   auth_no_disponible: 'El servidor de sesiones de Pidoo no responde ahora mismo: se reintenta sola.',
+  venta_a_medias: 'Un intento anterior dejó esta venta a medias en el servidor: se reintenta sola.',
 }
 
 // El motivo en palabras, para la pantalla «Ventas sin apuntar».
 export function motivoDeRespuesta(status, body) {
+  if (esVentaAMedias(body)) return 'El servidor tiene esta venta a medias (sin productos ni ticket): se reintenta sola. Si no entra, avisa a Pidoo.'
   const cod = body && typeof body === 'object' ? body.error : null
   if (cod && MOTIVOS[cod]) return MOTIVOS[cod]
   if (body?.detalle) return String(body.detalle)

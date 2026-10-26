@@ -15,8 +15,9 @@ import assert from 'node:assert/strict'
 import {
   clasificarEnvio, debeParar, motivoDeRespuesta, nuevaEntrada, anadirSiNoEsta,
   aplicarResultado, marcarParaReintentar, quitarDeCola, resumenCola, decisionCierre,
-  notaCierreSinApuntar, sincronizar, tieneProblema, cuerpoParaEnviar, cobroVaALaCola,
+  notaCierreSinApuntar, sincronizar, tieneProblema, cuerpoParaEnviar, cobroVaALaCola, esVentaAMedias,
 } from '../src/lib/colaVentasLogica.js'
+import { nacioAceptado, marcarComandaAvisada, comandaAvisada, reservarImpresion, soltarImpresion } from '../src/lib/ticketsImpresos.js'
 import { esFalloSinRespuesta, esErrorDeRed, renovacionSeReintenta, sesionSinRenovarDe } from '../src/lib/estadoRed.js'
 import { generarTicketTpv } from '../src/lib/escpos.js'
 import {
@@ -488,4 +489,75 @@ test('sesión sin renovar: caducada o a menos de 90 s; sin sesión guardada, no'
   assert.equal(sesionSinRenovarDe(s(3000), ahora), false)
   assert.equal(sesionSinRenovarDe(null, ahora), false)
   assert.equal(sesionSinRenovarDe({ expires_at: 1 }, ahora), false)
+})
+
+// ── Revisión del 25 oct 2026 ─────────────────────────────────────────────────
+test('venta a medias (pedido sin líneas ni ticket) NO sale de la cola', () => {
+  const aMedias = { ok: true, repetida: true, sin_ticket: true, items: [], pedido: { total: 0 } }
+  assert.equal(esVentaAMedias(aMedias), true)
+  assert.equal(clasificarEnvio({ status: 200, body: aMedias }), 'pasajero')
+  assert.match(motivoDeRespuesta(200, aMedias), /a medias/)
+  // Con líneas y sin número de ticket SÍ está apuntada; sin la clave `items`
+  // (el ticket no se pudo numerar) también.
+  assert.equal(clasificarEnvio({ status: 200, body: { ok: true, sin_ticket: true, items: [{ nombre_producto: 'x' }] } }), 'ok')
+  assert.equal(clasificarEnvio({ status: 200, body: { ok: true, sin_ticket: true, pedido: { total: 9 } } }), 'ok')
+  assert.equal(clasificarEnvio({ status: 200, body: { ok: true, items: [] } }), 'ok')
+  // El servidor nuevo la rehace y mientras tanto contesta 503.
+  assert.equal(clasificarEnvio({ status: 503, body: { error: 'venta_a_medias' } }), 'pasajero')
+  assert.match(motivoDeRespuesta(503, { error: 'venta_a_medias' }), /a medias/)
+})
+
+test('venta a medias en el cobro directo: a la cola', () => {
+  assert.equal(cobroVaALaCola({ status: 503, body: { error: 'venta_a_medias' } }), true)
+  assert.equal(cobroVaALaCola({ status: 200, body: { ok: true, sin_ticket: true, items: [] } }), true)
+  assert.equal(cobroVaALaCola({ status: 200, body: { ok: true, sin_ticket: true, items: [{ x: 1 }] } }), false)
+})
+
+test('la cola no da por buena una venta a medias aunque el servidor diga ok', async () => {
+  const v = venta()
+  const a = almacen([v])
+  const r = await sincronizar({ ...a, enviar: async () => ({ status: 200, body: { ok: true, repetida: true, sin_ticket: true, items: [] } }) })
+  assert.equal(r.enviadas, 0)
+  assert.equal(a.ver().length, 1)
+  assert.equal(a.ver()[0].ultimoResultado, 'pasajero')
+  assert.equal(a.ver()[0].atascada, false)
+})
+
+test('recuperación de comandas: nació aceptado (telefónico del TPV) frente a aceptado de verdad', () => {
+  const c = '2026-10-24T20:00:00.000000+00:00'
+  assert.equal(nacioAceptado({ created_at: '2026-10-24T20:00:00.079+00:00', aceptado_at: '2026-10-24T20:00:00+00:00' }), true)   // -0,079 s
+  assert.equal(nacioAceptado({ created_at: c, aceptado_at: '2026-10-24T20:00:00.000000+00:00' }), true)                         // 0 s
+  assert.equal(nacioAceptado({ created_at: c, aceptado_at: '2026-10-24T20:00:00.955123+00:00' }), false)                        // Lucía / tienda
+  assert.equal(nacioAceptado({ created_at: c, aceptado_at: '2026-10-24T20:00:02.877+00:00' }), false)                           // web
+  // Sin fechas que se entiendan: se saca (mejor una de más que ninguna).
+  assert.equal(nacioAceptado({ created_at: null, aceptado_at: c }), false)
+  assert.equal(nacioAceptado({ created_at: 'x', aceptado_at: c }), false)
+  assert.equal(nacioAceptado(null), false)
+})
+
+test('recuperación de comandas: la que este aparato ya avisó como fallida no se saca sola', () => {
+  const datos = new Map()
+  globalThis.localStorage = {
+    getItem: (k) => (datos.has(k) ? datos.get(k) : null),
+    setItem: (k, v) => { datos.set(k, String(v)) },
+  }
+  try {
+    assert.equal(comandaAvisada('p1'), false)
+    // La comanda falla: se suelta la reserva y se apunta el aviso.
+    assert.equal(reservarImpresion('p1'), true)
+    soltarImpresion('p1')
+    marcarComandaAvisada('p1')
+    marcarComandaAvisada('p1')
+    assert.equal(comandaAvisada('p1'), true)
+    assert.equal(comandaAvisada('p2'), false)
+    // La reserva sigue libre para los demás caminos, como antes.
+    assert.equal(reservarImpresion('p1'), true)
+    assert.deepEqual(JSON.parse(datos.get('pidoo_comandas_avisadas')), ['p1'])
+    // Sin almacenamiento, no queda apuntado (y no revienta).
+    globalThis.localStorage = { getItem: () => { throw new Error('x') }, setItem: () => { throw new Error('x') } }
+    marcarComandaAvisada('p3')
+    assert.equal(comandaAvisada('p1'), false)
+  } finally {
+    delete globalThis.localStorage
+  }
 })
