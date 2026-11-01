@@ -96,7 +96,9 @@ export default function ResumenTab({ estId, onIrA, onIrADia, recarga }) {
   const repartidor = Number(reparto.pagado_socio || 0)
   const ingredientes = Number(g.genero || 0)
   const comision = Number(v.comision_pidoo || 0)
-  const otros = Math.round((vendido - repartidor - ingredientes - comision - ganancia) * 100) / 100
+  // Lo que se queda Stripe de lo cobrado con tarjeta (1 nov 2026): ya va restado en «Tuyo» y en Ganaste.
+  const comisionStripe = Number(v.comision_stripe || 0)
+  const otros = Math.round((vendido - repartidor - ingredientes - comision - comisionStripe - ganancia) * 100) / 100
 
   return (
     <div>
@@ -149,6 +151,7 @@ export default function ResumenTab({ estId, onIrA, onIrADia, recarga }) {
               {repartidor > 0 && <> − repartidores {eur(repartidor)}</>}
               {' '}− ingredientes {eur(ingredientes)}
               {comision > 0 && <> − comisión {eur(comision)}</>}
+              {comisionStripe > 0 && <> − comisión de Stripe {eur(comisionStripe)}</>}
               {Math.abs(otros) >= 0.01 && <> {otros > 0 ? '−' : '+'} otros {eur(Math.abs(otros))}</>}
               {' '}= <strong style={{ whiteSpace: 'nowrap' }}>{eur(ganancia)}</strong>.
               {Number(g.vendido_sin_coste) > 0 && ` Ojo: ${eur(g.vendido_sin_coste)} vendidos no tienen receta y cuentan sin ingredientes.`}
@@ -199,6 +202,7 @@ export default function ResumenTab({ estId, onIrA, onIrADia, recarga }) {
                     <Linea label="Descuentos que regalaste" valor={'− ' + eur(v.descuentos)} />
                   )}
                   <Linea label="Comisión de Pidoo" valor={'− ' + eur(v.comision_pidoo)} />
+                  {comisionStripe > 0 && <Linea label="Comisión de Stripe (tarjeta)" valor={'− ' + eur(comisionStripe)} />}
                   <Linea label="Tuyo" valor={eur(v.neto)} fuerte />
                   {(v.por_pago || []).length > 0 && (
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8 }}>

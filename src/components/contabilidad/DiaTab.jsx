@@ -47,7 +47,7 @@ function hora(ts) {
   return new Date(ts).toLocaleTimeString('es-ES', { timeZone: 'Atlantic/Canary', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIrA, tarjetaDirecta = false }) {
+export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIrA, tarjetaDirecta = false, stripeCajaMayor = false }) {
   const hoy = hoyCanariasIso()
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
@@ -155,7 +155,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
             <ContenidoDia
               d={d} fecha={fecha} hoy={hoy} esHoy={esHoy}
               estId={estId} recargaDinero={`${recarga}-${vuelta}`} onRecargar={recargar}
-              onApuntar={onApuntar} onIrA={onIrA} tarjetaDirecta={tarjetaDirecta}
+              onApuntar={onApuntar} onIrA={onIrA} tarjetaDirecta={tarjetaDirecta} stripeCajaMayor={stripeCajaMayor}
               onDeshacer={deshacer} onMarcar={marcar} onNoEsGasto={noEsGasto}
             />
           )}
@@ -165,7 +165,7 @@ export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIr
   )
 }
 
-function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, onApuntar, onIrA, tarjetaDirecta, onDeshacer, onMarcar, onNoEsGasto }) {
+function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, onApuntar, onIrA, tarjetaDirecta, stripeCajaMayor, onDeshacer, onMarcar, onNoEsGasto }) {
   const res = d.resumen || {}
   const c = d.cobro || {}
   const g = res.ganancia || {}
@@ -175,10 +175,12 @@ function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, 
   const repartidor = Number(c.repartidor || 0)
   const ingredientes = Number(g.genero || 0)
   const comision = Number(res.ventas?.comision_pidoo || 0)
+  // Lo que se queda Stripe de lo cobrado con tarjeta: lo que entra es lo cobrado menos esto (1 nov 2026).
+  const comisionStripe = Number(res.ventas?.comision_stripe || 0)
   const ganancia = Number(g.total || 0)
-  // Lo que no encaja en las cuatro líneas de arriba (un envío sin socio, un redondeo).
+  // Lo que no encaja en las líneas de arriba (un envío sin socio, un redondeo).
   // Casi siempre es 0 y no se pinta; si no, se enseña para que la cuenta sume exacta.
-  const ajuste = redondo(vendido - repartidor - ingredientes - comision - ganancia)
+  const ajuste = redondo(vendido - repartidor - ingredientes - comision - comisionStripe - ganancia)
 
   const pagos = [...(d.compras || []), ...(d.gastos || [])]
     .sort((x, y) => String(x.hora || '').localeCompare(String(y.hora || '')))
@@ -261,6 +263,7 @@ function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, 
           )}
           <Fila label="Ingredientes que se gastaron" valor={'− ' + eur(ingredientes)} />
           {comision > 0 && <Fila label="Comisión de Pidoo" valor={'− ' + eur(comision)} />}
+          {comisionStripe > 0 && <Fila label="Comisión de Stripe (tarjeta)" valor={'− ' + eur(comisionStripe)} />}
           {Math.abs(ajuste) >= 0.01 && (
             <Fila label="Otros ajustes" valor={(ajuste > 0 ? '− ' : '+ ') + eur(Math.abs(ajuste))} />
           )}
@@ -318,7 +321,7 @@ function ContenidoDia({ d, fecha, hoy, esHoy, estId, recargaDinero, onRecargar, 
           onPuedeEditar={setPuedeEditar} />
         {/* Tarjeta directa (Duende) sale de `stock_config`, que ya está en memoria: sin esperar a
             la tesorería, «Tarjeta (app)» nunca dice que la paga Pidoo el lunes. */}
-        <DondeEstaLoVendido cobro={c} esHoy={esHoy} cajas={d.cajas_dia || []} tarjetaDirecta={tarjetaDirecta} />
+        <DondeEstaLoVendido cobro={c} esHoy={esHoy} cajas={d.cajas_dia || []} tarjetaDirecta={tarjetaDirecta} stripeCajaMayor={stripeCajaMayor} />
       </div>
 
       {/* ── Todo lo que pasó ────────────────────────────────────────────── */}
@@ -413,9 +416,11 @@ function TuDineroAhora({ estId, recarga, hoy, esHoy, cajonDia, onIrA, onPuedeEdi
         <>
           <Destino icono={<Wallet size={16} />} label="Cajón del TPV" valor={t.caja_menor?.saldo} donde="Lo que debería haber en el cajón" />
           <Destino icono={<Vault size={16} />} label="Caja mayor" valor={t.caja_mayor?.saldo}
-            donde={t.caja_mayor?.contada ? 'Lo que retiras al cerrar la caja' : 'Todavía sin contar'} />
+            donde={!t.caja_mayor?.contada ? 'Todavía sin contar'
+              : t.caja_mayor?.stripe ? 'Lo que retiras al cerrar la caja y lo de la tarjeta (Stripe)' : 'Lo que retiras al cerrar la caja'} />
           <Destino icono={<Landmark size={16} />} label="Banco" valor={t.banco?.saldo}
             donde={!t.banco?.contado ? 'Todavía sin poner el saldo'
+              : t.caja_mayor?.stripe ? 'Lo que pagas por banco'
               : t.pidoo?.directa ? 'Datáfono y tarjeta de la app (Stripe)' : 'Datáfono y lo que te paga Pidoo'} />
           {t.pidoo?.directa ? null : debesPidoo ? (
             <Destino icono={<Smartphone size={16} />} label="Le debes a Pidoo" valor={Math.abs(saldoPidoo)}
@@ -466,7 +471,7 @@ function cajonDelDia(c) {
   return null
 }
 
-function DondeEstaLoVendido({ cobro, esHoy, cajas, tarjetaDirecta }) {
+function DondeEstaLoVendido({ cobro, esHoy, cajas, tarjetaDirecta, stripeCajaMayor }) {
   const efectivo = Number(cobro.efectivo || 0)
   const datafono = Number(cobro.datafono || 0)
   const tarjeta = Number(cobro.tarjeta || 0)
@@ -481,7 +486,8 @@ function DondeEstaLoVendido({ cobro, esHoy, cajas, tarjetaDirecta }) {
           {efectivo > 0 && <Destino icono={<Wallet size={16} />} label="Efectivo" valor={efectivo} donde="Va al cajón" />}
           {datafono > 0 && <Destino icono={<Landmark size={16} />} label="Datáfono" valor={datafono} donde="Va a tu banco" />}
           {tarjeta > 0 && <Destino icono={<Landmark size={16} />} label="Tarjeta (app)" valor={tarjeta}
-            donde={tarjetaDirecta ? 'Lo cobras tú en Stripe: va a tu banco' : 'Te lo ingresa Pidoo en la liquidación del lunes'} />}
+            donde={!tarjetaDirecta ? 'Te lo ingresa Pidoo en la liquidación del lunes'
+              : stripeCajaMayor ? 'Lo cobras tú en Stripe: lo pasas a la caja mayor, sin la comisión' : 'Lo cobras tú en Stripe: va a tu banco'} />}
           {otros > 0 && <Destino icono={<Landmark size={16} />} label="Otras formas de pago" valor={otros} donde="" />}
         </>
       )}
