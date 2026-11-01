@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Plus, CircleCheck, Wallet, Landmark, Vault } from 'lucide-react'
+import { Trash2, Plus, CircleCheck, Wallet, Landmark, Vault, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
@@ -23,15 +23,34 @@ import {
 // Regla que se repite en pantalla porque se preguntó dos veces: las compras de
 // género (comida, bebida, envases, aseo) NO van aquí — van en Compras, y ya
 // cuentan solas. Cada compra entra por UN solo sitio.
+//
+// Se mira MES A MES (1 nov 2026): antes solo existía el mes en curso y el día 1 los gastos
+// del mes anterior desaparecían de la pantalla. En un mes pasado los fijos se pueden apuntar
+// uno a uno (la ventana de pagos los fecha el último día de ese mes), pero no «Apuntar
+// todos»: esa RPC siempre apunta con la fecha de hoy.
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
+// 'AAAA-MM' movido n meses.
+function sumarMeses(mes, n) {
+  const d = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)) - 1 + n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function ultimoDiaMes(mes) {
+  const dias = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0).getDate()
+  return `${mes}-${String(dias).padStart(2, '0')}`
+}
+
 export default function GastosTab({ estId, recarga, onApuntar }) {
   const hoy = hoyCanariasIso()
-  const desde = hoy.slice(0, 8) + '01'
-  const hasta = hoy
-  const mesNombre = `${MESES[Number(hoy.slice(5, 7)) - 1]} ${hoy.slice(0, 4)}`
+  const mesActual = hoy.slice(0, 7)
+  const [mes, setMes] = useState(mesActual)
+  const esMesActual = mes === mesActual
+  const desde = mes + '-01'
+  const hasta = esMesActual ? hoy : ultimoDiaMes(mes)
+  const mesNombre = `${MESES[Number(mes.slice(5, 7)) - 1]} ${mes.slice(0, 4)}`
 
   const [gastos, setGastos] = useState([])
   const [fijos, setFijos] = useState([])
@@ -41,6 +60,9 @@ export default function GastosTab({ estId, recarga, onApuntar }) {
   // ofrece el cajón: mejor eso que un pago que la base de datos va a rechazar).
   const [cajaAbierta, setCajaAbierta] = useState(null)
   const recargar = () => setRefresco(n => n + 1)
+  // Al cambiar de mes se dice «cargando» en vez de dejar un rato los gastos del mes anterior
+  // bajo el título del nuevo.
+  const irAMes = (m) => { if (m === mes) return; setCargando(true); setMes(m) }
 
   useEffect(() => {
     if (!estId) return
@@ -61,10 +83,37 @@ export default function GastosTab({ estId, recarga, onApuntar }) {
     supabase.rpc('tpv_estado_caja', { p_establecimiento_id: estId })
       .then(({ data }) => { if (vivo) setCajaAbierta(!!data?.abierta) })
     return () => { vivo = false }
-  }, [estId, refresco, recarga])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [estId, mes, refresco, recarga])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const navBtn = { ...ds.secondaryBtn, width: 38, height: 38, padding: 0 }
+  const selectorMes = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      <button onClick={() => irAMes(sumarMeses(mes, -1))} aria-label="Mes anterior" style={navBtn}>
+        <ChevronLeft size={18} />
+      </button>
+      <div style={{ minWidth: 150, textAlign: 'center', padding: '0 4px' }}>
+        <div style={{ fontSize: type.xl, fontWeight: 800, color: colors.text, lineHeight: 1.15 }}>
+          {mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1)}
+        </div>
+        {esMesActual && <div style={{ ...ds.muted }}>Este mes</div>}
+      </div>
+      <button onClick={() => irAMes(sumarMeses(mes, 1))} disabled={esMesActual} aria-label="Mes siguiente"
+        style={{ ...navBtn, opacity: esMesActual ? 0.35 : 1, cursor: esMesActual ? 'default' : 'pointer' }}>
+        <ChevronRight size={18} />
+      </button>
+      {!esMesActual && (
+        <button onClick={() => irAMes(mesActual)} style={{ ...ds.miniBtn, height: 32 }}>Volver a este mes</button>
+      )}
+    </div>
+  )
 
   if (cargando) {
-    return <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Cargando los gastos…</div>
+    return (
+      <div>
+        {selectorMes}
+        <div style={{ ...ds.muted, padding: 40, textAlign: 'center' }}>Cargando los gastos…</div>
+      </div>
+    )
   }
 
   const apuntadosIds = new Set(gastos.map(g => g.fijo_id).filter(Boolean))
@@ -75,21 +124,26 @@ export default function GastosTab({ estId, recarga, onApuntar }) {
   const totalMes = gastos.reduce((s, g) => s + Number(g.importe), 0)
 
   return (
-    <div style={{ display: 'grid', gap: 14, alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))' }}>
-      <Fijos
-        estId={estId} fijos={fijos} pendientes={pendientes} apuntadosIds={apuntadosIds}
-        totalFijos={totalFijos} totalPendiente={totalPendiente} mesNombre={mesNombre}
-        onCambio={recargar} onApuntar={onApuntar}
-      />
-      <Sueltos estId={estId} gastos={gastos} totalMes={totalMes} mesNombre={mesNombre} hoy={hoy}
-        cajaAbierta={cajaAbierta} onCambio={recargar} />
+    <div>
+      {selectorMes}
+      <div style={{ display: 'grid', gap: 14, alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))' }}>
+        <Fijos
+          estId={estId} fijos={fijos} pendientes={pendientes} apuntadosIds={apuntadosIds}
+          totalFijos={totalFijos} totalPendiente={totalPendiente} mesNombre={mesNombre}
+          esMesActual={esMesActual} fechaMes={hasta}
+          onCambio={recargar} onApuntar={onApuntar}
+        />
+        {/* `key`: al cambiar de mes el formulario vuelve a nacer con un día de ESE mes. */}
+        <Sueltos key={mes} estId={estId} gastos={gastos} totalMes={totalMes} mesNombre={mesNombre} hoy={hoy}
+          fechaMes={hasta} cajaAbierta={cajaAbierta} onCambio={recargar} />
+      </div>
     </div>
   )
 }
 
 /* ── Los fijos del mes ────────────────────────────────────────────────────── */
 
-function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendiente, mesNombre, onCambio, onApuntar }) {
+function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendiente, mesNombre, esMesActual, fechaMes, onCambio, onApuntar }) {
   const [alta, setAlta] = useState(false)
   const [v, setV] = useState({ categoria: '', concepto: '', importe: '' })
   const [guardando, setGuardando] = useState(false)
@@ -112,7 +166,7 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
   // Con la ventana de pagos se pregunta con qué se pagó (y el importe real del recibo, que
   // en la luz nunca es el de la plantilla). Sin ella, el apunte directo de siempre.
   async function apuntar(f) {
-    if (onApuntar) { onApuntar({ modo: 'gasto', fijo: f }); return }
+    if (onApuntar) { onApuntar({ modo: 'gasto', fijo: f, ...(esMesActual ? {} : { fecha: fechaMes }) }); return }
     try {
       await apuntarFijo(f.id)
       toast(`${f.categoria} apuntado: ${eur(f.importe)}`, 'success')
@@ -167,11 +221,14 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
           border: `1px solid ${colors.warning}`, background: colors.warningSoft,
         }}>
           <div style={{ fontSize: type.sm, color: colors.text }}>
-            En {mesNombre} faltan <strong>{pendientes.length}</strong> por apuntar ({eur(totalPendiente)})
+            En {mesNombre} {esMesActual ? 'faltan' : 'quedaron'} <strong>{pendientes.length}</strong>{' '}
+            {esMesActual ? 'por apuntar' : 'sin apuntar'} ({eur(totalPendiente)})
           </div>
-          <button onClick={apuntarTodos} style={{ ...ds.miniBtn, flexShrink: 0 }}>
-            Apuntar todos
-          </button>
+          {esMesActual && (
+            <button onClick={apuntarTodos} style={{ ...ds.miniBtn, flexShrink: 0 }}>
+              Apuntar todos
+            </button>
+          )}
         </div>
       )}
 
@@ -204,10 +261,11 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
                   display: 'inline-flex', alignItems: 'center', gap: 4,
                   fontSize: type.xxs, fontWeight: 700, color: colors.sage2,
                 }}>
-                  <CircleCheck size={13} /> Este mes
+                  <CircleCheck size={13} /> {esMesActual ? 'Este mes' : 'Apuntado'}
                 </span>
-              ) : f.activo ? (
-                <button onClick={() => apuntar(f)} title="Apuntarlo este mes (hazlo cuando esté pagado)"
+              ) : f.activo && (esMesActual || onApuntar) ? (
+                <button onClick={() => apuntar(f)}
+                  title={`Apuntarlo en ${esMesActual ? 'este mes' : mesNombre} (hazlo cuando esté pagado)`}
                   style={{ ...ds.miniBtn, flexShrink: 0 }}>
                   Apuntar
                 </button>
@@ -258,8 +316,9 @@ function Fijos({ estId, fijos, pendientes, apuntadosIds, totalFijos, totalPendie
 
 /* ── Gastos sueltos del mes ───────────────────────────────────────────────── */
 
-function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, cajaAbierta, onCambio }) {
-  const vacio = { fecha: hoy, categoria: '', concepto: '', importe: '', pagadoCon: '' }
+function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, fechaMes, cajaAbierta, onCambio }) {
+  // En el mes en curso el día propuesto es hoy (`fechaMes` = hoy); en uno pasado, su último día.
+  const vacio = { fecha: fechaMes, categoria: '', concepto: '', importe: '', pagadoCon: '' }
   const [v, setV] = useState(vacio)
   const [guardando, setGuardando] = useState(false)
 
@@ -377,7 +436,7 @@ function Sueltos({ estId, gastos, totalMes, mesNombre, hoy, cajaAbierta, onCambi
       </div>
 
       {gastos.length === 0 ? (
-        <div style={{ ...ds.muted, fontSize: type.sm }}>Ningún gasto apuntado este mes.</div>
+        <div style={{ ...ds.muted, fontSize: type.sm }}>Ningún gasto apuntado en {mesNombre}.</div>
       ) : (
         <div style={tablaScroll}>
           <div style={{ ...ds.tableHeader, ...filaMin(560) }}>
