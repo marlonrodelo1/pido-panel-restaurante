@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { TriangleAlert } from 'lucide-react'
 import { colors, ds, radius, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { eur, eurCoste, rentabilidadPlatos } from '../../lib/stock'
+import { eur, eurCoste, rentabilidadPlatos, jornadaHoyIso } from '../../lib/stock'
 
 // Rentabilidad por plato: en cuáles ganas y en cuáles casi pierdes. El coste sale
 // de la receta (escandallo) al coste medio ACTUAL de los artículos; los vendidos,
@@ -12,8 +12,10 @@ import { eur, eurCoste, rentabilidadPlatos } from '../../lib/stock'
 function fmt(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+// «Hoy» es el día del negocio de Canarias (corte a las 05:00), el mismo que la base de datos.
 function rango(periodo) {
-  const hoy = new Date()
+  const [y, m, d] = jornadaHoyIso().split('-').map(Number)
+  const hoy = new Date(y, m - 1, d)
   if (periodo === 'mes') return { desde: fmt(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), hasta: fmt(hoy) }
   return {
     desde: fmt(new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)),

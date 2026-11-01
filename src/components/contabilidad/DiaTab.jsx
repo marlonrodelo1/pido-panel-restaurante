@@ -7,7 +7,7 @@ import { colors, ds, radius, type } from '../../lib/uiStyles'
 import { toast, confirmar } from '../../App'
 import {
   eur, diaContable, deshacerPago, marcarPagado, salidaNoEsGasto, textoCajon,
-  hoyCanariasIso, sumarDias, fechaLarga, tesoreria, sePuedeCambiarPago, PAGADO_CON,
+  jornadaHoyIso, sumarDias, fechaLarga, tesoreria, sePuedeCambiarPago, PAGADO_CON,
 } from '../../lib/stock'
 import { VIAS } from '../../lib/jornada'
 import CambiarFormaPago from '../CambiarFormaPago'
@@ -48,7 +48,8 @@ function hora(ts) {
 }
 
 export default function DiaTab({ estId, fecha, onFecha, recarga, onApuntar, onIrA, tarjetaDirecta = false, stripeCajaMayor = false }) {
-  const hoy = hoyCanariasIso()
+  // El día del negocio: hasta las 05:00, «Hoy» sigue siendo la noche que empezó ayer.
+  const hoy = jornadaHoyIso()
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -642,6 +643,10 @@ function Ventas({ pedidos, cobro, fecha, hoy, cajon, cajas, puedeEditar, onRecar
     porVia.set(p.via, x)
   }
   const vias = [...porVia.entries()].sort((a, b) => b[1].total - a[1].total)
+  // Corte de las 05:00 (1 nov 2026): lo cobrado de madrugada es de la noche anterior. Se dice,
+  // porque el ticket lleva la fecha del día siguiente.
+  const madrugada = pedidos.filter(p => p.hora && p.hora < '05:00')
+  const totalMadrugada = redondo(madrugada.reduce((s, p) => s + Number(p.total || 0), 0))
 
   return (
     <Seccion titulo="Ventas del día">
@@ -653,6 +658,12 @@ function Ventas({ pedidos, cobro, fecha, hoy, cajon, cajas, puedeEditar, onRecar
             <Fila key={via} label={`${ETIQUETA_VIA[via] || via} (${x.n})`} valor={eur(x.total)} />
           ))}
           <Fila fuerte label="Total vendido" valor={eur(cobro.total)} />
+          {madrugada.length > 0 && (
+            <div style={{ fontSize: type.xs, color: colors.textMute, marginTop: 6, lineHeight: 1.5 }}>
+              Incluye {eur(totalMadrugada)} de {madrugada.length === 1 ? '1 venta cobrada' : `${madrugada.length} ventas cobradas`} después
+              de medianoche: hasta las 5:00 de la madrugada, lo vendido cuenta en este día.
+            </div>
+          )}
           <button onClick={() => setVer(v => !v)} style={{ ...ds.miniBtn, height: 30, marginTop: 10 }}>
             {ver ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             {ver ? 'Ocultar los pedidos' : `Ver los ${pedidos.length} pedidos`}

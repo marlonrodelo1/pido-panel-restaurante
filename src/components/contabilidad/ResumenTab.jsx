@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { CircleHelp, Target, ChevronDown, ChevronUp, TriangleAlert } from 'lucide-react'
 import { colors, ds, type, col, tablaScroll, filaMin } from '../../lib/uiStyles'
 import { toast } from '../../App'
-import { eur, resumenNegocio, puntoEquilibrio, diasContables } from '../../lib/stock'
+import { eur, resumenNegocio, puntoEquilibrio, diasContables, jornadaHoyIso } from '../../lib/stock'
 
 // «CÓMO VA»: la semana o el mes de un vistazo (pestaña Resumen de Contabilidad).
 //
@@ -27,14 +27,11 @@ function fechaLarga(iso) {
 // HOY es el día de Canarias, el mismo que usa la base de datos: con el reloj del navegador,
 // un móvil en hora peninsular pediría entre las 23:00 y las 24:00 el día (o el mes) siguiente
 // y las tarjetas dejarían de cuadrar con la meta. Nada de toISOString(): recorta en UTC.
+// Con el corte de las 05:00 (1 nov 2026): de madrugada «hoy» es todavía el día anterior.
 // El lunes abre la semana, como el corte de Pidoo.
 function hoyCanarias() {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: 'Atlantic/Canary', year: 'numeric', month: 'numeric', day: 'numeric' })
-      .formatToParts(new Date())
-      .map(x => [x.type, x.value])
-  )
-  return new Date(Number(p.year), Number(p.month) - 1, Number(p.day))
+  const [y, m, d] = jornadaHoyIso().split('-').map(Number)
+  return new Date(y, m - 1, d)
 }
 function rango(periodo) {
   const hoy = hoyCanarias()

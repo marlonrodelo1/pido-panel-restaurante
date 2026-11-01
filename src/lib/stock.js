@@ -454,13 +454,25 @@ export function textoCajon(cajon, importe) {
 
 // El día de Canarias como 'AAAA-MM-DD'. Nada de toISOString(): recorta en UTC y de 00:00
 // a 01:00 daría el día anterior.
-export function hoyCanariasIso() {
+function isoCanariasDe(instante) {
   const p = Object.fromEntries(
     new Intl.DateTimeFormat('en-US', { timeZone: 'Atlantic/Canary', year: 'numeric', month: 'numeric', day: 'numeric' })
-      .formatToParts(new Date())
+      .formatToParts(instante)
       .map(x => [x.type, x.value])
   )
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`
+}
+
+export function hoyCanariasIso() {
+  return isoCanariasDe(new Date())
+}
+
+// El día del NEGOCIO (1 nov 2026): lo cobrado antes de las 05:00 cuenta para el día anterior,
+// igual que en la base de datos (`_contab_jornada`). Es el «hoy» de lo que se mira de las ventas
+// (El día, Cómo va, Platos). Las fechas de gastos y compras siguen siendo las del calendario.
+const CORTE_JORNADA_MS = 5 * 60 * 60 * 1000
+export function jornadaHoyIso() {
+  return isoCanariasDe(new Date(Date.now() - CORTE_JORNADA_MS))
 }
 
 export function sumarDias(iso, n) {

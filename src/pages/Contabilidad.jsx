@@ -20,7 +20,7 @@ import { useState, useEffect } from 'react'
 import { Wallet, TriangleAlert, Plus } from 'lucide-react'
 import { useRest } from '../context/RestContext'
 import { colors, ds, type } from '../lib/uiStyles'
-import { cargarArticulos, hoyCanariasIso } from '../lib/stock'
+import { cargarArticulos, jornadaHoyIso } from '../lib/stock'
 import DiaTab from '../components/contabilidad/DiaTab'
 import DineroTab from '../components/contabilidad/DineroTab'
 import ResumenTab from '../components/contabilidad/ResumenTab'
@@ -50,7 +50,7 @@ export function ContabilidadVista({ restaurante, stockConfig }) {
   const estId = restaurante?.id
 
   const [pestana, setPestana] = useState('dia')
-  const [fechaDia, setFechaDia] = useState(hoyCanariasIso)
+  const [fechaDia, setFechaDia] = useState(jornadaHoyIso)
   // Lo que abre la ventana «Apuntar un pago» (null = cerrada).
   const [pago, setPago] = useState(null)
   // Compras necesita los artículos (las líneas se escriben contra ellos).
@@ -77,7 +77,13 @@ export function ContabilidadVista({ restaurante, stockConfig }) {
     return () => { vivo = false }
   }, [estId, refresco])
 
-  const apuntar = (inicial = {}) => setPago({ ...(pestana === 'dia' ? { fecha: fechaDia } : {}), ...inicial })
+  // Desde El día, el pago se fecha en el día que se mira. Si es el de hoy no se pasa: de
+  // madrugada «hoy» es todavía la noche de ayer, y el pago lleva la fecha del calendario (la
+  // del cajón abierto; con otra, la base de datos lo rechaza con PD284).
+  const apuntar = (inicial = {}) => setPago({
+    ...(pestana === 'dia' && fechaDia !== jornadaHoyIso() ? { fecha: fechaDia } : {}),
+    ...inicial,
+  })
   const irADia = (f) => { setFechaDia(f); setPestana('dia') }
 
   if (!stockConfig) {
